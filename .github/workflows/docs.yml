@@ -1,0 +1,95 @@
+name: Build & Deploy Documentation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # Pin the UniLab commit / branch the docs build against. Bump on releases.
+  UNILAB_REF: main
+
+jobs:
+  build:
+    name: Build Sphinx
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout docs
+        uses: actions/checkout@v4
+
+      - name: Checkout UniLab source
+        uses: actions/checkout@v4
+        with:
+          repository: unilabsim/UniLab
+          ref: ${{ env.UNILAB_REF }}
+          path: UniLab
+          # The build only needs a read-only token to access the (private)
+          # source repository for autodoc. Configure a deploy key or
+          # `UNILAB_RO_TOKEN` repo secret with `repo: read` access.
+          token: ${{ secrets.UNILAB_RO_TOKEN || github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              libgl1 libegl1 libosmesa6 libglfw3 \
+              ffmpeg
+
+      - name: Install doc deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install UniLab in editable mode (autodoc target)
+        # We don't install the [motrix] extra in CI to avoid the private index.
+        # Heavy imports are mocked in `conf.py` via `autodoc_mock_imports`.
+        run: |
+          pip install -e ./UniLab || \
+              echo "::warning::Falling back to mock-only build — UniLab install failed"
+
+      - name: Build HTML
+        run: |
+          # `-n` warns on broken cross-refs but `-W` is intentionally NOT
+          # set so the first deploy can succeed while stubs are filled in.
+          sphinx-build -b html -n source build/html
+
+      - name: Build linkcheck (non-blocking)
+        continue-on-error: true
+        run: sphinx-build -b linkcheck source build/linkcheck
+
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/html
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
