@@ -98,6 +98,35 @@ myst_enable_extensions = [
 myst_heading_anchors = 4
 myst_linkify_fuzzy_links = False
 
+# Substitutions that vary with build mode (full vs prose-only).
+if _UNILAB_AVAILABLE:
+    _api_ref_blurb = (
+        "Class / function reference auto-generated from `unilab` — typed "
+        "signatures and source links for every public symbol."
+    )
+    _api_ref_label = "API Reference"
+    _api_ref_button = (
+        "[Browse the API →](api_reference/index.html){.sd-btn .sd-btn-primary}"
+    )
+else:
+    _api_ref_blurb = (
+        "API reference will publish once UniLab source is available to the "
+        "build environment. Browse the typed source tree on GitHub in the "
+        "meantime."
+    )
+    _api_ref_label = "`unilab/` on GitHub"
+    _api_ref_button = (
+        "[View source on GitHub →]"
+        "(https://github.com/unilabsim/UniLab/tree/main/src/unilab)"
+        "{.sd-btn .sd-btn-primary}"
+    )
+
+myst_substitutions = {
+    "api_ref_blurb": _api_ref_blurb,
+    "api_ref_label": _api_ref_label,
+    "api_ref_button": _api_ref_button,
+}
+
 # Autodoc / autosummary -----------------------------------------------------
 autodoc_default_options = {
     "members": True,
@@ -231,3 +260,16 @@ copybutton_remove_prompts = True
 # Suppress noisy warnings while the doc is still bootstrapping.
 # ---------------------------------------------------------------------------
 suppress_warnings = ["myst.header"]
+# When api_reference is excluded (no UniLab source), the hidden toctree on
+# index.md still references those docs — silence the resulting noise.
+if not _UNILAB_AVAILABLE:
+    suppress_warnings.append("toc.excluded")
+
+# Expose `_UNILAB_AVAILABLE` as a Sphinx tag so `.. only:: api_ref` blocks
+# in prose can be conditionally rendered.
+def setup(app):
+    if _UNILAB_AVAILABLE:
+        app.tags.add("api_ref")
+    else:
+        app.tags.add("prose_only")
+    return {"parallel_read_safe": True}

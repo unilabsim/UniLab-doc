@@ -164,13 +164,12 @@ porting cookbook.
 :::
 
 :::{grid-item-card} 🧩 I need the precise API surface
-:link: api_reference/index
-:link-type: doc
 
-Class / function reference auto-generated from `unilab` — typed signatures
-and source links for every public symbol.
+{{ api_ref_blurb }}
+
+{{ api_ref_button }}
 +++
-**API Reference**
+**{{ api_ref_label }}**
 :::
 
 :::{grid-item-card} 🛠 I'm extending UniLab

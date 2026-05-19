@@ -30,16 +30,32 @@ jobs:
       - name: Checkout docs
         uses: actions/checkout@v4
 
-      - name: Checkout UniLab source
+      - name: Checkout UniLab source (best-effort, for autodoc)
+        id: checkout_unilab
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: unilabsim/UniLab
           ref: ${{ env.UNILAB_REF }}
           path: UniLab
-          # The build only needs a read-only token to access the (private)
-          # source repository for autodoc. Configure a deploy key or
-          # `UNILAB_RO_TOKEN` repo secret with `repo: read` access.
+          # Optional: when UniLab is private, configure a `UNILAB_RO_TOKEN`
+          # repo secret with `repo: read` access to enable full autodoc.
+          # Without it (or when UniLab is public), we fall back to
+          # github.token — which works for public repos but not private
+          # cross-repo reads. The step is best-effort: a failed checkout
+          # downgrades the build to prose-only.
           token: ${{ secrets.UNILAB_RO_TOKEN || github.token }}
+
+      - name: Report UniLab availability
+        run: |
+          if [ "${{ steps.checkout_unilab.outcome }}" = "success" ] && [ -d UniLab ]; then
+            echo "::notice::UniLab source available — autodoc enabled"
+            echo "UNILAB_PRESENT=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning::UniLab source unavailable — building prose-only docs (API reference will be skipped)"
+            echo "UNILAB_PRESENT=0" >> "$GITHUB_ENV"
+            echo "UNILAB_DOCS_SKIP_AUTODOC=1" >> "$GITHUB_ENV"
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -60,11 +76,14 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install UniLab in editable mode (autodoc target)
+        if: env.UNILAB_PRESENT == '1'
         # We don't install the [motrix] extra in CI to avoid the private index.
         # Heavy imports are mocked in `conf.py` via `autodoc_mock_imports`.
         run: |
-          pip install -e ./UniLab || \
-              echo "::warning::Falling back to mock-only build — UniLab install failed"
+          pip install -e ./UniLab || {
+            echo "::warning::UniLab install failed — downgrading to prose-only"
+            echo "UNILAB_DOCS_SKIP_AUTODOC=1" >> "$GITHUB_ENV"
+          }
 
       - name: Build HTML
         run: |
