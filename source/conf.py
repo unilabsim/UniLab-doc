@@ -69,6 +69,7 @@ extensions = [
     "sphinx_design",
     "sphinx_togglebutton",
     "sphinxcontrib.video",
+    "sphinxcontrib.mermaid",
     "sphinx_sitemap",
 ]
 # Only enable autodoc / autosummary when UniLab is importable. Otherwise
@@ -178,6 +179,25 @@ html_theme_options = {
     "source_branch": "main",
     "source_directory": "source/",
     "top_of_page_buttons": ["view", "edit"],
+    "announcement": (
+        "🚀 <b>UniLab</b> documentation is in active development — "
+        "<a href='https://github.com/unilabsim/UniLab' target='_blank'>"
+        "star the repo</a> and follow along."
+    ),
+    "light_css_variables": {
+        "color-brand-primary": "#2563eb",
+        "color-brand-content": "#1d4ed8",
+        "color-announcement-background": "linear-gradient(90deg,#1e3a8a,#7c3aed)",
+        "color-announcement-text": "#f8fafc",
+        "font-stack": "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif",
+        "font-stack--monospace": "'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#60a5fa",
+        "color-brand-content": "#93c5fd",
+        "color-announcement-background": "linear-gradient(90deg,#312e81,#6b21a8)",
+        "color-announcement-text": "#f8fafc",
+    },
     "footer_icons": [
         {
             "name": "GitHub",
