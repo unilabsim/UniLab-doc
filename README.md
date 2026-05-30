@@ -1,43 +1,27 @@
-# UniLab Documentation
+# UniLab Documentation (Deploy Target)
 
-The official documentation source for [UniLab](https://github.com/unilabsim/UniLab) — train robot RL without a GPU simulation backend.
+This repository serves as the **GitHub Pages deploy target** for [UniLab](https://github.com/unilabsim/UniLab) documentation.
 
 Live site: <https://unilabsim.github.io/UniLab-doc/>
 
-## Build locally
+## How it works
 
-```bash
-# 1. Create a clean environment (Python >= 3.10)
-python -m venv .venv && source .venv/bin/activate
+Documentation **source** lives in the main UniLab repository at
+[`docs/sphinx/`](https://github.com/unilabsim/UniLab/tree/main/docs/sphinx).
 
-# 2. Install doc deps
-pip install -r requirements.txt
+On every push to `main` in UniLab, CI builds Sphinx and pushes the resulting
+HTML to this repository's `gh-pages` branch via deploy key. This repo only
+holds the built output — **do not edit content here**.
 
-# 3. Install UniLab itself so autodoc can import it
-#    (the docs pull API reference straight out of the source tree)
-pip install -e ../UniLab[motrix]
+## To contribute docs
 
-# 4. Build + live-reload preview
-make html
-sphinx-autobuild source build/html
-```
+1. Clone the main repo: `git clone https://github.com/unilabsim/UniLab`
+2. Edit files under `docs/sphinx/source/`
+3. Open a PR against `unilabsim/UniLab`
 
-Open <http://127.0.0.1:8000> in your browser.
+See [`docs/sphinx/README.md`](https://github.com/unilabsim/UniLab/blob/main/docs/sphinx/README.md) for local build instructions.
 
-## Layout
+## Pages configuration
 
-```
-source/
-├── index.md                # landing
-├── user_guide/             # install / quickstart / per-task tutorials
-├── transfer/               # sim-to-real, sim-to-sim, framework migration
-├── developer_guide/        # architecture, contracts, ADRs
-├── api_reference/          # autodoc-driven Python API
-├── _static/                # logos, css, videos
-└── _templates/             # autosummary templates
-```
-
-## CI / Deploy
-
-GitHub Actions builds Sphinx on every push to `main` and deploys to GitHub Pages.
-See `.github/workflows/docs.yml`.
+- **Source**: Deploy from branch `gh-pages` / `/ (root)`
+- Built HTML is pushed automatically by UniLab CI — no manual action needed.
