@@ -344,6 +344,8 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/4-contributing.html">Contributing To UniLab</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/5-contributing_workflow.html">Collaboration Workflow</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/6-agent_quick_reference.html">Agent Quick Reference</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/7-motion_assets.html">Motion Asset Migration (Hugging Face)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/8-motrix_contact_sensor.html">Motrix Contact Sensor Notes</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../en/5-reference/0-index.html">Reference</a><input aria-label="Toggle navigation of Reference" class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -482,6 +484,8 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/4-contributing.html">为 UniLab 做贡献</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/5-contributing_workflow.html">协作工作流</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/6-agent_quick_reference.html">Agent 速查</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/7-motion_assets.html">Motion 资产迁移指南（Hugging Face）</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/8-motrix_contact_sensor.html">Motrix Contact Sensor 适配笔记</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../zh_CN/5-reference/0-index.html">参考</a><input aria-label="Toggle navigation of 参考" class="toctree-checkbox" id="toctree-checkbox-40" name="toctree-checkbox-40" role="switch" type="checkbox"/><label for="toctree-checkbox-40"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -547,6 +551,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.observations</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_obs_dims</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.training</span><span class="w"> </span><span class="kn">import</span> <span class="n">BackendAdapter</span><span class="p">,</span> <span class="n">create_env</span><span class="p">,</span> <span class="n">log_playback_plan</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">build_hora_shared_actor_critic</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.observations</span><span class="w"> </span><span class="kn">import</span> <span class="n">build_hora_actor_tensordict</span><span class="p">,</span> <span class="n">split_hora_obs_with_priv_info</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_hora_appo_runtime</span>
 
@@ -688,7 +693,27 @@
     <span class="n">actor_cfg</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">rl_cfg_dict</span><span class="p">[</span><span class="s2">&quot;actor&quot;</span><span class="p">])</span>
     <span class="n">actor_cls</span> <span class="o">=</span> <span class="n">resolve_callable</span><span class="p">(</span><span class="n">actor_cfg</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;class_name&quot;</span><span class="p">))</span>
     <span class="n">actor_cfg</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;num_actions&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-    <span class="n">actor</span> <span class="o">=</span> <span class="n">actor_cls</span><span class="p">(</span><span class="n">td_example</span><span class="p">,</span> <span class="n">rl_cfg_dict</span><span class="p">[</span><span class="s2">&quot;obs_groups&quot;</span><span class="p">],</span> <span class="s2">&quot;actor&quot;</span><span class="p">,</span> <span class="n">action_dim</span><span class="p">,</span> <span class="o">**</span><span class="n">actor_cfg</span><span class="p">)</span>
+
+    <span class="n">critic_cfg</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">rl_cfg_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;critic&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">rl_cfg_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;actor&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+    <span class="n">critic_cfg</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;class_name&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">critic_cfg</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;num_actions&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">critic_cfg</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;distribution_cfg&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="n">shared_model</span> <span class="o">=</span> <span class="n">build_hora_shared_actor_critic</span><span class="p">(</span>
+        <span class="n">obs_dim</span><span class="o">=</span><span class="n">obs_dim</span><span class="p">,</span>
+        <span class="n">action_dim</span><span class="o">=</span><span class="n">action_dim</span><span class="p">,</span>
+        <span class="n">priv_info_dim</span><span class="o">=</span><span class="n">priv_info_dim</span><span class="p">,</span>
+        <span class="n">actor_cfg</span><span class="o">=</span><span class="n">actor_cfg</span><span class="p">,</span>
+        <span class="n">critic_cfg</span><span class="o">=</span><span class="n">critic_cfg</span><span class="p">,</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">actor</span> <span class="o">=</span> <span class="n">actor_cls</span><span class="p">(</span>
+        <span class="n">td_example</span><span class="p">,</span>
+        <span class="n">rl_cfg_dict</span><span class="p">[</span><span class="s2">&quot;obs_groups&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;actor&quot;</span><span class="p">,</span>
+        <span class="n">action_dim</span><span class="p">,</span>
+        <span class="n">shared_model</span><span class="o">=</span><span class="n">shared_model</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">actor_cfg</span><span class="p">,</span>
+    <span class="p">)</span>
     <span class="n">actor</span> <span class="o">=</span> <span class="n">actor</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
     <span class="n">actor</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 

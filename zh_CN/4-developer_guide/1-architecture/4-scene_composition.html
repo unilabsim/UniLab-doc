@@ -340,6 +340,8 @@
 <li class="toctree-l2"><a class="reference internal" href="../4-contributing.html">为 UniLab 做贡献</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../5-contributing_workflow.html">协作工作流</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../6-agent_quick_reference.html">Agent 速查</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../7-motion_assets.html">Motion 资产迁移指南（Hugging Face）</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../8-motrix_contact_sensor.html">Motrix Contact Sensor 适配笔记</a></li>
 </ul>
 </li><li class="toctree-l1 has-children"><a class="reference internal" href="../../5-reference/0-index.html">参考</a><input aria-label="Toggle navigation of 参考" class="toctree-checkbox" id="toctree-checkbox-40" name="toctree-checkbox-40" role="switch" type="checkbox"/><label for="toctree-checkbox-40"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../5-reference/1-api/0-index.html">API 参考</a></li>
@@ -428,22 +430,66 @@
 materializer 在初始化期间将该声明转换为 backend 的原生模型。</p>
 <section id="id2">
 <h2>契约<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">SceneCfg</span></code> 位于 <code class="docutils literal notranslate"><span class="pre">src/unilab/base/scene.py</span></code>。静态场景使用
-<code class="docutils literal notranslate"><span class="pre">SceneCfg(model_file=...)</span></code>。程序化地形场景则将机器人模型、任务 fragment 与地形
-配置组合在一起：</p>
+<p><code class="docutils literal notranslate"><span class="pre">SceneCfg</span></code> 与 <code class="docutils literal notranslate"><span class="pre">TerrainSceneCfg</span></code> 位于 <code class="docutils literal notranslate"><span class="pre">src/unilab/base/scene.py</span></code>：</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">TerrainSceneCfg</span><span class="p">:</span>
+    <span class="n">generator</span><span class="p">:</span> <span class="n">TerrainGeneratorCfg</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">hfield_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;terrain_hfield&quot;</span>
+    <span class="n">geom_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SceneCfg</span><span class="p">:</span>
+    <span class="n">model_file</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">fragment_files</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+    <span class="n">terrain</span><span class="p">:</span> <span class="n">TerrainSceneCfg</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">EnvCfg.scene</span></code> 是唯一的 scene source。静态场景使用 <code class="docutils literal notranslate"><span class="pre">SceneCfg(model_file=...)</span></code>。
+程序化地形场景则将机器人模型、任务 fragment 与地形配置组合在一起：</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">env</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">scene</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">model_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">src/unilab/assets/robots/go2/go2.xml</span>
 <span class="w">    </span><span class="nt">fragment_files</span><span class="p">:</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">src/unilab/assets/robots/go2/locomotion_task.xml</span>
 <span class="w">    </span><span class="nt">terrain</span><span class="p">:</span>
-<span class="w">      </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hfield</span>
 <span class="w">      </span><span class="nt">hfield_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">terrain_hfield</span>
 <span class="w">      </span><span class="nt">geom_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">floor</span>
 </pre></div>
 </div>
 <p>env 将场景交给 <code class="docutils literal notranslate"><span class="pre">create_backend(...)</span></code>；它不会直接调用 MuJoCo 或 Motrix 的
 materializer。</p>
+</section>
+<section id="backend">
+<h2>Backend 分发<a class="headerlink" href="#backend" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">src/unilab/base/backend/__init__.py</span></code> 中的 <code class="docutils literal notranslate"><span class="pre">create_backend(...)</span></code> 按 backend 类型
+路由，并对 <code class="docutils literal notranslate"><span class="pre">SceneCfg</span></code> 应用以下规则：</p>
+<ol class="arabic simple">
+<li><p>静态 <code class="docutils literal notranslate"><span class="pre">SceneCfg(model_file=...)</span></code> 且无 terrain：加载完整静态场景（存在
+<code class="docutils literal notranslate"><span class="pre">fragment_files</span></code> 时在冷路径合并）。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SceneCfg(model_file=...,</span> <span class="pre">terrain=...)</span></code>：把 <code class="docutils literal notranslate"><span class="pre">model_file</span></code> 当作机器人模型，在
+冷路径组装 materialized 场景，并合并 <code class="docutils literal notranslate"><span class="pre">fragment_files</span></code>。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">scene</span> <span class="pre">is</span> <span class="pre">None</span></code>：fail loudly（<code class="docutils literal notranslate"><span class="pre">create_backend</span></code> 抛出 <code class="docutils literal notranslate"><span class="pre">ValueError</span></code>）。</p></li>
+<li><p>backend 不支持某个 <code class="docutils literal notranslate"><span class="pre">SceneCfg</span></code> feature 时，必须抛出明确错误。例如 Motrix 的
+崎岖地形必须 fail loudly，而不是静默退回 flat 场景。</p></li>
+</ol>
+</section>
+<section id="mujoco-materializer">
+<h2>MuJoCo Materializer 流水线<a class="headerlink" href="#mujoco-materializer" title="Link to this heading">¶</a></h2>
+<p>对于程序化地形，MuJoCo backend 调用 <code class="docutils literal notranslate"><span class="pre">src/unilab/base/backend/mujoco/xml.py</span></code> 中的
+<code class="docutils literal notranslate"><span class="pre">materialize_mujoco_hfield_attached_scene(...)</span></code>。冷路径步骤为：</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">TerrainGenerator(terrain_cfg).write_png(...)</span></code> 生成与 backend 无关的高度场
+PNG。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MjSpec.add_hfield(...)</span></code> 加上 <code class="docutils literal notranslate"><span class="pre">worldbody.add_geom(type=mjGEOM_HFIELD,</span> <span class="pre">...)</span></code>
+放置地形。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MjSpec.from_file(robot_path)</span></code> 加载机器人 spec，<code class="docutils literal notranslate"><span class="pre">spec.attach(...)</span></code> 将其挂到
+一个 frame 下。</p></li>
+<li><p>把每个 <code class="docutils literal notranslate"><span class="pre">fragment_files</span></code> 条目（任务 sensor、keyframe）合并进场景 XML。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MjSpec.from_string(...).compile()</span></code> 返回编译好的 <code class="docutils literal notranslate"><span class="pre">MjModel</span></code>，连同
+<code class="docutils literal notranslate"><span class="pre">terrain_origins</span></code>（以及可选的 surface sampler）。</p></li>
+</ol>
+<p>程序化路径返回预编译的 <code class="docutils literal notranslate"><span class="pre">MjModel</span></code>，不把最终 <code class="docutils literal notranslate"><span class="pre">scene.xml</span></code> path 作为契约暴露。诸如
+<code class="docutils literal notranslate"><span class="pre">terrain_origins</span></code> 这类场景上下文通过 backend 属性传回 env。</p>
 </section>
 <section id="id3">
 <h2>分层所有权<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
@@ -569,6 +615,8 @@ materializer。</p>
             <ul>
 <li><a class="reference internal" href="#">场景组合</a><ul>
 <li><a class="reference internal" href="#id2">契约</a></li>
+<li><a class="reference internal" href="#backend">Backend 分发</a></li>
+<li><a class="reference internal" href="#mujoco-materializer">MuJoCo Materializer 流水线</a></li>
 <li><a class="reference internal" href="#id3">分层所有权</a></li>
 <li><a class="reference internal" href="#id4">冷路径边界</a></li>
 <li><a class="reference internal" href="#go2">Go2 崎岖地形证据</a></li>

@@ -340,6 +340,8 @@
 <li class="toctree-l2"><a class="reference internal" href="../4-contributing.html">为 UniLab 做贡献</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../5-contributing_workflow.html">协作工作流</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../6-agent_quick_reference.html">Agent 速查</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../7-motion_assets.html">Motion 资产迁移指南（Hugging Face）</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../8-motrix_contact_sensor.html">Motrix Contact Sensor 适配笔记</a></li>
 </ul>
 </li><li class="toctree-l1 has-children"><a class="reference internal" href="../../5-reference/0-index.html">参考</a><input aria-label="Toggle navigation of 参考" class="toctree-checkbox" id="toctree-checkbox-40" name="toctree-checkbox-40" role="switch" type="checkbox"/><label for="toctree-checkbox-40"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../5-reference/1-api/0-index.html">API 参考</a></li>
@@ -478,15 +480,66 @@ MuJoCo or Motrix      shared memory       torch or mlx
 <li><p>使用 <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">run</span> <span class="pre">train</span> <span class="pre">--algo</span> <span class="pre">&lt;algo&gt;</span> <span class="pre">--task</span> <span class="pre">&lt;task&gt;</span> <span class="pre">--sim</span> <span class="pre">&lt;backend&gt;</span></code> 或
 <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">run</span> <span class="pre">eval</span> <span class="pre">...</span></code> 来选择对外的算法/任务/backend 路由。这些 flag 会 compose
 出匹配的 owner YAML；<code class="docutils literal notranslate"><span class="pre">training.sim_backend</span></code> 只是一个身份字段。</p></li>
+<li><p>优先用 config 表达，而不是分支。任何扩展的优先级顺序是：config schema -&gt;
+registry -&gt; env/backend 适配层 -&gt; 最后才是脚本分支。</p></li>
 <li><p>不要在 <code class="docutils literal notranslate"><span class="pre">step</span></code>、<code class="docutils literal notranslate"><span class="pre">reset</span></code> 或 interval domain randomization 等热路径中解析 XML 或
 资源。</p></li>
 <li><p>如果共享的 env 代码需要某个 backend 操作，先将其加入 <code class="docutils literal notranslate"><span class="pre">SimBackend</span></code>，再使用。</p></li>
+<li><p>使用证据等级的表述。例如 <code class="docutils literal notranslate"><span class="pre">Registered</span></code>、<code class="docutils literal notranslate"><span class="pre">Configured</span></code>、<code class="docutils literal notranslate"><span class="pre">Tested</span></code>、<code class="docutils literal notranslate"><span class="pre">Benchmarked</span></code>
+或 <code class="docutils literal notranslate"><span class="pre">Recommended</span></code>；没有仓库内证据就不要声称稳定支持。</p></li>
+<li><p>上浮可复用原语。通用逻辑应放在 <code class="docutils literal notranslate"><span class="pre">src/unilab/base/</span></code> 或 <code class="docutils literal notranslate"><span class="pre">src/unilab/utils/</span></code>，
+不要在多个 workflow 中复制粘贴。</p></li>
 <li><p>在最接近风险的边界处进行验证：Hydra 改动用 config 测试，观测/reset 改动用
 env 测试，runner 改动用 IPC 测试。</p></li>
 </ul>
 </section>
 <section id="id5">
-<h2>关键文件<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<h2>验证<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<p>在贴近风险处验证。顶层 smoke run 只能补充、不能替代对改动真正触及边界的验证。</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>改动类型</p></th>
+<th class="head"><p>最少验证</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>仅文档</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">run</span> <span class="pre">pytest</span> <span class="pre">tests/scripts/test_check_docs.py</span> <span class="pre">-q</span></code>，并逐条对照仓库手动核对 support claim</p></td>
+</tr>
+<tr class="row-odd"><td><p>Hydra / task / reward 配置</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">test</span></code>（<code class="docutils literal notranslate"><span class="pre">tests/config/</span></code>、<code class="docutils literal notranslate"><span class="pre">tests/scripts/</span></code>）</p></td>
+</tr>
+<tr class="row-even"><td><p>Env contract / 观测</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">test</span></code>（<code class="docutils literal notranslate"><span class="pre">tests/base/test_np_env.py</span></code> 与 env 测试）加 1 iteration smoke run</p></td>
+</tr>
+<tr class="row-odd"><td><p>Runner / IPC</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">test</span></code>；必要时补 <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">test-slow</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Backend 路径</p></td>
+<td><p>对应 backend 的 smoke run，必要时补 slow test</p></td>
+</tr>
+<tr class="row-odd"><td><p>训练入口</p></td>
+<td><p>相关测试加 1 iteration smoke run</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>快速路径用 <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">test</span></code>；提 PR 前用 <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">test-all</span></code>（<code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">check</span></code> 加
+<code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">test-cov</span></code>）。</p>
+</section>
+<section id="id6">
+<h2>评审清单<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>这次改动触及了哪个 contract？</p></li>
+<li><p>这个问题是否应该在更低层解决？</p></li>
+<li><p>backend 或 task 行为是通过 config 表达的，还是被脚本特判掩盖了？</p></li>
+<li><p>support 声明是否有 registry / config / test / benchmark 证据？</p></li>
+<li><p>验证是否发生在最接近风险的边界？</p></li>
+</ol>
+</section>
+<section id="id7">
+<h2>关键文件<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">scripts/train_rsl_rl.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">scripts/train_mlx_ppo.py</span></code></p></li>
@@ -580,7 +633,9 @@ env 测试，runner 改动用 IPC 测试。</p></li>
 <li><a class="reference internal" href="#id2">运行时模型</a></li>
 <li><a class="reference internal" href="#id3">分层边界</a></li>
 <li><a class="reference internal" href="#id4">设计规则</a></li>
-<li><a class="reference internal" href="#id5">关键文件</a></li>
+<li><a class="reference internal" href="#id5">验证</a></li>
+<li><a class="reference internal" href="#id6">评审清单</a></li>
+<li><a class="reference internal" href="#id7">关键文件</a></li>
 <li><a class="reference internal" href="#adr">相关 ADR</a></li>
 <li><a class="reference internal" href="#navigation">Navigation</a></li>
 </ul>

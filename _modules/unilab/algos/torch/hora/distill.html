@@ -344,6 +344,8 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/4-contributing.html">Contributing To UniLab</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/5-contributing_workflow.html">Collaboration Workflow</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/6-agent_quick_reference.html">Agent Quick Reference</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/7-motion_assets.html">Motion Asset Migration (Hugging Face)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/8-motrix_contact_sensor.html">Motrix Contact Sensor Notes</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../en/5-reference/0-index.html">Reference</a><input aria-label="Toggle navigation of Reference" class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -482,6 +484,8 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/4-contributing.html">为 UniLab 做贡献</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/5-contributing_workflow.html">协作工作流</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/6-agent_quick_reference.html">Agent 速查</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/7-motion_assets.html">Motion 资产迁移指南（Hugging Face）</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/8-motrix_contact_sensor.html">Motrix Contact Sensor 适配笔记</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../zh_CN/5-reference/0-index.html">参考</a><input aria-label="Toggle navigation of 参考" class="toctree-checkbox" id="toctree-checkbox-40" name="toctree-checkbox-40" role="switch" type="checkbox"/><label for="toctree-checkbox-40"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -536,15 +540,198 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">cast</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">omegaconf</span><span class="w"> </span><span class="kn">import</span> <span class="n">DictConfig</span><span class="p">,</span> <span class="n">OmegaConf</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tensordict</span><span class="w"> </span><span class="kn">import</span> <span class="n">TensorDict</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.common.normalization</span><span class="w"> </span><span class="kn">import</span> <span class="n">EmpiricalNormalization</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.hora.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">HoraActorModel</span><span class="p">,</span> <span class="n">HoraSharedActorCritic</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.hora.models</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">HoraActorModel</span><span class="p">,</span>
+    <span class="n">HoraCoreOutput</span><span class="p">,</span>
+    <span class="n">HoraSharedActorCritic</span><span class="p">,</span>
+    <span class="n">ProprioAdaptTConv</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.hora.sac_models</span><span class="w"> </span><span class="kn">import</span> <span class="n">HoraSACActor</span>
+
+
+<div class="viewcode-block" id="HoraSACDistillShared">
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraSACDistillShared.html#unilab.algos.torch.hora.HoraSACDistillShared">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">HoraSACDistillShared</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;SAC-teacher-compatible HORA stage-2 shared actor.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="HoraSACDistillShared.__init__">
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraSACDistillShared.html#unilab.algos.torch.hora.HoraSACDistillShared.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">obs_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">action_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">priv_info_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">hidden_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">512</span><span class="p">,</span>
+        <span class="n">priv_info_embed_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">9</span><span class="p">,</span>
+        <span class="n">priv_mlp_hidden_dims</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">256</span><span class="p">,</span> <span class="mi">128</span><span class="p">,</span> <span class="mi">9</span><span class="p">),</span>
+        <span class="n">use_layer_norm</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">proprio_hist_len</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30</span><span class="p">,</span>
+        <span class="n">proprio_frame_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="n">teacher</span> <span class="o">=</span> <span class="n">HoraSACActor</span><span class="p">(</span>
+            <span class="n">obs_dim</span><span class="o">=</span><span class="n">obs_dim</span><span class="p">,</span>
+            <span class="n">priv_info_dim</span><span class="o">=</span><span class="n">priv_info_dim</span><span class="p">,</span>
+            <span class="n">action_dim</span><span class="o">=</span><span class="n">action_dim</span><span class="p">,</span>
+            <span class="n">hidden_dim</span><span class="o">=</span><span class="n">hidden_dim</span><span class="p">,</span>
+            <span class="n">priv_info_embed_dim</span><span class="o">=</span><span class="n">priv_info_embed_dim</span><span class="p">,</span>
+            <span class="n">priv_mlp_hidden_dims</span><span class="o">=</span><span class="n">priv_mlp_hidden_dims</span><span class="p">,</span>
+            <span class="n">use_layer_norm</span><span class="o">=</span><span class="n">use_layer_norm</span><span class="p">,</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">obs_dim</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">obs_dim</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">action_dim</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">action_dim</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">priv_info_dim</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">priv_info_dim</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">priv_info_embed_dim</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">priv_info_embed_dim</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">proprio_hist_len</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">proprio_hist_len</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">proprio_frame_dim</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="nb">int</span><span class="p">(</span><span class="n">proprio_frame_dim</span><span class="p">)</span> <span class="k">if</span> <span class="n">proprio_frame_dim</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">obs_dim</span> <span class="o">//</span> <span class="mi">3</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">obs_normalizer</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Identity</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">priv_encoder</span> <span class="o">=</span> <span class="n">teacher</span><span class="o">.</span><span class="n">priv_encoder</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">priv_projection</span> <span class="o">=</span> <span class="n">teacher</span><span class="o">.</span><span class="n">priv_projection</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">actor_trunk</span> <span class="o">=</span> <span class="n">teacher</span><span class="o">.</span><span class="n">actor_trunk</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">action_mean_head</span> <span class="o">=</span> <span class="n">teacher</span><span class="o">.</span><span class="n">action_mean_head</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">adapt_tconv</span> <span class="o">=</span> <span class="n">ProprioAdaptTConv</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">proprio_frame_dim</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">priv_info_embed_dim</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HoraSACDistillShared.load_teacher_actor_state_dict">
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraSACDistillShared.html#unilab.algos.torch.hora.HoraSACDistillShared.load_teacher_actor_state_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_teacher_actor_state_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">actor_state</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">own_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
+        <span class="n">teacher_state</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">key</span><span class="p">:</span> <span class="n">value</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">actor_state</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">own_state</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">key</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;adapt_tconv.&quot;</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="n">missing</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+            <span class="n">key</span>
+            <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">own_state</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">key</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;adapt_tconv.&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">teacher_state</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;HORA-SAC teacher checkpoint is missing actor keys: </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">teacher_state</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HoraSACDistillShared.encode_privileged_info">
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraSACDistillShared.html#unilab.algos.torch.hora.HoraSACDistillShared.encode_privileged_info">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">encode_privileged_info</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">priv_info</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">priv_projection</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">priv_encoder</span><span class="p">(</span><span class="n">priv_info</span><span class="p">)))</span></div>
+
+
+<div class="viewcode-block" id="HoraSACDistillShared.encode_proprio_history">
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraSACDistillShared.html#unilab.algos.torch.hora.HoraSACDistillShared.encode_proprio_history">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">encode_proprio_history</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">proprio_hist</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">adapt_tconv</span><span class="p">(</span><span class="n">proprio_hist</span><span class="p">))</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_zero_privileged_latent</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+        <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">batch_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">priv_info_embed_dim</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>
+
+<div class="viewcode-block" id="HoraSACDistillShared.policy_mean">
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraSACDistillShared.html#unilab.algos.torch.hora.HoraSACDistillShared.policy_mean">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">policy_mean</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">obs</span><span class="p">:</span> <span class="n">TensorDict</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">prefer_student</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+        <span class="n">require_privileged_target</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">HoraCoreOutput</span><span class="p">]:</span>
+        <span class="n">actor_obs</span> <span class="o">=</span> <span class="n">obs</span><span class="p">[</span><span class="s2">&quot;actor&quot;</span><span class="p">]</span>
+        <span class="n">priv_info</span> <span class="o">=</span> <span class="n">obs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;priv_info&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">priv_info</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">require_privileged_target</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">prefer_student</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;priv_info is required for HORA-SAC distillation&quot;</span><span class="p">)</span>
+            <span class="n">privileged_target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_zero_privileged_latent</span><span class="p">(</span>
+                <span class="n">actor_obs</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                <span class="n">actor_obs</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+                <span class="n">actor_obs</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">privileged_target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">encode_privileged_info</span><span class="p">(</span><span class="n">priv_info</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">prefer_student</span><span class="p">:</span>
+            <span class="n">proprio_hist</span> <span class="o">=</span> <span class="n">obs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;proprio_hist&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">proprio_hist</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;proprio_hist is required for HORA-SAC student inference&quot;</span><span class="p">)</span>
+            <span class="n">privileged_latent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">encode_proprio_history</span><span class="p">(</span><span class="n">proprio_hist</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">privileged_latent</span> <span class="o">=</span> <span class="n">privileged_target</span>
+
+        <span class="n">trunk_latent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">actor_trunk</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">actor_obs</span><span class="p">,</span> <span class="n">privileged_latent</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="n">mean</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">action_mean_head</span><span class="p">(</span><span class="n">trunk_latent</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">mean</span><span class="p">,</span>
+            <span class="n">HoraCoreOutput</span><span class="p">(</span>
+                <span class="n">policy_obs</span><span class="o">=</span><span class="n">actor_obs</span><span class="p">,</span>
+                <span class="n">trunk_latent</span><span class="o">=</span><span class="n">trunk_latent</span><span class="p">,</span>
+                <span class="n">privileged_latent</span><span class="o">=</span><span class="n">privileged_latent</span><span class="p">,</span>
+                <span class="n">privileged_target</span><span class="o">=</span><span class="n">privileged_target</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="HoraSACDistillActor">
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraSACDistillActor.html#unilab.algos.torch.hora.HoraSACDistillActor">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">HoraSACDistillActor</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Stage-2 actor wrapper for HORA-SAC teachers.&quot;&quot;&quot;</span>
+
+    <span class="n">is_recurrent</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="HoraSACDistillActor.__init__">
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraSACDistillActor.html#unilab.algos.torch.hora.HoraSACDistillActor.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shared</span><span class="p">:</span> <span class="n">HoraSACDistillShared</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shared</span> <span class="o">=</span> <span class="n">shared</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prefer_student</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="HoraSACDistillActor.forward">
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraSACDistillActor.html#unilab.algos.torch.hora.HoraSACDistillActor.forward">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">obs</span><span class="p">:</span> <span class="n">TensorDict</span><span class="p">,</span>
+        <span class="n">masks</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">hidden_state</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">stochastic_output</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">del</span> <span class="n">masks</span><span class="p">,</span> <span class="n">hidden_state</span><span class="p">,</span> <span class="n">stochastic_output</span>
+        <span class="n">mean</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">shared</span><span class="o">.</span><span class="n">policy_mean</span><span class="p">(</span>
+            <span class="n">obs</span><span class="p">,</span>
+            <span class="n">prefer_student</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">prefer_student</span><span class="p">,</span>
+            <span class="n">require_privileged_target</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">mean</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="HoraSACDistillActor.load_sac_teacher_actor_state_dict">
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraSACDistillActor.html#unilab.algos.torch.hora.HoraSACDistillActor.load_sac_teacher_actor_state_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_sac_teacher_actor_state_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">actor_state</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shared</span><span class="o">.</span><span class="n">load_teacher_actor_state_dict</span><span class="p">(</span><span class="n">actor_state</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="n">DistillActor</span> <span class="o">=</span> <span class="n">HoraActorModel</span> <span class="o">|</span> <span class="n">HoraSACDistillActor</span>
 
 
 <div class="viewcode-block" id="HoraDistillStats">
-<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraDistillStats.html#unilab.algos.torch.hora.distill.HoraDistillStats">[docs]</a>
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraDistillStats.html#unilab.algos.torch.hora.HoraDistillStats">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">HoraDistillStats</span><span class="p">:</span>
     <span class="n">agent_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
@@ -555,13 +742,13 @@
 
 
 <div class="viewcode-block" id="build_student_actor_and_normalizer">
-<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.build_student_actor_and_normalizer.html#unilab.algos.torch.hora.distill.build_student_actor_and_normalizer">[docs]</a>
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.build_student_actor_and_normalizer.html#unilab.algos.torch.hora.build_student_actor_and_normalizer">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">build_student_actor_and_normalizer</span><span class="p">(</span>
     <span class="n">env</span><span class="p">,</span>
     <span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
     <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">HoraActorModel</span><span class="p">,</span> <span class="n">EmpiricalNormalization</span><span class="p">]:</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">DistillActor</span><span class="p">,</span> <span class="n">EmpiricalNormalization</span><span class="p">]:</span>
     <span class="n">actor_obs</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get_observations</span><span class="p">()</span>
     <span class="n">actor_dim</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">actor_obs</span><span class="p">[</span><span class="s2">&quot;actor&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
     <span class="n">priv_info_dim</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">actor_obs</span><span class="p">[</span><span class="s2">&quot;priv_info&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
@@ -569,6 +756,23 @@
 
     <span class="n">model_cfg</span> <span class="o">=</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">to_container</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">algo</span><span class="o">.</span><span class="n">model</span><span class="p">,</span> <span class="n">resolve</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">model_cfg</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">model_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;teacher_arch&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;hora_sac&quot;</span><span class="p">:</span>
+        <span class="n">shared_sac</span> <span class="o">=</span> <span class="n">HoraSACDistillShared</span><span class="p">(</span>
+            <span class="n">obs_dim</span><span class="o">=</span><span class="n">actor_dim</span><span class="p">,</span>
+            <span class="n">action_dim</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">num_actions</span><span class="p">),</span>
+            <span class="n">priv_info_dim</span><span class="o">=</span><span class="n">priv_info_dim</span><span class="p">,</span>
+            <span class="n">hidden_dim</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">model_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;actor_hidden_dim&quot;</span><span class="p">,</span> <span class="mi">512</span><span class="p">)),</span>
+            <span class="n">priv_info_embed_dim</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">model_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;priv_info_embed_dim&quot;</span><span class="p">,</span> <span class="n">priv_info_dim</span><span class="p">)),</span>
+            <span class="n">priv_mlp_hidden_dims</span><span class="o">=</span><span class="n">model_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;priv_mlp_hidden_dims&quot;</span><span class="p">,</span> <span class="p">[</span><span class="mi">256</span><span class="p">,</span> <span class="mi">128</span><span class="p">,</span> <span class="mi">9</span><span class="p">]),</span>
+            <span class="n">use_layer_norm</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">model_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;use_layer_norm&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)),</span>
+            <span class="n">proprio_hist_len</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">proprio_hist_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+            <span class="n">proprio_frame_dim</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">proprio_hist_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">actor</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">HoraSACDistillActor</span><span class="p">,</span> <span class="n">HoraSACDistillActor</span><span class="p">(</span><span class="n">shared_sac</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">))</span>
+        <span class="n">hist_normalizer</span> <span class="o">=</span> <span class="n">EmpiricalNormalization</span><span class="p">(</span><span class="n">proprio_hist_shape</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">actor</span><span class="p">,</span> <span class="n">hist_normalizer</span>
+
     <span class="n">shared</span> <span class="o">=</span> <span class="n">HoraSharedActorCritic</span><span class="p">(</span>
         <span class="n">obs_dim</span><span class="o">=</span><span class="n">actor_dim</span><span class="p">,</span>
         <span class="n">action_dim</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">num_actions</span><span class="p">),</span>
@@ -583,29 +787,45 @@
         <span class="n">proprio_hist_len</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">proprio_hist_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
         <span class="n">proprio_frame_dim</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">proprio_hist_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
     <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-    <span class="n">actor</span> <span class="o">=</span> <span class="n">HoraActorModel</span><span class="p">(</span>
-        <span class="n">actor_obs</span><span class="p">,</span>
-        <span class="p">{</span><span class="s2">&quot;actor&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;actor&quot;</span><span class="p">],</span> <span class="s2">&quot;critic&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;actor&quot;</span><span class="p">]},</span>
-        <span class="s2">&quot;actor&quot;</span><span class="p">,</span>
-        <span class="nb">int</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">num_actions</span><span class="p">),</span>
-        <span class="n">shared_model</span><span class="o">=</span><span class="n">shared</span><span class="p">,</span>
-        <span class="n">use_student_encoder</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-    <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">actor</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
+        <span class="n">HoraActorModel</span><span class="p">,</span>
+        <span class="n">HoraActorModel</span><span class="p">(</span>
+            <span class="n">actor_obs</span><span class="p">,</span>
+            <span class="p">{</span><span class="s2">&quot;actor&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;actor&quot;</span><span class="p">],</span> <span class="s2">&quot;critic&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;actor&quot;</span><span class="p">]},</span>
+            <span class="s2">&quot;actor&quot;</span><span class="p">,</span>
+            <span class="nb">int</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">num_actions</span><span class="p">),</span>
+            <span class="n">shared_model</span><span class="o">=</span><span class="n">shared</span><span class="p">,</span>
+            <span class="n">use_student_encoder</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
+    <span class="p">)</span>
     <span class="n">hist_normalizer</span> <span class="o">=</span> <span class="n">EmpiricalNormalization</span><span class="p">(</span><span class="n">proprio_hist_shape</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">actor</span><span class="p">,</span> <span class="n">hist_normalizer</span></div>
 
 
 
 <div class="viewcode-block" id="load_teacher_actor_weights">
-<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.load_teacher_actor_weights.html#unilab.algos.torch.hora.distill.load_teacher_actor_weights">[docs]</a>
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.load_teacher_actor_weights.html#unilab.algos.torch.hora.load_teacher_actor_weights">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">load_teacher_actor_weights</span><span class="p">(</span>
-    <span class="n">actor</span><span class="p">:</span> <span class="n">HoraActorModel</span><span class="p">,</span>
+    <span class="n">actor</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span>
     <span class="n">teacher_checkpoint</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
     <span class="n">teacher_algo_family</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">checkpoint</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">teacher_checkpoint</span><span class="p">,</span> <span class="n">map_location</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">weights_only</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">teacher_algo_family</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;sac&quot;</span><span class="p">:</span>
+        <span class="n">actor_state</span> <span class="o">=</span> <span class="n">checkpoint</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;actor&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">actor_state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Checkpoint does not contain the expected HORA-SAC actor weights. &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;checkpoint=</span><span class="si">{</span><span class="n">teacher_checkpoint</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">load_sac</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">actor</span><span class="p">,</span> <span class="s2">&quot;load_sac_teacher_actor_state_dict&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">load_sac</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Selected distillation actor does not support HORA-SAC weights.&quot;</span><span class="p">)</span>
+        <span class="n">load_sac</span><span class="p">(</span><span class="n">actor_state</span><span class="p">)</span>
+        <span class="k">return</span>
+
     <span class="n">actor_state_key</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">&quot;ppo&quot;</span><span class="p">:</span> <span class="s2">&quot;actor_state_dict&quot;</span><span class="p">,</span>
         <span class="s2">&quot;appo&quot;</span><span class="p">:</span> <span class="s2">&quot;actor&quot;</span><span class="p">,</span>
@@ -613,7 +833,7 @@
     <span class="k">if</span> <span class="n">actor_state_key</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
             <span class="s2">&quot;Unsupported HORA teacher algorithm family for distillation: &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">teacher_algo_family</span><span class="si">!r}</span><span class="s2">. Expected one of [&#39;ppo&#39;, &#39;appo&#39;].&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">teacher_algo_family</span><span class="si">!r}</span><span class="s2">. Expected one of [&#39;ppo&#39;, &#39;appo&#39;, &#39;sac&#39;].&quot;</span>
         <span class="p">)</span>
     <span class="n">actor_state</span> <span class="o">=</span> <span class="n">checkpoint</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">actor_state_key</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">actor_state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -627,9 +847,9 @@
 
 
 <div class="viewcode-block" id="load_distilled_checkpoint">
-<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.load_distilled_checkpoint.html#unilab.algos.torch.hora.distill.load_distilled_checkpoint">[docs]</a>
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.load_distilled_checkpoint.html#unilab.algos.torch.hora.load_distilled_checkpoint">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">load_distilled_checkpoint</span><span class="p">(</span>
-    <span class="n">actor</span><span class="p">:</span> <span class="n">HoraActorModel</span><span class="p">,</span>
+    <span class="n">actor</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span>
     <span class="n">hist_normalizer</span><span class="p">:</span> <span class="n">EmpiricalNormalization</span><span class="p">,</span>
     <span class="n">checkpoint_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
@@ -649,12 +869,12 @@
 
 
 <div class="viewcode-block" id="HoraDistillationTrainer">
-<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraDistillationTrainer.html#unilab.algos.torch.hora.distill.HoraDistillationTrainer">[docs]</a>
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.html#unilab.algos.torch.hora.HoraDistillationTrainer">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">HoraDistillationTrainer</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Stage-2 HORA latent distillation trainer.&quot;&quot;&quot;</span>
 
 <div class="viewcode-block" id="HoraDistillationTrainer.__init__">
-<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraDistillationTrainer.html#unilab.algos.torch.hora.distill.HoraDistillationTrainer.__init__">[docs]</a>
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.html#unilab.algos.torch.hora.HoraDistillationTrainer.__init__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">env</span><span class="p">,</span>
@@ -807,7 +1027,7 @@
         <span class="k">return</span> <span class="p">((</span><span class="n">current_steps</span> <span class="o">//</span> <span class="n">interval_steps</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">interval_steps</span>
 
 <div class="viewcode-block" id="HoraDistillationTrainer.train">
-<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraDistillationTrainer.html#unilab.algos.torch.hora.distill.HoraDistillationTrainer.train">[docs]</a>
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.html#unilab.algos.torch.hora.HoraDistillationTrainer.train">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">train</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">obs_td</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
         <span class="n">max_agent_steps</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cfg</span><span class="o">.</span><span class="n">algo</span><span class="o">.</span><span class="n">max_agent_steps</span><span class="p">)</span>
@@ -905,7 +1125,7 @@
 
 
 <div class="viewcode-block" id="HoraDistillationTrainer.save">
-<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.distill.HoraDistillationTrainer.html#unilab.algos.torch.hora.distill.HoraDistillationTrainer.save">[docs]</a>
+<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.html#unilab.algos.torch.hora.HoraDistillationTrainer.save">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">(</span>
             <span class="p">{</span>

@@ -340,6 +340,8 @@
 <li class="toctree-l2"><a class="reference internal" href="../4-contributing.html">Contributing To UniLab</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../5-contributing_workflow.html">Collaboration Workflow</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../6-agent_quick_reference.html">Agent Quick Reference</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../7-motion_assets.html">Motion Asset Migration (Hugging Face)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../8-motrix_contact_sensor.html">Motrix Contact Sensor Notes</a></li>
 </ul>
 </li><li class="toctree-l1 has-children"><a class="reference internal" href="../../5-reference/0-index.html">Reference</a><input aria-label="Toggle navigation of Reference" class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../5-reference/1-api/0-index.html">API Reference</a></li>
@@ -428,7 +430,21 @@
 native model during initialization.</p>
 <section id="contract">
 <h2>Contract<a class="headerlink" href="#contract" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">SceneCfg</span></code> lives in <code class="docutils literal notranslate"><span class="pre">src/unilab/base/scene.py</span></code>. Static scenes use
+<p><code class="docutils literal notranslate"><span class="pre">SceneCfg</span></code> and <code class="docutils literal notranslate"><span class="pre">TerrainSceneCfg</span></code> live in <code class="docutils literal notranslate"><span class="pre">src/unilab/base/scene.py</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">TerrainSceneCfg</span><span class="p">:</span>
+    <span class="n">generator</span><span class="p">:</span> <span class="n">TerrainGeneratorCfg</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">hfield_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;terrain_hfield&quot;</span>
+    <span class="n">geom_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SceneCfg</span><span class="p">:</span>
+    <span class="n">model_file</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">fragment_files</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+    <span class="n">terrain</span><span class="p">:</span> <span class="n">TerrainSceneCfg</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">EnvCfg.scene</span></code> is the single scene source. Static scenes use
 <code class="docutils literal notranslate"><span class="pre">SceneCfg(model_file=...)</span></code>. Procedural terrain scenes combine a robot model,
 task fragments, and terrain configuration:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">env</span><span class="p">:</span>
@@ -437,13 +453,49 @@ task fragments, and terrain configuration:</p>
 <span class="w">    </span><span class="nt">fragment_files</span><span class="p">:</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">src/unilab/assets/robots/go2/locomotion_task.xml</span>
 <span class="w">    </span><span class="nt">terrain</span><span class="p">:</span>
-<span class="w">      </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hfield</span>
 <span class="w">      </span><span class="nt">hfield_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">terrain_hfield</span>
 <span class="w">      </span><span class="nt">geom_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">floor</span>
 </pre></div>
 </div>
 <p>The env hands the scene to <code class="docutils literal notranslate"><span class="pre">create_backend(...)</span></code>; it does not call MuJoCo or
 Motrix materializers directly.</p>
+</section>
+<section id="backend-dispatch">
+<h2>Backend Dispatch<a class="headerlink" href="#backend-dispatch" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">create_backend(...)</span></code> in <code class="docutils literal notranslate"><span class="pre">src/unilab/base/backend/__init__.py</span></code> routes on backend
+type and applies these rules to the <code class="docutils literal notranslate"><span class="pre">SceneCfg</span></code>:</p>
+<ol class="arabic simple">
+<li><p>Static <code class="docutils literal notranslate"><span class="pre">SceneCfg(model_file=...)</span></code> with no terrain: load the full static scene
+(merging <code class="docutils literal notranslate"><span class="pre">fragment_files</span></code> on a cold path when present).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SceneCfg(model_file=...,</span> <span class="pre">terrain=...)</span></code>: treat <code class="docutils literal notranslate"><span class="pre">model_file</span></code> as the robot
+model, assemble the materialized scene on a cold path, and merge
+<code class="docutils literal notranslate"><span class="pre">fragment_files</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">scene</span> <span class="pre">is</span> <span class="pre">None</span></code>: fail loudly (<code class="docutils literal notranslate"><span class="pre">create_backend</span></code> raises <code class="docutils literal notranslate"><span class="pre">ValueError</span></code>).</p></li>
+<li><p>A backend that does not support a <code class="docutils literal notranslate"><span class="pre">SceneCfg</span></code> feature must raise an explicit
+error. For example, Motrix rough-terrain must fail loudly rather than
+silently fall back to a flat scene.</p></li>
+</ol>
+</section>
+<section id="mujoco-materializer-pipeline">
+<h2>MuJoCo Materializer Pipeline<a class="headerlink" href="#mujoco-materializer-pipeline" title="Link to this heading">¶</a></h2>
+<p>For procedural terrain, the MuJoCo backend calls
+<code class="docutils literal notranslate"><span class="pre">materialize_mujoco_hfield_attached_scene(...)</span></code> in
+<code class="docutils literal notranslate"><span class="pre">src/unilab/base/backend/mujoco/xml.py</span></code>. The cold-path steps are:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">TerrainGenerator(terrain_cfg).write_png(...)</span></code> generates a backend-agnostic
+heightfield PNG.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MjSpec.add_hfield(...)</span></code> plus <code class="docutils literal notranslate"><span class="pre">worldbody.add_geom(type=mjGEOM_HFIELD,</span> <span class="pre">...)</span></code>
+place the terrain.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MjSpec.from_file(robot_path)</span></code> loads the robot spec and <code class="docutils literal notranslate"><span class="pre">spec.attach(...)</span></code>
+attaches it under a frame.</p></li>
+<li><p>Each <code class="docutils literal notranslate"><span class="pre">fragment_files</span></code> entry (task sensors, keyframes) is merged into the
+scene XML.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MjSpec.from_string(...).compile()</span></code> returns a compiled <code class="docutils literal notranslate"><span class="pre">MjModel</span></code> together
+with <code class="docutils literal notranslate"><span class="pre">terrain_origins</span></code> (and an optional surface sampler).</p></li>
+</ol>
+<p>The procedural path returns a precompiled <code class="docutils literal notranslate"><span class="pre">MjModel</span></code>; it does not expose a final
+<code class="docutils literal notranslate"><span class="pre">scene.xml</span></code> path as a contract. Scene context such as <code class="docutils literal notranslate"><span class="pre">terrain_origins</span></code> is
+handed back to the env through backend attributes.</p>
 </section>
 <section id="layer-ownership">
 <h2>Layer Ownership<a class="headerlink" href="#layer-ownership" title="Link to this heading">¶</a></h2>
@@ -563,6 +615,8 @@ Motrix materializers directly.</p>
             <ul>
 <li><a class="reference internal" href="#">Scene Composition</a><ul>
 <li><a class="reference internal" href="#contract">Contract</a></li>
+<li><a class="reference internal" href="#backend-dispatch">Backend Dispatch</a></li>
+<li><a class="reference internal" href="#mujoco-materializer-pipeline">MuJoCo Materializer Pipeline</a></li>
 <li><a class="reference internal" href="#layer-ownership">Layer Ownership</a></li>
 <li><a class="reference internal" href="#cold-path-boundary">Cold-Path Boundary</a></li>
 <li><a class="reference internal" href="#go2-rough-terrain-evidence">Go2 Rough Terrain Evidence</a></li>

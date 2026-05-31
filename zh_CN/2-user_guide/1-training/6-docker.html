@@ -340,6 +340,8 @@
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/4-contributing.html">为 UniLab 做贡献</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/5-contributing_workflow.html">协作工作流</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/6-agent_quick_reference.html">Agent 速查</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/7-motion_assets.html">Motion 资产迁移指南（Hugging Face）</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/8-motrix_contact_sensor.html">Motrix Contact Sensor 适配笔记</a></li>
 </ul>
 </li><li class="toctree-l1 has-children"><a class="reference internal" href="../../5-reference/0-index.html">参考</a><input aria-label="Toggle navigation of 参考" class="toctree-checkbox" id="toctree-checkbox-40" name="toctree-checkbox-40" role="switch" type="checkbox"/><label for="toctree-checkbox-40"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../5-reference/1-api/0-index.html">API 参考</a></li>
@@ -425,10 +427,20 @@
 <h1>Docker<a class="headerlink" href="#docker" title="Link to this heading">¶</a></h1>
 <p>语言: 简体中文</p>
 <p>仓库内置的 <code class="docutils literal notranslate"><span class="pre">Dockerfile</span></code> 是 Linux NVIDIA/CUDA 容器路径。它会安装 UniLab 运行时依
-赖、Motrix extra 以及 dev/test 工具。</p>
+赖、Motrix extra 以及 dev/test 工具。macOS Docker 目前不作为主要路径，ROCm 则使用
+另外的镜像（见下文），而不是这个 CUDA <code class="docutils literal notranslate"><span class="pre">Dockerfile</span></code>。</p>
 <section id="id1">
 <h2>构建<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>unilab:latest<span class="w"> </span>.
+</pre></div>
+</div>
+<p>快速检查镜像入口（默认入口是 <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">run</span> <span class="pre">train</span> <span class="pre">--help</span></code>）：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>unilab:latest
+</pre></div>
+</div>
+<p>检查容器内 CUDA 是否可见：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--gpus<span class="w"> </span>all<span class="w"> </span>unilab:latest<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import torch; print(torch.cuda.is_available())&quot;</span>
 </pre></div>
 </div>
 </section>
@@ -441,13 +453,35 @@
 <span class="w">  </span>unilab:latest<span class="w"> </span>bash
 </pre></div>
 </div>
+<p>把 <code class="docutils literal notranslate"><span class="pre">.venv</span></code> 放进 named volume 的作用是避免容器内的虚拟环境覆盖宿主机仓库目录，切回
+本地 <code class="docutils literal notranslate"><span class="pre">uv</span></code> 工作流时也更干净。</p>
 <p>在容器内部，使用与宿主机工作流相同的命令：</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_joystick_flat<span class="w"> </span>--sim<span class="w"> </span>mujoco
 uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>mujoco
 </pre></div>
 </div>
+<p>容器内的评估和回放方式相同；<code class="docutils literal notranslate"><span class="pre">--load-run</span> <span class="pre">-1</span></code> 会选择最新的 run：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_joystick_flat<span class="w"> </span>--sim<span class="w"> </span>mujoco<span class="w"> </span>--load-run<span class="w"> </span>-1
+</pre></div>
+</div>
+<p>由于 checkout 是 bind-mount 挂载进来的，训练产物仍会写回挂载后的仓库 <code class="docutils literal notranslate"><span class="pre">logs/</span></code>
+目录。</p>
+</section>
+<section id="rocm">
+<h2>ROCm 容器<a class="headerlink" href="#rocm" title="Link to this heading">¶</a></h2>
 <p>ROCm 容器应使用 AMD 的 ROCm PyTorch 镜像以及 <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">sync-rocm</span></code> 工作流，而不是仓库
-的 CUDA <code class="docutils literal notranslate"><span class="pre">Dockerfile</span></code>。</p>
+的 CUDA <code class="docutils literal notranslate"><span class="pre">Dockerfile</span></code>。进入容器后先运行 <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">sync-rocm</span></code> 激活 ROCm profile，再用
+<code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">run</span> <span class="pre">...</span></code> 训练。容器通常需要挂载 AMD 设备 <code class="docutils literal notranslate"><span class="pre">/dev/kfd</span></code> 和 <code class="docutils literal notranslate"><span class="pre">/dev/dri</span></code>，并加上
+<code class="docutils literal notranslate"><span class="pre">--group-add=video</span></code> 和 <code class="docutils literal notranslate"><span class="pre">--ipc=host</span></code>。</p>
+<p>使用 AMD ROCm PyTorch 镜像的最小示例：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--network<span class="o">=</span>host<span class="w"> </span>--ipc<span class="o">=</span>host<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--device<span class="o">=</span>/dev/kfd<span class="w"> </span>--device<span class="o">=</span>/dev/dri<span class="w"> </span>--group-add<span class="o">=</span>video<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span><span class="s2">:/workspace/UniLab&quot;</span><span class="w"> </span>-w<span class="w"> </span>/workspace/UniLab<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>rocm/pytorch:latest<span class="w"> </span>bash
+</pre></div>
+</div>
+<p>请使用与本机 ROCm 版本匹配的 ROCm PyTorch 镜像 tag；可用 tag 参见 AMD 的 ROCm
+PyTorch 镜像。</p>
 </section>
 <section id="navigation">
 <h2>Navigation<a class="headerlink" href="#navigation" title="Link to this heading">¶</a></h2>
@@ -518,6 +552,7 @@ uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </spa
 <li><a class="reference internal" href="#">Docker</a><ul>
 <li><a class="reference internal" href="#id1">构建</a></li>
 <li><a class="reference internal" href="#checkout">挂载本地 checkout 运行</a></li>
+<li><a class="reference internal" href="#rocm">ROCm 容器</a></li>
 <li><a class="reference internal" href="#navigation">Navigation</a></li>
 </ul>
 </li>

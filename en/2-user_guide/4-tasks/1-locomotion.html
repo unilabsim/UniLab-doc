@@ -340,6 +340,8 @@
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/4-contributing.html">Contributing To UniLab</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/5-contributing_workflow.html">Collaboration Workflow</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/6-agent_quick_reference.html">Agent Quick Reference</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/7-motion_assets.html">Motion Asset Migration (Hugging Face)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/8-motrix_contact_sensor.html">Motrix Contact Sensor Notes</a></li>
 </ul>
 </li><li class="toctree-l1 has-children"><a class="reference internal" href="../../5-reference/0-index.html">Reference</a><input aria-label="Toggle navigation of Reference" class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../5-reference/1-api/0-index.html">API Reference</a></li>
@@ -450,6 +452,90 @@ uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </spa
 <p>Check the support matrix for evidence grade by entrypoint, task owner, and
 backend: <a class="reference internal" href="../../5-reference/5-support_matrix.html"><span class="doc">Support Matrix</span></a>.</p>
 </section>
+<section id="go2-footstand">
+<h2>Go2 FootStand<a class="headerlink" href="#go2-footstand" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">go2_footstand</span></code> is the Go2 front-feet-stand task. It is <strong>MuJoCo-only</strong>.</p>
+<ul class="simple">
+<li><p>PPO config: <code class="docutils literal notranslate"><span class="pre">conf/ppo/task/go2_footstand/mujoco.yaml</span></code></p></li>
+<li><p>Registered env: <code class="docutils literal notranslate"><span class="pre">Go2FootStand</span></code> (registered for <code class="docutils literal notranslate"><span class="pre">sim_backend=&quot;mujoco&quot;</span></code>)</p></li>
+<li><p>Implementation: <code class="docutils literal notranslate"><span class="pre">src/unilab/envs/locomotion/go2/footstand.py</span></code>
+(extends the Go2 handstand task)</p></li>
+<li><p>Go2 model XML: <code class="docutils literal notranslate"><span class="pre">src/unilab/assets/robots/go2/go2.xml</span></code></p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_footstand<span class="w"> </span>--sim<span class="w"> </span>mujoco<span class="w"> </span>training.no_play<span class="o">=</span><span class="nb">true</span>
+uv<span class="w"> </span>run<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_footstand<span class="w"> </span>--sim<span class="w"> </span>mujoco<span class="w"> </span>--load-run<span class="w"> </span>-1
+</pre></div>
+</div>
+<section id="teacher-student-pipeline">
+<h3>Teacher-Student Pipeline<a class="headerlink" href="#teacher-student-pipeline" title="Link to this heading">¶</a></h3>
+<p>The full FootStand recipe is a three-stage teacher-student pipeline; the shipped
+<code class="docutils literal notranslate"><span class="pre">go2_footstand</span></code> config corresponds to stage 1 (the teacher PPO entry point):</p>
+<ol class="arabic simple">
+<li><p><strong>Teacher PPO (privileged obs).</strong> The teacher uses privileged observations
+(e.g. base linear velocity) that are available in simulation but should not be
+relied on directly during real-robot deployment. A power curriculum first lets
+the policy learn the front-feet stand under a loose power budget (~400 W), then
+gradually tightens it toward ~200 W, so early exploration is not crushed by a
+low power limit and the final policy stays near a deployable energy envelope.</p></li>
+<li><p><strong>Distillation to a deployable student.</strong> The trained teacher is distilled into
+a student policy whose inputs keep only on-robot observations (no privileged
+information). The goal is to reproduce the teacher’s behavior without privileged
+obs.</p></li>
+<li><p><strong>Student RL fine-tune.</strong> The distilled student is fine-tuned with a combined
+objective: a reward term similar to the teacher’s, plus a teacher-regularization
+term that keeps the student from drifting away from the teacher too quickly.
+This preserves the stable motion while letting the student adapt to its own
+observation inputs and deployment constraints.</p></li>
+</ol>
+</section>
+<section id="observation-layout">
+<h3>Observation Layout<a class="headerlink" href="#observation-layout" title="Link to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">Go2FootStand</span></code> policy (actor) observation uses 15 history frames of 45 dims
+each (<code class="docutils literal notranslate"><span class="pre">_FOOTSTAND_FRAME_OBS_DIM</span> <span class="pre">=</span> <span class="pre">45</span></code>):</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>linvel(3) + gyro(3) + gravity(3) + joint_position_delta(12) + joint_velocity(12) + last_action(12)
+</pre></div>
+</div>
+<p>So the policy observation is <code class="docutils literal notranslate"><span class="pre">45</span> <span class="pre">*</span> <span class="pre">15</span> <span class="pre">=</span> <span class="pre">675</span></code>. The value (critic) observation
+appends the current-step privileged tail (<code class="docutils literal notranslate"><span class="pre">_FOOTSTAND_PRIVILEGED_TAIL_DIM</span> <span class="pre">=</span> <span class="pre">49</span></code>)
+after that history:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>gyro(3) + accelerometer(3) + linvel(3) + global_angvel(3) + dof_pos(12) + dof_vel(12) + torques(12) + height(1)
+</pre></div>
+</div>
+<p>The value observation is therefore <code class="docutils literal notranslate"><span class="pre">675</span> <span class="pre">+</span> <span class="pre">49</span> <span class="pre">=</span> <span class="pre">724</span></code>.</p>
+</section>
+<section id="rewards-and-terminations">
+<h3>Rewards And Terminations<a class="headerlink" href="#rewards-and-terminations" title="Link to this heading">¶</a></h3>
+<p>Defaults come from <code class="docutils literal notranslate"><span class="pre">conf/ppo/task/go2_footstand/mujoco.yaml</span></code>. The reward scales
+include stand <code class="docutils literal notranslate"><span class="pre">height</span></code>, <code class="docutils literal notranslate"><span class="pre">orientation</span></code>, <code class="docutils literal notranslate"><span class="pre">rear_feet_contact</span></code>, target front-leg angle
+(<code class="docutils literal notranslate"><span class="pre">tar</span></code>), <code class="docutils literal notranslate"><span class="pre">action_rate</span></code>, <code class="docutils literal notranslate"><span class="pre">dof_pos_limits</span></code>, <code class="docutils literal notranslate"><span class="pre">front_leg_motion</span></code>, <code class="docutils literal notranslate"><span class="pre">rear_leg_symmetry</span></code>,
+<code class="docutils literal notranslate"><span class="pre">knee_clearance</span></code>, <code class="docutils literal notranslate"><span class="pre">upright_stability</span></code>, <code class="docutils literal notranslate"><span class="pre">stay_still</span></code>, <code class="docutils literal notranslate"><span class="pre">pose</span></code>, plus <code class="docutils literal notranslate"><span class="pre">energy</span></code> and
+<code class="docutils literal notranslate"><span class="pre">dof_acc</span></code> penalties; <code class="docutils literal notranslate"><span class="pre">termination</span></code> and <code class="docutils literal notranslate"><span class="pre">penalty_contact</span></code> drive the termination /
+penalty paths (front-leg / front-body contact, low height, bad orientation, and a
+high-energy cutoff via <code class="docutils literal notranslate"><span class="pre">energy_termination_threshold</span></code>).</p>
+</section>
+<section id="tuning-keys">
+<h3>Tuning Keys<a class="headerlink" href="#tuning-keys" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">env.obs_history_len</span></code>: policy observation history length; config default is <code class="docutils literal notranslate"><span class="pre">15</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">env.energy_termination_threshold</span></code>: high-energy termination cutoff; config
+default is <code class="docutils literal notranslate"><span class="pre">200.0</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">env.domain_rand</span></code>: floor friction, link mass, torso CoM, dof armature, and reset
+joint qpos randomization.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">reward.scales.height</span></code> / <code class="docutils literal notranslate"><span class="pre">orientation</span></code> / <code class="docutils literal notranslate"><span class="pre">rear_feet_contact</span></code>: stand pose and
+rear-foot contact weights.</p></li>
+</ul>
+</section>
+<section id="near-risk-validation">
+<h3>Near-Risk Validation<a class="headerlink" href="#near-risk-validation" title="Link to this heading">¶</a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/envs/locomotion/test_go2_footstand.py<span class="w"> </span>tests/config/test_locomotion_params.py<span class="w"> </span>-q
+</pre></div>
+</div>
+<p>If the Go2 XML changed, at minimum confirm MuJoCo can load the model:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import mujoco; m=mujoco.MjModel.from_xml_path(&#39;src/unilab/assets/robots/go2/go2.xml&#39;); print(m.nq, m.nv, m.nu, m.nsensor)&quot;</span>
+</pre></div>
+</div>
+</section>
+</section>
 </section>
 
         </article>
@@ -513,6 +599,14 @@ backend: <a class="reference internal" href="../../5-reference/5-support_matrix.
 <li><a class="reference internal" href="#">Locomotion</a><ul>
 <li><a class="reference internal" href="#families">Families</a></li>
 <li><a class="reference internal" href="#examples">Examples</a></li>
+<li><a class="reference internal" href="#go2-footstand">Go2 FootStand</a><ul>
+<li><a class="reference internal" href="#teacher-student-pipeline">Teacher-Student Pipeline</a></li>
+<li><a class="reference internal" href="#observation-layout">Observation Layout</a></li>
+<li><a class="reference internal" href="#rewards-and-terminations">Rewards And Terminations</a></li>
+<li><a class="reference internal" href="#tuning-keys">Tuning Keys</a></li>
+<li><a class="reference internal" href="#near-risk-validation">Near-Risk Validation</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

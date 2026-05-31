@@ -344,6 +344,8 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/4-contributing.html">Contributing To UniLab</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/5-contributing_workflow.html">Collaboration Workflow</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/6-agent_quick_reference.html">Agent Quick Reference</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/7-motion_assets.html">Motion Asset Migration (Hugging Face)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/8-motrix_contact_sensor.html">Motrix Contact Sensor Notes</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../en/5-reference/0-index.html">Reference</a><input aria-label="Toggle navigation of Reference" class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -482,6 +484,8 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/4-contributing.html">为 UniLab 做贡献</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/5-contributing_workflow.html">协作工作流</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/6-agent_quick_reference.html">Agent 速查</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/7-motion_assets.html">Motion 资产迁移指南（Hugging Face）</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/8-motrix_contact_sensor.html">Motrix Contact Sensor 适配笔记</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../zh_CN/5-reference/0-index.html">参考</a><input aria-label="Toggle navigation of 参考" class="toctree-checkbox" id="toctree-checkbox-40" name="toctree-checkbox-40" role="switch" type="checkbox"/><label for="toctree-checkbox-40"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -529,13 +533,18 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">itertools</span><span class="w"> </span><span class="kn">import</span> <span class="n">chain</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tensordict</span><span class="w"> </span><span class="kn">import</span> <span class="n">TensorDict</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.appo.learner</span><span class="w"> </span><span class="kn">import</span> <span class="n">APPOLearner</span><span class="p">,</span> <span class="n">vtrace_advantages</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.appo.learner</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">APPOLearner</span><span class="p">,</span>
+    <span class="n">_distribution_std</span><span class="p">,</span>
+    <span class="n">_sample_tensor_for_metric</span><span class="p">,</span>
+    <span class="n">vtrace_advantages</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.hora.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">HoraActorModel</span><span class="p">,</span> <span class="n">HoraCriticModel</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_build_hora_obs_td</span><span class="p">(</span>
@@ -575,6 +584,32 @@
 <a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.appo_learner.HoraAPPOLearner.html#unilab.algos.torch.hora.appo_learner.HoraAPPOLearner">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">HoraAPPOLearner</span><span class="p">(</span><span class="n">APPOLearner</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;APPO learner variant for HORA grouped observations.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_minibatch_policy_value</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">obs_mini</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">critic_obs_mini</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+        <span class="n">priv_info</span> <span class="o">=</span> <span class="n">_derive_priv_info_from_critic</span><span class="p">(</span>
+            <span class="n">obs_mini</span><span class="p">,</span>
+            <span class="n">critic_obs_mini</span><span class="p">,</span>
+            <span class="n">context</span><span class="o">=</span><span class="s2">&quot;minibatch update&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">actor</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">HoraActorModel</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">actor</span><span class="p">)</span>
+        <span class="n">critic</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">HoraCriticModel</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">critic</span><span class="p">)</span>
+        <span class="n">shared_actor</span> <span class="o">=</span> <span class="n">actor</span><span class="o">.</span><span class="n">shared</span>
+        <span class="n">mean</span> <span class="o">=</span> <span class="n">shared_actor</span><span class="o">.</span><span class="n">policy_mean_from_tensors</span><span class="p">(</span>
+            <span class="n">obs_mini</span><span class="p">,</span>
+            <span class="n">priv_info</span><span class="p">,</span>
+            <span class="n">prefer_student</span><span class="o">=</span><span class="n">actor</span><span class="o">.</span><span class="n">prefer_student</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">std</span> <span class="o">=</span> <span class="n">_distribution_std</span><span class="p">(</span><span class="n">shared_actor</span><span class="o">.</span><span class="n">distribution</span><span class="p">,</span> <span class="n">mean</span><span class="p">)</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">critic</span><span class="o">.</span><span class="n">shared</span><span class="o">.</span><span class="n">value_from_tensors</span><span class="p">(</span>
+            <span class="n">obs_mini</span><span class="p">,</span>
+            <span class="n">priv_info</span><span class="p">,</span>
+            <span class="n">prefer_student</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">mean</span><span class="p">,</span> <span class="n">std</span><span class="p">,</span> <span class="n">value</span>
 
 <div class="viewcode-block" id="HoraAPPOLearner.process_batch">
 <a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.appo_learner.HoraAPPOLearner.html#unilab.algos.torch.hora.appo_learner.HoraAPPOLearner.process_batch">[docs]</a>
@@ -618,12 +653,12 @@
         <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">actor</span><span class="p">,</span> <span class="s2">&quot;update_normalization&quot;</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">actor</span><span class="o">.</span><span class="n">update_normalization</span><span class="p">(</span><span class="n">obs_td</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">actor</span><span class="o">.</span><span class="n">update_normalization</span><span class="p">(</span><span class="n">last_obs_td</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sync_target_actor_buffers</span><span class="p">()</span>
         <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">critic</span><span class="p">,</span> <span class="s2">&quot;update_normalization&quot;</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">critic</span><span class="o">.</span><span class="n">update_normalization</span><span class="p">(</span><span class="n">critic_obs_td</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">critic</span><span class="o">.</span><span class="n">update_normalization</span><span class="p">(</span><span class="n">critic_last_obs_td</span><span class="p">)</span>
 
         <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;_critic_obs_flat&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">critic_obs_flat</span>
-        <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;_critic_obs_td&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">critic_obs_td</span>
 
         <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">inference_mode</span><span class="p">():</span>
             <span class="n">values_flat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">critic</span><span class="p">(</span><span class="n">critic_obs_td</span><span class="p">)</span>
@@ -637,6 +672,15 @@
             <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;_old_mu&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_actor</span><span class="o">.</span><span class="n">output_mean</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
             <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;_old_sigma&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_actor</span><span class="o">.</span><span class="n">output_std</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
         <span class="n">target_log_probs</span> <span class="o">=</span> <span class="n">target_log_probs_flat</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">N</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">inference_mode</span><span class="p">():</span>
+            <span class="n">rhos</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">target_log_probs</span> <span class="o">-</span> <span class="n">behavior_log_probs</span><span class="p">)</span>
+            <span class="n">rho_sample</span> <span class="o">=</span> <span class="n">_sample_tensor_for_metric</span><span class="p">(</span><span class="n">rhos</span><span class="p">)</span>
+            <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;_appo_process_metrics&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;vtrace/rho_clip_fraction&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span>
+                    <span class="p">(</span><span class="n">rhos</span> <span class="o">&gt;</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vtrace_clip_rho</span><span class="p">))</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+                <span class="p">),</span>
+                <span class="s2">&quot;vtrace/rho_raw_p99&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">rho_sample</span><span class="p">,</span> <span class="mf">0.99</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()),</span>
+            <span class="p">}</span>
 
         <span class="n">vs</span><span class="p">,</span> <span class="n">advantages</span> <span class="o">=</span> <span class="n">vtrace_advantages</span><span class="p">(</span>
             <span class="n">behavior_log_probs</span><span class="o">=</span><span class="n">behavior_log_probs</span><span class="p">,</span>
@@ -654,154 +698,8 @@
         <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;advantages&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">advantages</span>
         <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;returns&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">vs</span>
         <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;target_log_probs&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">target_log_probs</span>
-        <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;_obs_td&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">obs_td</span>
 
         <span class="k">return</span> <span class="n">batch_dict</span></div>
-
-
-<div class="viewcode-block" id="HoraAPPOLearner.update">
-<a class="viewcode-back" href="../../../../../api_reference/algos/_autosummary/unilab.algos.torch.hora.appo_learner.HoraAPPOLearner.html#unilab.algos.torch.hora.appo_learner.HoraAPPOLearner.update">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">batch_dict</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Perform APPO update for grouped HORA observations.&quot;&quot;&quot;</span>
-        <span class="n">obs_flat</span> <span class="o">=</span> <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;observations&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">priv_info</span> <span class="o">=</span> <span class="n">_derive_priv_info_from_critic</span><span class="p">(</span>
-            <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;observations&quot;</span><span class="p">],</span>
-            <span class="n">batch_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;critic&quot;</span><span class="p">),</span>
-            <span class="n">context</span><span class="o">=</span><span class="s2">&quot;update batch&quot;</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="n">priv_info_flat</span> <span class="o">=</span> <span class="n">priv_info</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">actions_flat</span> <span class="o">=</span> <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;actions&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">returns_flat</span> <span class="o">=</span> <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;returns&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">advantages_flat</span> <span class="o">=</span> <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;advantages&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">behavior_log_probs_flat</span> <span class="o">=</span> <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;actions_log_prob&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">old_values_flat</span> <span class="o">=</span> <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;values&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">target_log_probs_flat</span> <span class="o">=</span> <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;target_log_probs&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">advantages_flat</span> <span class="o">=</span> <span class="p">(</span><span class="n">advantages_flat</span> <span class="o">-</span> <span class="n">advantages_flat</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span> <span class="o">/</span> <span class="p">(</span>
-            <span class="n">advantages_flat</span><span class="o">.</span><span class="n">std</span><span class="p">()</span> <span class="o">+</span> <span class="mf">1e-8</span>
-        <span class="p">)</span>
-
-        <span class="n">obs_td</span> <span class="o">=</span> <span class="n">batch_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;_obs_td&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">obs_td</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">obs_td</span> <span class="o">=</span> <span class="n">_build_hora_obs_td</span><span class="p">(</span><span class="n">obs_flat</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">priv_info</span><span class="o">=</span><span class="n">priv_info_flat</span><span class="p">)</span>
-
-        <span class="n">critic_obs_td</span> <span class="o">=</span> <span class="n">batch_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;_critic_obs_td&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">critic_obs_td</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">critic_obs_td</span> <span class="o">=</span> <span class="n">_build_hora_obs_td</span><span class="p">(</span>
-                <span class="n">obs_flat</span><span class="p">,</span>
-                <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
-                <span class="n">priv_info</span><span class="o">=</span><span class="n">priv_info_flat</span><span class="p">,</span>
-            <span class="p">)</span>
-
-        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">inference_mode</span><span class="p">():</span>
-            <span class="n">old_mu_flat</span> <span class="o">=</span> <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;_old_mu&quot;</span><span class="p">]</span>
-            <span class="n">old_sigma_flat</span> <span class="o">=</span> <span class="n">batch_dict</span><span class="p">[</span><span class="s2">&quot;_old_sigma&quot;</span><span class="p">]</span>
-
-        <span class="n">batch_size</span> <span class="o">=</span> <span class="n">obs_flat</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="n">mini_batch_size</span> <span class="o">=</span> <span class="n">batch_size</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_mini_batches</span>
-
-        <span class="n">mean_value_loss</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="n">mean_surrogate_loss</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="n">mean_entropy</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="n">mean_kl</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="n">num_updates</span> <span class="o">=</span> <span class="mi">0</span>
-
-        <span class="k">for</span> <span class="n">_epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_learning_epochs</span><span class="p">):</span>
-            <span class="n">indices</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randperm</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-
-            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_mini_batches</span><span class="p">):</span>
-                <span class="n">start</span> <span class="o">=</span> <span class="n">i</span> <span class="o">*</span> <span class="n">mini_batch_size</span>
-                <span class="n">end</span> <span class="o">=</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">mini_batch_size</span>
-                <span class="n">batch_idx</span> <span class="o">=</span> <span class="n">indices</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
-
-                <span class="n">obs_mini_td</span> <span class="o">=</span> <span class="n">obs_td</span><span class="p">[</span><span class="n">batch_idx</span><span class="p">]</span>
-                <span class="n">critic_obs_mini_td</span> <span class="o">=</span> <span class="n">critic_obs_td</span><span class="p">[</span><span class="n">batch_idx</span><span class="p">]</span>
-                <span class="n">actions_mini</span> <span class="o">=</span> <span class="n">actions_flat</span><span class="p">[</span><span class="n">batch_idx</span><span class="p">]</span>
-                <span class="n">target_values_mini</span> <span class="o">=</span> <span class="n">returns_flat</span><span class="p">[</span><span class="n">batch_idx</span><span class="p">]</span>
-                <span class="n">advantages_mini</span> <span class="o">=</span> <span class="n">advantages_flat</span><span class="p">[</span><span class="n">batch_idx</span><span class="p">]</span>
-                <span class="n">behavior_logp_mini</span> <span class="o">=</span> <span class="n">behavior_log_probs_flat</span><span class="p">[</span><span class="n">batch_idx</span><span class="p">]</span>
-                <span class="n">old_values_mini</span> <span class="o">=</span> <span class="n">old_values_flat</span><span class="p">[</span><span class="n">batch_idx</span><span class="p">]</span>
-                <span class="n">target_logp_mini</span> <span class="o">=</span> <span class="n">target_log_probs_flat</span><span class="p">[</span><span class="n">batch_idx</span><span class="p">]</span>
-                <span class="n">old_mu_mini</span> <span class="o">=</span> <span class="n">old_mu_flat</span><span class="p">[</span><span class="n">batch_idx</span><span class="p">]</span>
-                <span class="n">old_sigma_mini</span> <span class="o">=</span> <span class="n">old_sigma_flat</span><span class="p">[</span><span class="n">batch_idx</span><span class="p">]</span>
-
-                <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">actor</span><span class="p">(</span><span class="n">obs_mini_td</span><span class="p">,</span> <span class="n">stochastic_output</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-                <span class="n">current_log_prob</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">actor</span><span class="o">.</span><span class="n">get_output_log_prob</span><span class="p">(</span><span class="n">actions_mini</span><span class="p">)</span>
-                <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">critic</span><span class="p">(</span><span class="n">critic_obs_mini_td</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-                <span class="n">entropy</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">actor</span><span class="o">.</span><span class="n">output_entropy</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
-
-                <span class="n">mu</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">actor</span><span class="o">.</span><span class="n">output_mean</span>
-                <span class="n">sigma</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">actor</span><span class="o">.</span><span class="n">output_std</span>
-
-                <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-                    <span class="n">clipped_rho</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span>
-                        <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">behavior_logp_mini</span> <span class="o">-</span> <span class="n">target_logp_mini</span><span class="p">),</span> <span class="nb">max</span><span class="o">=</span><span class="mf">1.0</span>
-                    <span class="p">)</span>
-                <span class="n">ratio</span> <span class="o">=</span> <span class="n">clipped_rho</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">current_log_prob</span> <span class="o">-</span> <span class="n">behavior_logp_mini</span><span class="p">)</span>
-
-                <span class="n">surrogate</span> <span class="o">=</span> <span class="o">-</span><span class="n">advantages_mini</span> <span class="o">*</span> <span class="n">ratio</span>
-                <span class="n">surrogate_clipped</span> <span class="o">=</span> <span class="o">-</span><span class="n">advantages_mini</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span>
-                    <span class="n">ratio</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip_param</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip_param</span>
-                <span class="p">)</span>
-                <span class="n">surrogate_loss</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">surrogate</span><span class="p">,</span> <span class="n">surrogate_clipped</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
-
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">desired_kl</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">schedule</span> <span class="o">==</span> <span class="s2">&quot;adaptive&quot;</span><span class="p">:</span>
-                    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">inference_mode</span><span class="p">():</span>
-                        <span class="n">kl</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
-                            <span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">sigma</span> <span class="o">/</span> <span class="n">old_sigma_mini</span> <span class="o">+</span> <span class="mf">1e-5</span><span class="p">)</span>
-                            <span class="o">+</span> <span class="p">(</span><span class="n">old_sigma_mini</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="n">old_mu_mini</span> <span class="o">-</span> <span class="n">mu</span><span class="p">)</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span>
-                            <span class="o">/</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">sigma</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span>
-                            <span class="o">-</span> <span class="mf">0.5</span><span class="p">,</span>
-                            <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
-                        <span class="p">)</span>
-                        <span class="n">kl_mean</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">kl</span><span class="p">)</span>
-
-                        <span class="k">if</span> <span class="n">kl_mean</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">desired_kl</span> <span class="o">*</span> <span class="mf">2.0</span><span class="p">:</span>
-                            <span class="bp">self</span><span class="o">.</span><span class="n">learning_rate</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">learning_rate</span> <span class="o">/</span> <span class="mf">1.5</span><span class="p">)</span>
-                        <span class="k">elif</span> <span class="n">kl_mean</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">desired_kl</span> <span class="o">/</span> <span class="mf">2.0</span> <span class="ow">and</span> <span class="n">kl_mean</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
-                            <span class="bp">self</span><span class="o">.</span><span class="n">learning_rate</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1e-2</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">learning_rate</span> <span class="o">*</span> <span class="mf">1.5</span><span class="p">)</span>
-
-                        <span class="k">for</span> <span class="n">param_group</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span><span class="o">.</span><span class="n">param_groups</span><span class="p">:</span>
-                            <span class="n">param_group</span><span class="p">[</span><span class="s2">&quot;lr&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">learning_rate</span>
-
-                        <span class="n">mean_kl</span> <span class="o">+=</span> <span class="n">kl_mean</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_clipped_value_loss</span><span class="p">:</span>
-                    <span class="n">value_clipped</span> <span class="o">=</span> <span class="n">old_values_mini</span> <span class="o">+</span> <span class="p">(</span><span class="n">value</span> <span class="o">-</span> <span class="n">old_values_mini</span><span class="p">)</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span>
-                        <span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">clip_param</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">clip_param</span>
-                    <span class="p">)</span>
-                    <span class="n">value_losses</span> <span class="o">=</span> <span class="p">(</span><span class="n">value</span> <span class="o">-</span> <span class="n">target_values_mini</span><span class="p">)</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
-                    <span class="n">value_losses_clipped</span> <span class="o">=</span> <span class="p">(</span><span class="n">value_clipped</span> <span class="o">-</span> <span class="n">target_values_mini</span><span class="p">)</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
-                    <span class="n">value_loss</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">value_losses</span><span class="p">,</span> <span class="n">value_losses_clipped</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="n">value_loss</span> <span class="o">=</span> <span class="p">(</span><span class="n">value</span> <span class="o">-</span> <span class="n">target_values_mini</span><span class="p">)</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
-
-                <span class="n">loss</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="n">surrogate_loss</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">value_loss_coef</span> <span class="o">*</span> <span class="n">value_loss</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">entropy_coef</span> <span class="o">*</span> <span class="n">entropy</span>
-                <span class="p">)</span>
-
-                <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-                <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-                <span class="n">nn</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">clip_grad_norm_</span><span class="p">(</span>
-                    <span class="n">chain</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">actor</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">critic</span><span class="o">.</span><span class="n">parameters</span><span class="p">()),</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_grad_norm</span>
-                <span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
-
-                <span class="n">mean_value_loss</span> <span class="o">+=</span> <span class="n">value_loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-                <span class="n">mean_surrogate_loss</span> <span class="o">+=</span> <span class="n">surrogate_loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-                <span class="n">mean_entropy</span> <span class="o">+=</span> <span class="n">entropy</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-                <span class="n">num_updates</span> <span class="o">+=</span> <span class="mi">1</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">_update_counter</span> <span class="o">+=</span> <span class="mi">1</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_update_counter</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_update_freq</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">update_target_network</span><span class="p">()</span>
-
-        <span class="n">num_updates</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">num_updates</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="k">return</span> <span class="p">{</span>
-            <span class="s2">&quot;surrogate_loss&quot;</span><span class="p">:</span> <span class="n">mean_surrogate_loss</span> <span class="o">/</span> <span class="n">num_updates</span><span class="p">,</span>
-            <span class="s2">&quot;value_loss&quot;</span><span class="p">:</span> <span class="n">mean_value_loss</span> <span class="o">/</span> <span class="n">num_updates</span><span class="p">,</span>
-            <span class="s2">&quot;entropy&quot;</span><span class="p">:</span> <span class="n">mean_entropy</span> <span class="o">/</span> <span class="n">num_updates</span><span class="p">,</span>
-            <span class="s2">&quot;kl&quot;</span><span class="p">:</span> <span class="n">mean_kl</span> <span class="o">/</span> <span class="n">num_updates</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">schedule</span> <span class="o">==</span> <span class="s2">&quot;adaptive&quot;</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span>
-        <span class="p">}</span></div>
 </div>
 
 </pre></div>

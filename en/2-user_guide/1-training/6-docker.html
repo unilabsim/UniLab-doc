@@ -340,6 +340,8 @@
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/4-contributing.html">Contributing To UniLab</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/5-contributing_workflow.html">Collaboration Workflow</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/6-agent_quick_reference.html">Agent Quick Reference</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/7-motion_assets.html">Motion Asset Migration (Hugging Face)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/8-motrix_contact_sensor.html">Motrix Contact Sensor Notes</a></li>
 </ul>
 </li><li class="toctree-l1 has-children"><a class="reference internal" href="../../5-reference/0-index.html">Reference</a><input aria-label="Toggle navigation of Reference" class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../5-reference/1-api/0-index.html">API Reference</a></li>
@@ -424,10 +426,21 @@
 <section class="tex2jax_ignore mathjax_ignore" id="docker">
 <h1>Docker<a class="headerlink" href="#docker" title="Link to this heading">¶</a></h1>
 <p>The checked-in <code class="docutils literal notranslate"><span class="pre">Dockerfile</span></code> is the Linux NVIDIA/CUDA container path. It installs
-UniLab runtime dependencies, the Motrix extra, and dev/test tooling.</p>
+UniLab runtime dependencies, the Motrix extra, and dev/test tooling. macOS Docker
+is not a primary path, and ROCm uses a separate image (see below) rather than
+this CUDA <code class="docutils literal notranslate"><span class="pre">Dockerfile</span></code>.</p>
 <section id="build">
 <h2>Build<a class="headerlink" href="#build" title="Link to this heading">¶</a></h2>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>unilab:latest<span class="w"> </span>.
+</pre></div>
+</div>
+<p>Quickly check the image entrypoint (it defaults to <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">run</span> <span class="pre">train</span> <span class="pre">--help</span></code>):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>unilab:latest
+</pre></div>
+</div>
+<p>Check CUDA visibility inside the container:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--gpus<span class="w"> </span>all<span class="w"> </span>unilab:latest<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import torch; print(torch.cuda.is_available())&quot;</span>
 </pre></div>
 </div>
 </section>
@@ -440,13 +453,38 @@ UniLab runtime dependencies, the Motrix extra, and dev/test tooling.</p>
 <span class="w">  </span>unilab:latest<span class="w"> </span>bash
 </pre></div>
 </div>
+<p>Putting <code class="docutils literal notranslate"><span class="pre">.venv</span></code> in a named volume keeps the container’s virtual environment from
+overwriting the host repository directory, and leaves the host <code class="docutils literal notranslate"><span class="pre">uv</span></code> workflow
+clean when you switch back to it.</p>
 <p>Inside the container, use the same commands as the host workflow:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_joystick_flat<span class="w"> </span>--sim<span class="w"> </span>mujoco
 uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>mujoco
 </pre></div>
 </div>
-<p>ROCm containers should use AMD’s ROCm PyTorch image and the <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">sync-rocm</span></code>
-workflow instead of the repository’s CUDA <code class="docutils literal notranslate"><span class="pre">Dockerfile</span></code>.</p>
+<p>Evaluation and playback work the same way inside the container; <code class="docutils literal notranslate"><span class="pre">--load-run</span> <span class="pre">-1</span></code>
+picks the latest run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_joystick_flat<span class="w"> </span>--sim<span class="w"> </span>mujoco<span class="w"> </span>--load-run<span class="w"> </span>-1
+</pre></div>
+</div>
+<p>Because the checkout is bind-mounted, training artifacts still write back to the
+mounted repository’s <code class="docutils literal notranslate"><span class="pre">logs/</span></code> directory.</p>
+</section>
+<section id="rocm-containers">
+<h2>ROCm Containers<a class="headerlink" href="#rocm-containers" title="Link to this heading">¶</a></h2>
+<p>ROCm containers use AMD’s ROCm PyTorch image and the <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">sync-rocm</span></code> workflow
+instead of the repository’s CUDA <code class="docutils literal notranslate"><span class="pre">Dockerfile</span></code>. Inside the container, run
+<code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">sync-rocm</span></code> first to activate the ROCm profile, then use <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">run</span> <span class="pre">...</span></code> for
+training. The container typically needs the AMD device mounts <code class="docutils literal notranslate"><span class="pre">/dev/kfd</span></code> and
+<code class="docutils literal notranslate"><span class="pre">/dev/dri</span></code>, plus <code class="docutils literal notranslate"><span class="pre">--group-add=video</span></code> and <code class="docutils literal notranslate"><span class="pre">--ipc=host</span></code>.</p>
+<p>A minimal example using AMD’s ROCm PyTorch image:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--network<span class="o">=</span>host<span class="w"> </span>--ipc<span class="o">=</span>host<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--device<span class="o">=</span>/dev/kfd<span class="w"> </span>--device<span class="o">=</span>/dev/dri<span class="w"> </span>--group-add<span class="o">=</span>video<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span><span class="s2">:/workspace/UniLab&quot;</span><span class="w"> </span>-w<span class="w"> </span>/workspace/UniLab<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>rocm/pytorch:latest<span class="w"> </span>bash
+</pre></div>
+</div>
+<p>Use the ROCm PyTorch image tag that matches your installed ROCm version; see
+AMD’s ROCm PyTorch images for the available tags.</p>
 </section>
 </section>
 
@@ -511,6 +549,7 @@ workflow instead of the repository’s CUDA <code class="docutils literal notran
 <li><a class="reference internal" href="#">Docker</a><ul>
 <li><a class="reference internal" href="#build">Build</a></li>
 <li><a class="reference internal" href="#run-with-a-mounted-checkout">Run With A Mounted Checkout</a></li>
+<li><a class="reference internal" href="#rocm-containers">ROCm Containers</a></li>
 </ul>
 </li>
 </ul>

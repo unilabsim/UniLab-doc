@@ -344,6 +344,8 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/4-contributing.html">Contributing To UniLab</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/5-contributing_workflow.html">Collaboration Workflow</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/6-agent_quick_reference.html">Agent Quick Reference</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/7-motion_assets.html">Motion Asset Migration (Hugging Face)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../en/4-developer_guide/8-motrix_contact_sensor.html">Motrix Contact Sensor Notes</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../en/5-reference/0-index.html">Reference</a><input aria-label="Toggle navigation of Reference" class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -482,6 +484,8 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/4-contributing.html">为 UniLab 做贡献</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/5-contributing_workflow.html">协作工作流</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/6-agent_quick_reference.html">Agent 速查</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/7-motion_assets.html">Motion 资产迁移指南（Hugging Face）</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../zh_CN/4-developer_guide/8-motrix_contact_sensor.html">Motrix Contact Sensor 适配笔记</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../zh_CN/5-reference/0-index.html">参考</a><input aria-label="Toggle navigation of 参考" class="toctree-checkbox" id="toctree-checkbox-40" name="toctree-checkbox-40" role="switch" type="checkbox"/><label for="toctree-checkbox-40"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -540,10 +544,15 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">rsl_rl.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">resolve_callable</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.appo.runner</span><span class="w"> </span><span class="kn">import</span> <span class="n">APPORunner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.appo.runner</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">APPORunner</span><span class="p">,</span>
+    <span class="n">_optimizer_lr_from_state</span><span class="p">,</span>
+    <span class="n">_sync_resume_target_actor</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.appo.staging</span><span class="w"> </span><span class="kn">import</span> <span class="n">RolloutStagingPool</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.hora.appo_learner</span><span class="w"> </span><span class="kn">import</span> <span class="n">HoraAPPOLearner</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.hora.appo_worker</span><span class="w"> </span><span class="kn">import</span> <span class="n">hora_appo_collector_fn</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.hora.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">build_hora_shared_actor_critic</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.algos.torch.hora.rsl_rl_compat</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">convert_config_v3_to_v4</span><span class="p">,</span>
     <span class="n">is_rsl_rl_v4</span><span class="p">,</span>
@@ -554,6 +563,33 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.ipc</span><span class="w"> </span><span class="kn">import</span> <span class="n">RolloutRingBuffer</span><span class="p">,</span> <span class="n">SharedWeightSync</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.logging</span><span class="w"> </span><span class="kn">import</span> <span class="n">OffPolicyLogger</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.training.seed</span><span class="w"> </span><span class="kn">import</span> <span class="n">apply_training_seed</span><span class="p">,</span> <span class="n">derive_worker_seed</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_validate_hora_shared_checkpoint</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Validate that a HORA APPO checkpoint matches the current shared model contract.&quot;&quot;&quot;</span>
+    <span class="n">actor_state</span> <span class="o">=</span> <span class="n">checkpoint</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;actor&quot;</span><span class="p">)</span>
+    <span class="n">critic_state</span> <span class="o">=</span> <span class="n">checkpoint</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;critic&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">actor_state</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">critic_state</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;HORA APPO checkpoint must contain actor and critic state dicts.&quot;</span><span class="p">)</span>
+
+    <span class="n">shared_keys</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+        <span class="n">key</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">actor_state</span> <span class="k">if</span> <span class="n">key</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;shared.&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">critic_state</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">shared_keys</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;HORA APPO checkpoint does not contain shared actor/critic weights.&quot;</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">shared_keys</span><span class="p">:</span>
+        <span class="n">actor_value</span> <span class="o">=</span> <span class="n">actor_state</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+        <span class="n">critic_value</span> <span class="o">=</span> <span class="n">critic_state</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_tensor</span><span class="p">(</span><span class="n">actor_value</span><span class="p">)</span> <span class="ow">and</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_tensor</span><span class="p">(</span><span class="n">critic_value</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">actor_value</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">critic_value</span><span class="o">.</span><span class="n">shape</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">equal</span><span class="p">(</span>
+                <span class="n">actor_value</span><span class="o">.</span><span class="n">cpu</span><span class="p">(),</span> <span class="n">critic_value</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;Invalid HORA APPO checkpoint: shared model state is inconsistent.&quot;</span>
+                <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">actor_value</span> <span class="o">!=</span> <span class="n">critic_value</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Invalid HORA APPO checkpoint: shared model state is inconsistent.&quot;</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="HoraAPPORunner">
@@ -645,13 +681,35 @@
         <span class="n">actor_cfg</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;actor&quot;</span><span class="p">,</span> <span class="p">{}))</span>
         <span class="n">actor_cls</span> <span class="o">=</span> <span class="n">resolve_callable</span><span class="p">(</span><span class="n">actor_cfg</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;class_name&quot;</span><span class="p">))</span>
         <span class="n">actor_cfg</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;num_actions&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="n">actor</span> <span class="o">=</span> <span class="n">actor_cls</span><span class="p">(</span><span class="n">td_example</span><span class="p">,</span> <span class="n">cfg</span><span class="p">[</span><span class="s2">&quot;obs_groups&quot;</span><span class="p">],</span> <span class="s2">&quot;actor&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">action_dim</span><span class="p">,</span> <span class="o">**</span><span class="n">actor_cfg</span><span class="p">)</span>
-
         <span class="n">critic_cfg</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;critic&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;actor&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
         <span class="n">critic_cls</span> <span class="o">=</span> <span class="n">resolve_callable</span><span class="p">(</span><span class="n">critic_cfg</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;class_name&quot;</span><span class="p">,</span> <span class="s2">&quot;rsl_rl.models.MLPModel&quot;</span><span class="p">))</span>
         <span class="n">critic_cfg</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;num_actions&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
         <span class="n">critic_cfg</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;distribution_cfg&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="n">critic</span> <span class="o">=</span> <span class="n">critic_cls</span><span class="p">(</span><span class="n">td_example</span><span class="p">,</span> <span class="n">cfg</span><span class="p">[</span><span class="s2">&quot;obs_groups&quot;</span><span class="p">],</span> <span class="s2">&quot;critic&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="o">**</span><span class="n">critic_cfg</span><span class="p">)</span>
+
+        <span class="n">shared_model</span> <span class="o">=</span> <span class="n">build_hora_shared_actor_critic</span><span class="p">(</span>
+            <span class="n">obs_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">obs_dim</span><span class="p">,</span>
+            <span class="n">action_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">action_dim</span><span class="p">,</span>
+            <span class="n">priv_info_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">priv_info_dim</span><span class="p">,</span>
+            <span class="n">actor_cfg</span><span class="o">=</span><span class="n">actor_cfg</span><span class="p">,</span>
+            <span class="n">critic_cfg</span><span class="o">=</span><span class="n">critic_cfg</span><span class="p">,</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+
+        <span class="n">actor</span> <span class="o">=</span> <span class="n">actor_cls</span><span class="p">(</span>
+            <span class="n">td_example</span><span class="p">,</span>
+            <span class="n">cfg</span><span class="p">[</span><span class="s2">&quot;obs_groups&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;actor&quot;</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">action_dim</span><span class="p">,</span>
+            <span class="n">shared_model</span><span class="o">=</span><span class="n">shared_model</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">actor_cfg</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">critic</span> <span class="o">=</span> <span class="n">critic_cls</span><span class="p">(</span>
+            <span class="n">td_example</span><span class="p">,</span>
+            <span class="n">cfg</span><span class="p">[</span><span class="s2">&quot;obs_groups&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;critic&quot;</span><span class="p">,</span>
+            <span class="mi">1</span><span class="p">,</span>
+            <span class="n">shared_model</span><span class="o">=</span><span class="n">shared_model</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">critic_cfg</span><span class="p">,</span>
+        <span class="p">)</span>
 
         <span class="n">algo_cfg</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;algorithm&quot;</span><span class="p">,</span> <span class="n">cfg</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">HoraAPPOLearner</span><span class="p">(</span>
@@ -670,11 +728,14 @@
             <span class="n">use_clipped_value_loss</span><span class="o">=</span><span class="n">algo_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;use_clipped_value_loss&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
             <span class="n">schedule</span><span class="o">=</span><span class="n">algo_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;schedule&quot;</span><span class="p">,</span> <span class="s2">&quot;fixed&quot;</span><span class="p">),</span>
             <span class="n">desired_kl</span><span class="o">=</span><span class="n">algo_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;desired_kl&quot;</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">),</span>
+            <span class="n">adaptive_kl_factor</span><span class="o">=</span><span class="n">algo_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;adaptive_kl_factor&quot;</span><span class="p">,</span> <span class="mf">1.2</span><span class="p">),</span>
+            <span class="n">adaptive_lr_factor</span><span class="o">=</span><span class="n">algo_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;adaptive_lr_factor&quot;</span><span class="p">,</span> <span class="mf">1.1</span><span class="p">),</span>
             <span class="n">optimizer</span><span class="o">=</span><span class="n">algo_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;optimizer&quot;</span><span class="p">,</span> <span class="s2">&quot;adam&quot;</span><span class="p">),</span>
             <span class="n">tau</span><span class="o">=</span><span class="n">algo_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;tau&quot;</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span>
             <span class="n">target_update_freq</span><span class="o">=</span><span class="n">algo_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;target_update_freq&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
             <span class="n">vtrace_clip_rho</span><span class="o">=</span><span class="n">algo_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;vtrace_clip_rho&quot;</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span>
             <span class="n">vtrace_clip_c</span><span class="o">=</span><span class="n">algo_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;vtrace_clip_c&quot;</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span>
+            <span class="n">enable_compile</span><span class="o">=</span><span class="n">algo_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enable_compile&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_collector_fn</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stop_event</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
@@ -697,6 +758,15 @@
         <span class="n">iteration</span> <span class="o">=</span> <span class="mi">0</span>
 
         <span class="n">learner</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_learner</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">resume_path</span><span class="p">:</span>
+            <span class="n">checkpoint</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resume_path</span><span class="p">,</span> <span class="n">map_location</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">weights_only</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">_validate_hora_shared_checkpoint</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">)</span>
+            <span class="n">learner</span><span class="o">.</span><span class="n">actor</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">[</span><span class="s2">&quot;actor&quot;</span><span class="p">])</span>
+            <span class="n">learner</span><span class="o">.</span><span class="n">critic</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">[</span><span class="s2">&quot;critic&quot;</span><span class="p">])</span>
+            <span class="k">if</span> <span class="s2">&quot;optimizer&quot;</span> <span class="ow">in</span> <span class="n">checkpoint</span><span class="p">:</span>
+                <span class="n">learner</span><span class="o">.</span><span class="n">optimizer</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">[</span><span class="s2">&quot;optimizer&quot;</span><span class="p">])</span>
+                <span class="n">learner</span><span class="o">.</span><span class="n">learning_rate</span> <span class="o">=</span> <span class="n">_optimizer_lr_from_state</span><span class="p">(</span><span class="n">learner</span><span class="o">.</span><span class="n">optimizer</span><span class="p">)</span>
+            <span class="n">_sync_resume_target_actor</span><span class="p">(</span><span class="n">learner</span><span class="p">)</span>
 
         <span class="n">rollout_ring_buffer</span> <span class="o">=</span> <span class="n">RolloutRingBuffer</span><span class="p">(</span>
             <span class="n">num_envs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span>
@@ -832,6 +902,7 @@
             <span class="n">metrics</span><span class="p">[</span><span class="s2">&quot;staging_pool_len&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">staging_pool</span><span class="o">.</span><span class="n">active_count</span><span class="p">)</span>
             <span class="n">metrics</span><span class="p">[</span><span class="s2">&quot;staging_pool_capacity&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">staging_pool</span><span class="o">.</span><span class="n">capacity</span><span class="p">)</span>
             <span class="n">metrics</span><span class="p">[</span><span class="s2">&quot;available_on_arrive&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">available_on_arrive</span><span class="p">)</span>
+            <span class="n">metrics</span><span class="p">[</span><span class="s2">&quot;rollouts_read&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">num_new</span><span class="p">)</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">update_staging_pool</span><span class="p">(</span><span class="n">staging_pool</span><span class="o">.</span><span class="n">active_count</span><span class="p">,</span> <span class="n">staging_pool</span><span class="o">.</span><span class="n">capacity</span><span class="p">)</span>
 
             <span class="n">mean_reward</span> <span class="o">=</span> <span class="p">(</span>
@@ -851,6 +922,9 @@
                 <span class="n">wait_time</span><span class="o">=</span><span class="n">wait_time</span><span class="p">,</span>
                 <span class="n">learner_incremental_h2d_time</span><span class="o">=</span><span class="n">learner_incremental_h2d_time</span><span class="p">,</span>
                 <span class="n">weight_sync_time</span><span class="o">=</span><span class="n">weight_sync_time</span><span class="p">,</span>
+                <span class="n">extra_info</span><span class="o">=</span><span class="p">{</span>
+                    <span class="s2">&quot;throughput_steps&quot;</span><span class="p">:</span> <span class="n">num_new</span> <span class="o">*</span> <span class="n">env_steps_per_sync</span><span class="p">,</span>
+                <span class="p">},</span>
             <span class="p">)</span>
 
             <span class="k">if</span> <span class="n">save_interval</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">iteration</span> <span class="o">%</span> <span class="n">save_interval</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
