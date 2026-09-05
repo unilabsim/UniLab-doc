@@ -565,10 +565,14 @@
     <span class="n">BackendPlayCapabilities</span><span class="p">,</span>
     <span class="n">BackendPlayRenderPlan</span><span class="p">,</span>
     <span class="n">BackendRootStateLayout</span><span class="p">,</span>
+    <span class="n">PreStepControlFn</span><span class="p">,</span>
     <span class="n">SimBackend</span><span class="p">,</span>
     <span class="n">normalize_play_render_mode</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span>
+    <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">,</span>
+    <span class="n">INTERVAL_TERM_PUSH</span><span class="p">,</span>
     <span class="n">RESET_TERM_BASE_COM</span><span class="p">,</span>
     <span class="n">RESET_TERM_BASE_MASS</span><span class="p">,</span>
     <span class="n">RESET_TERM_BODY_INERTIA</span><span class="p">,</span>
@@ -580,7 +584,7 @@
     <span class="n">RESET_TERM_KD</span><span class="p">,</span>
     <span class="n">RESET_TERM_KP</span><span class="p">,</span>
     <span class="n">DomainRandomizationCapabilities</span><span class="p">,</span>
-    <span class="n">IntervalRandomizationPlan</span><span class="p">,</span>
+    <span class="n">IntervalTermOp</span><span class="p">,</span>
     <span class="n">ResetRandomizationPayload</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.scene</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneCfg</span>
@@ -672,9 +676,10 @@
 <span class="sd">    recomputes derived constants with the graded ``set_const*`` family;</span>
 <span class="sd">    interval DR stages ``xfrc_applied`` pushes/body forces for the next step</span>
 <span class="sd">    barrier or kicks root velocity through the reset upload+forward path.</span>
-<span class="sd">    Per-world gravity DR, native rendering, and host-substep-controller</span>
-<span class="sd">    combinations remain fail-closed. Detached host snapshots support finite</span>
-<span class="sd">    MuJoCo-based offline recording.</span>
+<span class="sd">    A registered pre-step control converter runs on the host before every</span>
+<span class="sd">    physics substep (see ``set_pre_step_control``); per-world gravity DR and</span>
+<span class="sd">    native rendering remain fail-closed. Detached host snapshots support</span>
+<span class="sd">    finite MuJoCo-based offline recording.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
 <div class="viewcode-block" id="MjwarpBackend.__init__">
@@ -1700,14 +1705,75 @@
 
 <div class="viewcode-block" id="MjwarpBackend.set_pre_step_control">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.set_pre_step_control">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">set_pre_step_control</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">fn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="s2">&quot;mjwarp host_numpy profile rejects host pre-step callbacks; a per-substep &quot;</span>
-                <span class="s2">&quot;CPU callback would introduce an implicit device synchronization.&quot;</span>
-            <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span> <span class="o">=</span> <span class="kc">None</span></div>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_pre_step_control</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">PreStepControlFn</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register or clear the env-owned per-substep control converter.</span>
 
+<span class="sd">        Semantics match the MuJoCo backend: the callback runs once before</span>
+<span class="sd">        every physics substep with the host qpos/qvel cache refreshed to the</span>
+<span class="sd">        substep-start state, and its return value becomes that substep&#39;s</span>
+<span class="sd">        device ctrl.  Each invocation costs one explicit device round trip,</span>
+<span class="sd">        so the callback path intentionally uses eager kernel launches instead</span>
+<span class="sd">        of replaying the captured step graph.  Passing ``None`` restores the</span>
+<span class="sd">        direct control path.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span> <span class="o">=</span> <span class="n">fn</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_execute_host_step_with_pre_step_control</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">ctrl</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">nsteps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Advance one legacy step through the registered per-substep converter.</span>
+
+<span class="sd">        Mirrors the MuJoCo backend&#39;s ``_step_with_pre_step_control`` substep</span>
+<span class="sd">        boundary: before every substep the host qpos/qvel cache holds the</span>
+<span class="sd">        substep-start state (the previous step/reset barrier already covers</span>
+<span class="sd">        substep 0), the owner callback converts the policy control, and the</span>
+<span class="sd">        result is uploaded as that substep&#39;s device ctrl.  Sensordata stays on</span>
+<span class="sd">        the end-of-step barrier, matching the MuJoCo backend&#39;s</span>
+<span class="sd">        ``callback_sensordata=False`` decision: action terms read</span>
+<span class="sd">        physics-state-backed getters only.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">control_upload_ms</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">host_cache_ms</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span><span class="p">:</span>
+            <span class="c1"># Staged interval push/body forces apply for the whole upcoming</span>
+            <span class="c1"># step (all substeps), matching the direct-control path.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">xfrc_applied</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="p">)</span>
+
+        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">substep</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nsteps</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">substep</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">t1</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_download</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">qpos</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_qpos_cache_storage</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_download</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">qvel</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_qvel_cache_storage</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_synchronize</span><span class="p">()</span>
+                <span class="n">host_cache_ms</span> <span class="o">+=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+            <span class="n">t1</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ctrl_staging</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_pre_step_control</span><span class="p">(</span><span class="n">ctrl</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">ctrl</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ctrl_staging</span><span class="p">)</span>
+            <span class="n">control_upload_ms</span> <span class="o">+=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+            <span class="c1"># Eager launch: a captured step graph cannot observe the</span>
+            <span class="c1"># per-substep host ctrl upload between kernel boundaries.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">xfrc_applied</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_synchronize</span><span class="p">()</span>
+        <span class="n">physics_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+
+        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_refresh_host_cache</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_time_cache</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">(</span><span class="n">nsteps</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sim_dt</span><span class="p">)</span>
+        <span class="n">host_cache_ms</span> <span class="o">+=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;control_upload_ms&quot;</span><span class="p">:</span> <span class="n">control_upload_ms</span><span class="p">,</span>
+            <span class="s2">&quot;physics_ms&quot;</span><span class="p">:</span> <span class="n">physics_ms</span><span class="p">,</span>
+            <span class="s2">&quot;host_cache_refresh_ms&quot;</span><span class="p">:</span> <span class="n">host_cache_ms</span><span class="p">,</span>
+        <span class="p">}</span>
 
 <div class="viewcode-block" id="MjwarpBackend.step">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.step">[docs]</a>
@@ -1718,7 +1784,10 @@
         <span class="n">expected</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nu</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">ctrl_array</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ctrl must have shape </span><span class="si">{</span><span class="n">expected</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">ctrl_array</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="n">timings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execute_host_step</span><span class="p">(</span><span class="n">ctrl_array</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">nsteps</span><span class="p">))</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">timings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execute_host_step_with_pre_step_control</span><span class="p">(</span><span class="n">ctrl_array</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">nsteps</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">timings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execute_host_step</span><span class="p">(</span><span class="n">ctrl_array</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">nsteps</span><span class="p">))</span>
         <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="n">timings</span><span class="p">}</span></div>
 
 
@@ -1839,6 +1908,15 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_interval_root_velocity_qvel_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="p">),</span>
             <span class="n">supports_interval_body_force</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">supported_interval_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span>
+                <span class="p">{</span><span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">}</span>
+                <span class="o">|</span> <span class="p">({</span><span class="n">INTERVAL_TERM_PUSH</span><span class="p">}</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">set</span><span class="p">())</span>
+                <span class="o">|</span> <span class="p">(</span>
+                    <span class="p">{</span><span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">}</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_root_velocity_qvel_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                    <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
+                <span class="p">)</span>
+            <span class="p">),</span>
         <span class="p">)</span></div>
 
 
@@ -1981,22 +2059,23 @@
     <span class="c1"># Interval domain randomization                                       #</span>
     <span class="c1"># ------------------------------------------------------------------ #</span>
 
-<div class="viewcode-block" id="MjwarpBackend.apply_interval_randomization">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.apply_interval_randomization">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">apply_interval_randomization</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">plan</span><span class="p">:</span> <span class="n">IntervalRandomizationPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
-            <span class="k">return</span>
-        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">push_perturbation_limit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">push_robots</span><span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">push_perturbation_limit</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_force</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Interval body-force perturbation requires body_ids&quot;</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_force</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_linear_velocity_delta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Interval body-velocity perturbation requires body_ids&quot;</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_linear_velocity_delta</span><span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_linear_velocity_delta</span><span class="p">)</span></div>
+    <span class="n">_interval_term_handler_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">IntervalTermOp</span><span class="p">],</span> <span class="kc">None</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_interval_term_handlers</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">IntervalTermOp</span><span class="p">],</span> <span class="kc">None</span><span class="p">]]:</span>
+        <span class="c1"># Built lazily once.  Torque and angular-velocity terms intentionally</span>
+        <span class="c1"># have no handler and fail closed in the base dispatch (previously</span>
+        <span class="c1"># they were silently dropped).</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">INTERVAL_TERM_PUSH</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_robots</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
+                <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span>
+                    <span class="n">op</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span>
+                <span class="p">),</span>
+                <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">:</span> <span class="p">(</span>
+                    <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_linear_velocity_delta</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span>
+                <span class="p">),</span>
+            <span class="p">}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span>
 
 <div class="viewcode-block" id="MjwarpBackend.push_robots">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.push_robots">[docs]</a>

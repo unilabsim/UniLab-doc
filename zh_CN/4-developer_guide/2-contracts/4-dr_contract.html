@@ -455,19 +455,52 @@ materialization 或 cache 构造期间执行。</p></li>
 <li><p>必要时通过 <code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan</span></code> 实现的 interval 行为。</p></li>
 <li><p>在 env 构造中调用 <code class="docutils literal notranslate"><span class="pre">self._init_domain_randomization(...)</span></code>。</p></li>
 </ol>
-<p>共享类型位于 <code class="docutils literal notranslate"><span class="pre">src/unilab/dr/types.py</span></code>，manager 行为位于
-<code class="docutils literal notranslate"><span class="pre">src/unilab/dr/manager.py</span></code>。</p>
+<p>共享类型位于 <code class="docutils literal notranslate"><span class="pre">unisim.dr.types</span></code>（interval term 描述符位于
+<code class="docutils literal notranslate"><span class="pre">unisim.dr.interval</span></code>），两者都由 <code class="docutils literal notranslate"><span class="pre">src/unilab/dr/__init__.py</span></code> 再导出。
+manager 行为位于 <code class="docutils literal notranslate"><span class="pre">src/unilab/dr/manager.py</span></code>。</p>
 </section>
 <section id="backend">
 <h2>Backend 能力边界<a class="headerlink" href="#backend" title="Link to this heading">¶</a></h2>
 <p>Backend 支持是显式的。只有当以下三个部分同时存在时，一个 reset 或 interval
 条目才算作统一的 DR 条目：</p>
 <ol class="arabic simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload</span></code> 或 <code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan</span></code> 中有明确的字段。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload</span></code> 中有明确的字段，或
+<code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan.ops</span></code> 携带该 term 的 <code class="docutils literal notranslate"><span class="pre">IntervalTermOp</span></code>。</p></li>
 <li><p>backend 声明并实现了该能力。</p></li>
-<li><p>任务 config/provider 对该字段进行采样并分发。</p></li>
+<li><p>任务 config/provider 对该字段或 op 进行采样并分发。</p></li>
 </ol>
 <p>MuJoCo 与 Motrix 的差异保留在 backend 能力声明、backend 实现与 owner YAML 中。</p>
+</section>
+<section id="interval-term">
+<h2>Interval Term 描述符<a class="headerlink" href="#interval-term" title="Link to this heading">¶</a></h2>
+<p>Interval plan 基于 term 描述符：<code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan.ops</span></code> 携带一个
+<code class="docutils literal notranslate"><span class="pre">IntervalTermOp</span></code> 元组（term 名称、NumPy payload、可选的 <code class="docutils literal notranslate"><span class="pre">body_ids</span></code>），定义在
+<code class="docutils literal notranslate"><span class="pre">unisim.dr.interval</span></code>，并经 <code class="docutils literal notranslate"><span class="pre">unilab.dr</span></code> 再导出。</p>
+<ul class="simple">
+<li><p>内置 term 名称即 <code class="docutils literal notranslate"><span class="pre">INTERVAL_TERM_*</span></code> 常量；其 payload 契约由
+<code class="docutils literal notranslate"><span class="pre">INTERVAL_TERM_SPECS</span></code> 固定（<code class="docutils literal notranslate"><span class="pre">push</span></code>：payload 形状 <code class="docutils literal notranslate"><span class="pre">(3,)</span></code>，不接受
+<code class="docutils literal notranslate"><span class="pre">body_ids</span></code>；四个 body term：payload 形状 <code class="docutils literal notranslate"><span class="pre">(num_envs,</span> <span class="pre">len(body_ids),</span> <span class="pre">3)</span></code>，
+且必须携带 <code class="docutils literal notranslate"><span class="pre">body_ids</span></code>）。<code class="docutils literal notranslate"><span class="pre">IntervalTermOp.validate()</span></code> 对内置 term 强制
+这些契约；未知的自定义 term 原样通过校验。</p></li>
+<li><p>能力所有权留在 backend：
+<code class="docutils literal notranslate"><span class="pre">DomainRandomizationCapabilities.supported_interval_terms</span></code> 是权威声明，
+通过 <code class="docutils literal notranslate"><span class="pre">supports_interval_term</span></code> / <code class="docutils literal notranslate"><span class="pre">get_unsupported_interval_terms</span></code> 查询。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DomainRandomizationManager.apply_interval_randomization_if_due</span></code> 是通用的：
+不包含任何 term 名称或按 term 分支，因此 backend 拥有的自定义 term 无需
+修改 manager。不在能力集合中的 term 会 fail-closed，抛出带有 backend 类型
+与 term 名称的 <code class="docutils literal notranslate"><span class="pre">NotImplementedError</span></code>；在 backend 一侧，
+<code class="docutils literal notranslate"><span class="pre">SimBackend.apply_interval_randomization</span></code> 把每个 op 路由到 handler 表，
+缺少 handler 时 fail-closed，抛出带有 backend 类名与 term 名称的
+<code class="docutils literal notranslate"><span class="pre">NotImplementedError</span></code>。</p></li>
+<li><p>Op 与 plan 必须保持 pickle 安全（protocol 4），以跨 spawn 方式的 collector
+子进程传递：只允许 stdlib + NumPy 的 frozen dataclass。</p></li>
+<li><p>旧版 plan 字段（<code class="docutils literal notranslate"><span class="pre">push_perturbation_limit</span></code>、<code class="docutils literal notranslate"><span class="pre">body_ids</span></code>、
+<code class="docutils literal notranslate"><span class="pre">body_linear_velocity_delta</span></code>、<code class="docutils literal notranslate"><span class="pre">body_angular_velocity_delta</span></code>、<code class="docutils literal notranslate"><span class="pre">body_force</span></code>、
+<code class="docutils literal notranslate"><span class="pre">body_torque</span></code>）与旧版 <code class="docutils literal notranslate"><span class="pre">supports_interval_*</span></code> 能力布尔位已废弃：
+<code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan.iter_ops()</span></code> 仍会把已设置的旧字段 1:1 适配为
+op，布尔位仍作为能力回退。新 provider 应填充 <code class="docutils literal notranslate"><span class="pre">ops</span></code>；旧字段将在下一个
+unisim-core major release 中移除。</p></li>
+</ul>
 </section>
 <section id="mujoco-batchenvpool">
 <h2>MuJoCo BatchEnvPool 快照<a class="headerlink" href="#mujoco-batchenvpool" title="Link to this heading">¶</a></h2>
@@ -475,7 +508,7 @@ materialization 或 cache 构造期间执行。</p></li>
 并带有固定的字段白名单。带索引的读写可通过 <code class="docutils literal notranslate"><span class="pre">get_field_indexed(...)</span></code> 与
 <code class="docutils literal notranslate"><span class="pre">set_field_indexed(...)</span></code> 实现。该接口位于 <code class="docutils literal notranslate"><span class="pre">mujoco-uni-runtime</span></code> 包
 （<code class="docutils literal notranslate"><span class="pre">mujoco_uni.batch_env</span></code>），不在本仓库中；映射到它的 reset-term 常量定义在
-<code class="docutils literal notranslate"><span class="pre">src/unilab/dr/types.py</span></code>。</p>
+<code class="docutils literal notranslate"><span class="pre">unisim.dr.types</span></code>。</p>
 <p>支持的 reset 字段及其每 env 整块形状如下。首维始终是 <code class="docutils literal notranslate"><span class="pre">len(env_ids)</span></code>；尾部
 整块大小是该字段在单个 <code class="docutils literal notranslate"><span class="pre">mjModel</span></code> 里的完整 flat 宽度。</p>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -522,7 +555,7 @@ materialization 或 cache 构造期间执行。</p></li>
 <p>两点注意：</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">geom_size</span></code> 不在 <code class="docutils literal notranslate"><span class="pre">SUPPORTED_FIELDS</span></code> 里。几何尺寸通过 init-lifecycle 的模型
-materialization 表达（见 <code class="docutils literal notranslate"><span class="pre">src/unilab/dr/types.py</span></code> 中的 <code class="docutils literal notranslate"><span class="pre">GeomSizeOverride</span></code> /
+materialization 表达（见 <code class="docutils literal notranslate"><span class="pre">unisim.dr.types</span></code> 中的 <code class="docutils literal notranslate"><span class="pre">GeomSizeOverride</span></code> /
 <code class="docutils literal notranslate"><span class="pre">ModelVariantSpec</span></code>），不走 reset 随机化。</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">gravity</span></code> 的 reset 随机化需要包含它的 <code class="docutils literal notranslate"><span class="pre">mujoco-uni-runtime</span></code> 构建。本仓库依赖
 官方 <code class="docutils literal notranslate"><span class="pre">mujoco</span></code> 包（<code class="docutils literal notranslate"><span class="pre">&gt;=3.5</span></code>，默认版本由 <code class="docutils literal notranslate"><span class="pre">uv.lock</span></code> 钉住）加 <code class="docutils literal notranslate"><span class="pre">mujoco-uni-runtime</span></code>，其 <code class="docutils literal notranslate"><span class="pre">SUPPORTED_FIELDS</span></code>
@@ -542,7 +575,8 @@ actuator 的机制泄漏到共享 payload 里。</p>
 <section id="id3">
 <h2>仓库中的证据<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p>DR 类型：<code class="docutils literal notranslate"><span class="pre">src/unilab/dr/types.py</span></code></p></li>
+<li><p>DR 类型：<code class="docutils literal notranslate"><span class="pre">unisim.dr.types</span></code> 与 <code class="docutils literal notranslate"><span class="pre">unisim.dr.interval</span></code>，由
+<code class="docutils literal notranslate"><span class="pre">src/unilab/dr/__init__.py</span></code> 再导出</p></li>
 <li><p>DR manager：<code class="docutils literal notranslate"><span class="pre">src/unilab/dr/manager.py</span></code></p></li>
 <li><p>Backend 接口：<code class="docutils literal notranslate"><span class="pre">unisim.backend.base</span></code></p></li>
 <li><p>示例 provider：<code class="docutils literal notranslate"><span class="pre">src/unilab/tasks/locomotion/common/dr_provider.py</span></code>、
@@ -614,6 +648,7 @@ actuator 的机制泄漏到共享 payload 里。</p>
 <li><a class="reference internal" href="#id1">生命周期分类</a></li>
 <li><a class="reference internal" href="#provider">Provider 最低要求</a></li>
 <li><a class="reference internal" href="#backend">Backend 能力边界</a></li>
+<li><a class="reference internal" href="#interval-term">Interval Term 描述符</a></li>
 <li><a class="reference internal" href="#mujoco-batchenvpool">MuJoCo BatchEnvPool 快照</a></li>
 <li><a class="reference internal" href="#id2">电机控制扩展</a></li>
 <li><a class="reference internal" href="#id3">仓库中的证据</a></li>

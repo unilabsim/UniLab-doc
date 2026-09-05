@@ -3,10 +3,10 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html">
-        <link rel="canonical" href="https://unilabsim.github.io/UniLab-doc/_modules/unilab/dr/manager.html">
+        <link rel="canonical" href="https://unilabsim.github.io/UniLab-doc/_modules/unisim/dr/interval.html">
 
     <!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>unilab.dr.manager - UniLab 1.0.0 documentation</title>
+        <title>unisim.dr.interval - UniLab 1.0.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d111a655" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
@@ -539,136 +539,149 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <h1>Source code for unilab.dr.manager</h1><div class="highlight"><pre>
-<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+          <h1>Source code for unisim.dr.interval</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Declarative interval domain-randomization term descriptors.</span>
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+<span class="sd">An interval randomization plan is a tuple of :class:`IntervalTermOp` entries:</span>
+<span class="sd">a term name, a NumPy payload, and optional target body ids.  The builtin</span>
+<span class="sd">specs below pin the payload contract for the terms shared between UniLab&#39;s</span>
+<span class="sd">domain-randomization manager and the backend adapters.  Custom terms are</span>
+<span class="sd">free-form strings owned by a backend and validated only against that</span>
+<span class="sd">backend&#39;s declared capability set; there is intentionally no mutable global</span>
+<span class="sd">registry for them.</span>
+
+<span class="sd">The module is stdlib + NumPy only so ops and plans stay pickle-safe</span>
+<span class="sd">(protocol 4) across spawn-based collector processes; no engine SDK may be</span>
+<span class="sd">imported here.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">DomainRandomizationCapabilities</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">.provider</span><span class="w"> </span><span class="kn">import</span> <span class="n">DomainRandomizationProvider</span>
+<span class="n">INTERVAL_TERM_PUSH</span> <span class="o">=</span> <span class="s2">&quot;push&quot;</span>
+<span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span> <span class="o">=</span> <span class="s2">&quot;body_linear_velocity_delta&quot;</span>
+<span class="n">INTERVAL_TERM_BODY_ANGULAR_VELOCITY_DELTA</span> <span class="o">=</span> <span class="s2">&quot;body_angular_velocity_delta&quot;</span>
+<span class="n">INTERVAL_TERM_BODY_FORCE</span> <span class="o">=</span> <span class="s2">&quot;body_force&quot;</span>
+<span class="n">INTERVAL_TERM_BODY_TORQUE</span> <span class="o">=</span> <span class="s2">&quot;body_torque&quot;</span>
 
-<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
-
-
-<div class="viewcode-block" id="DomainRandomizationManager">
-<a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.manager.DomainRandomizationManager.html#unilab.dr.DomainRandomizationManager">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">DomainRandomizationManager</span><span class="p">:</span>
-<div class="viewcode-block" id="DomainRandomizationManager.__init__">
-<a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.manager.DomainRandomizationManager.html#unilab.dr.DomainRandomizationManager.__init__">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">provider</span><span class="p">:</span> <span class="n">DomainRandomizationProvider</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_env</span> <span class="o">=</span> <span class="n">env</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_provider</span> <span class="o">=</span> <span class="n">provider</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_capabilities</span><span class="p">:</span> <span class="n">DomainRandomizationCapabilities</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_warned_reset_terms</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_timing_ms</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_provider</span><span class="o">.</span><span class="n">validate</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capabilities</span><span class="p">)</span></div>
-
-
-    <span class="nd">@property</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">last_reset_timing_ms</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
-        <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_timing_ms</span><span class="p">)</span>
-
-<div class="viewcode-block" id="DomainRandomizationManager.apply_init_randomization">
-<a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.manager.DomainRandomizationManager.html#unilab.dr.DomainRandomizationManager.apply_init_randomization">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">apply_init_randomization</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-        <span class="n">plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_provider</span><span class="o">.</span><span class="n">build_init_randomization_plan</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">plan</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
-            <span class="k">return</span> <span class="kc">False</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">apply_init_randomization</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span>
-        <span class="k">return</span> <span class="kc">True</span></div>
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;INTERVAL_TERM_BODY_ANGULAR_VELOCITY_DELTA&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;INTERVAL_TERM_BODY_FORCE&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;INTERVAL_TERM_BODY_TORQUE&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;INTERVAL_TERM_PUSH&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;INTERVAL_TERM_SPECS&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;IntervalTermOp&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;IntervalTermSpec&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;interval_term_spec&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;validate_interval_op&quot;</span><span class="p">,</span>
+<span class="p">]</span>
 
 
-<div class="viewcode-block" id="DomainRandomizationManager.reset">
-<a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.manager.DomainRandomizationManager.html#unilab.dr.DomainRandomizationManager.reset">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span> <span class="nb">dict</span><span class="p">]:</span>
-        <span class="n">reset_t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_timing_ms</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">slots</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">IntervalTermSpec</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Declared payload contract for one interval randomization term.&quot;&quot;&quot;</span>
 
-        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="n">plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_provider</span><span class="o">.</span><span class="n">build_reset_plan</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">)</span>
-        <span class="n">plan_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">requires_body_ids</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">payload_ndim</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">doc</span><span class="p">:</span> <span class="nb">str</span>
 
-        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="n">payload</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">randomization</span>
-        <span class="k">if</span> <span class="n">payload</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">payload</span><span class="p">,</span> <span class="n">unsupported</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capabilities</span><span class="o">.</span><span class="n">filter_reset_payload</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_log_unsupported_reset_terms</span><span class="p">(</span><span class="n">unsupported</span><span class="p">)</span>
-        <span class="n">payload_filter_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
 
-        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="n">set_state_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">set_state</span><span class="p">(</span>
-            <span class="n">plan</span><span class="o">.</span><span class="n">env_ids</span><span class="p">,</span>
-            <span class="n">plan</span><span class="o">.</span><span class="n">qpos</span><span class="p">,</span>
-            <span class="n">plan</span><span class="o">.</span><span class="n">qvel</span><span class="p">,</span>
-            <span class="n">randomization</span><span class="o">=</span><span class="n">payload</span><span class="p">,</span>
+<span class="n">INTERVAL_TERM_SPECS</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">IntervalTermSpec</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="n">IntervalTermSpec</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">INTERVAL_TERM_PUSH</span><span class="p">,</span>
+        <span class="n">requires_body_ids</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">payload_ndim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="n">doc</span><span class="o">=</span><span class="p">(</span>
+            <span class="s2">&quot;Per-axis push force limit with shape (3,); the backend samples &quot;</span>
+            <span class="s2">&quot;the actual world-frame push force per environment.&quot;</span>
+        <span class="p">),</span>
+    <span class="p">),</span>
+    <span class="n">IntervalTermSpec</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">,</span>
+        <span class="n">requires_body_ids</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">payload_ndim</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+        <span class="n">doc</span><span class="o">=</span><span class="p">(</span>
+            <span class="s2">&quot;World-frame linear velocity delta with shape &quot;</span>
+            <span class="s2">&quot;(num_envs, len(body_ids), 3).&quot;</span>
+        <span class="p">),</span>
+    <span class="p">),</span>
+    <span class="n">IntervalTermSpec</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">INTERVAL_TERM_BODY_ANGULAR_VELOCITY_DELTA</span><span class="p">,</span>
+        <span class="n">requires_body_ids</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">payload_ndim</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+        <span class="n">doc</span><span class="o">=</span><span class="p">(</span>
+            <span class="s2">&quot;World-frame angular velocity delta with shape &quot;</span>
+            <span class="s2">&quot;(num_envs, len(body_ids), 3).&quot;</span>
+        <span class="p">),</span>
+    <span class="p">),</span>
+    <span class="n">IntervalTermSpec</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span>
+        <span class="n">requires_body_ids</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">payload_ndim</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+        <span class="n">doc</span><span class="o">=</span><span class="s2">&quot;World-frame external force with shape (num_envs, len(body_ids), 3).&quot;</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">IntervalTermSpec</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">,</span>
+        <span class="n">requires_body_ids</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">payload_ndim</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+        <span class="n">doc</span><span class="o">=</span><span class="s2">&quot;World-frame external torque with shape (num_envs, len(body_ids), 3).&quot;</span><span class="p">,</span>
+    <span class="p">),</span>
+<span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">interval_term_spec</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">IntervalTermSpec</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the builtin spec for ``name`` or raise a stable ``KeyError``.&quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">spec</span> <span class="ow">in</span> <span class="n">INTERVAL_TERM_SPECS</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="n">name</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">spec</span>
+    <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unknown interval randomization term: </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="IntervalTermOp">
+<a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.html#unilab.dr.IntervalTermOp">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">IntervalTermOp</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;One interval randomization operation: term, payload, optional bodies.&quot;&quot;&quot;</span>
+
+    <span class="n">term</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">payload</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="IntervalTermOp.validate">
+<a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.html#unilab.dr.IntervalTermOp.validate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check the builtin spec contract; custom terms pass through.&quot;&quot;&quot;</span>
+        <span class="n">validate_interval_op</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_interval_op</span><span class="p">(</span><span class="n">op</span><span class="p">:</span> <span class="n">IntervalTermOp</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Validate ``op`` against its builtin spec, ignoring custom terms.</span>
+
+<span class="sd">    Builtin terms must carry ``body_ids`` exactly when their spec requires</span>
+<span class="sd">    them, and their payload must have the declared ndim.  Unknown (custom)</span>
+<span class="sd">    terms are backend-owned and pass through untouched.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="n">interval_term_spec</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">term</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">requires_body_ids</span> <span class="ow">and</span> <span class="n">op</span><span class="o">.</span><span class="n">body_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;interval term &#39;</span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">term</span><span class="si">}</span><span class="s2">&#39; requires body_ids&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">spec</span><span class="o">.</span><span class="n">requires_body_ids</span> <span class="ow">and</span> <span class="n">op</span><span class="o">.</span><span class="n">body_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;interval term &#39;</span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">term</span><span class="si">}</span><span class="s2">&#39; does not accept body_ids&quot;</span><span class="p">)</span>
+    <span class="n">payload_ndim</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span><span class="o">.</span><span class="n">ndim</span>
+    <span class="k">if</span> <span class="n">payload_ndim</span> <span class="o">!=</span> <span class="n">spec</span><span class="o">.</span><span class="n">payload_ndim</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;interval term &#39;</span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">term</span><span class="si">}</span><span class="s2">&#39; payload must have ndim &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">spec</span><span class="o">.</span><span class="n">payload_ndim</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">payload_ndim</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
-        <span class="n">set_state_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-        <span class="n">backend_set_state_timing</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">set_state_result</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-            <span class="n">backend_timing</span> <span class="o">=</span> <span class="n">set_state_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;timing&quot;</span><span class="p">)</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend_timing</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-                <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">backend_timing</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                    <span class="k">try</span><span class="p">:</span>
-                        <span class="n">backend_set_state_timing</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">key</span><span class="p">)]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
-                    <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
-                        <span class="k">continue</span>
-
-        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="n">obs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_provider</span><span class="o">.</span><span class="n">build_reset_observation</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">,</span> <span class="n">plan</span><span class="o">.</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">plan</span><span class="o">.</span><span class="n">info_updates</span><span class="p">)</span>
-        <span class="n">build_observation_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-
-        <span class="n">total_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">reset_t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-        <span class="n">measured_ms</span> <span class="o">=</span> <span class="n">plan_ms</span> <span class="o">+</span> <span class="n">payload_filter_ms</span> <span class="o">+</span> <span class="n">set_state_ms</span> <span class="o">+</span> <span class="n">build_observation_ms</span>
-        <span class="n">timing</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="s2">&quot;dr_reset_total_ms&quot;</span><span class="p">:</span> <span class="n">total_ms</span><span class="p">,</span>
-            <span class="s2">&quot;dr_reset_plan_ms&quot;</span><span class="p">:</span> <span class="n">plan_ms</span><span class="p">,</span>
-            <span class="s2">&quot;dr_reset_payload_filter_ms&quot;</span><span class="p">:</span> <span class="n">payload_filter_ms</span><span class="p">,</span>
-            <span class="s2">&quot;dr_reset_set_state_ms&quot;</span><span class="p">:</span> <span class="n">set_state_ms</span><span class="p">,</span>
-            <span class="s2">&quot;dr_reset_build_observation_ms&quot;</span><span class="p">:</span> <span class="n">build_observation_ms</span><span class="p">,</span>
-            <span class="s2">&quot;dr_reset_internal_gap_ms&quot;</span><span class="p">:</span> <span class="n">total_ms</span> <span class="o">-</span> <span class="n">measured_ms</span><span class="p">,</span>
-        <span class="p">}</span>
-        <span class="k">if</span> <span class="n">backend_set_state_timing</span><span class="p">:</span>
-            <span class="n">timing</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">backend_set_state_timing</span><span class="p">)</span>
-        <span class="n">provider_timing</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_provider</span><span class="p">,</span> <span class="s2">&quot;last_reset_observation_timing_ms&quot;</span><span class="p">,</span> <span class="p">{})</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">provider_timing</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-            <span class="n">timing</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">provider_timing</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_timing_ms</span> <span class="o">=</span> <span class="n">timing</span>
-        <span class="k">return</span> <span class="n">obs</span><span class="p">,</span> <span class="n">plan</span><span class="o">.</span><span class="n">info_updates</span></div>
-
-
-<div class="viewcode-block" id="DomainRandomizationManager.apply_interval_randomization_if_due">
-<a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.manager.DomainRandomizationManager.html#unilab.dr.DomainRandomizationManager.apply_interval_randomization_if_due">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">apply_interval_randomization_if_due</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step_counter</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_provider</span><span class="o">.</span><span class="n">build_interval_randomization_plan</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">,</span> <span class="n">step_counter</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">plan</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
-            <span class="k">return</span>
-        <span class="n">unsupported</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capabilities</span><span class="o">.</span><span class="n">get_unsupported_interval_terms</span><span class="p">(</span>
-            <span class="n">op</span><span class="o">.</span><span class="n">term</span> <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">plan</span><span class="o">.</span><span class="n">iter_ops</span><span class="p">()</span>
-        <span class="p">)</span>
-        <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">backend_type</span><span class="si">}</span><span class="s2"> backend does not support &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;interval terms: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">))</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">apply_interval_randomization</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span></div>
-
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_log_unsupported_reset_terms</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">unsupported</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">new_terms</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">term</span> <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">unsupported</span> <span class="k">if</span> <span class="n">term</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_warned_reset_terms</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">new_terms</span><span class="p">:</span>
-            <span class="k">return</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_warned_reset_terms</span> <span class="o">|=</span> <span class="n">new_terms</span>
-        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-            <span class="s2">&quot;</span><span class="si">%s</span><span class="s2"> backend does not support reset randomization terms: </span><span class="si">%s</span><span class="s2">; skipping them.&quot;</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">backend_type</span><span class="p">,</span>
-            <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">new_terms</span><span class="p">)),</span>
-        <span class="p">)</span></div>
-
 </pre></div>
         </article>
       </div>

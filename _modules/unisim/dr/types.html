@@ -542,11 +542,20 @@
           <h1>Source code for unisim.dr.types</h1><div class="highlight"><pre>
 <span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sequence</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">Sequence</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">ClassVar</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.interval</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">INTERVAL_TERM_BODY_ANGULAR_VELOCITY_DELTA</span><span class="p">,</span>
+    <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span>
+    <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">,</span>
+    <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">,</span>
+    <span class="n">INTERVAL_TERM_PUSH</span><span class="p">,</span>
+    <span class="n">IntervalTermOp</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="n">RESET_TERM_BASE_COM</span> <span class="o">=</span> <span class="s2">&quot;base_com_offset&quot;</span>
 <span class="n">RESET_TERM_BASE_MASS</span> <span class="o">=</span> <span class="s2">&quot;base_mass_delta&quot;</span>
@@ -588,17 +597,58 @@
 <a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.html#unilab.dr.DomainRandomizationCapabilities">[docs]</a>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">DomainRandomizationCapabilities</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Backend domain-randomization capability declaration.</span>
+
+<span class="sd">    ``supported_interval_terms`` is the authoritative set-based declaration of</span>
+<span class="sd">    interval term support.  The five ``supports_interval_*`` bools are</span>
+<span class="sd">    deprecated (kept for backward compatibility; removed in the next major</span>
+<span class="sd">    release): :meth:`supports_interval_term` consults them only as a fallback</span>
+<span class="sd">    when the term is absent from ``supported_interval_terms``, so old</span>
+<span class="sd">    constructor call sites keep their meaning.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
     <span class="n">supported_reset_terms</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">)</span>
     <span class="n">supports_interval_push</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">supports_interval_body_velocity_delta</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">supports_interval_body_angular_velocity_delta</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">supports_interval_body_force</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">supports_interval_body_torque</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">supported_interval_terms</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">)</span>
+
+    <span class="n">_LEGACY_INTERVAL_TERM_FLAGS</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">INTERVAL_TERM_PUSH</span><span class="p">:</span> <span class="s2">&quot;supports_interval_push&quot;</span><span class="p">,</span>
+        <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">:</span> <span class="s2">&quot;supports_interval_body_velocity_delta&quot;</span><span class="p">,</span>
+        <span class="n">INTERVAL_TERM_BODY_ANGULAR_VELOCITY_DELTA</span><span class="p">:</span> <span class="p">(</span>
+            <span class="s2">&quot;supports_interval_body_angular_velocity_delta&quot;</span>
+        <span class="p">),</span>
+        <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">:</span> <span class="s2">&quot;supports_interval_body_force&quot;</span><span class="p">,</span>
+        <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">:</span> <span class="s2">&quot;supports_interval_body_torque&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
 
 <div class="viewcode-block" id="DomainRandomizationCapabilities.supports_reset_term">
 <a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.html#unilab.dr.DomainRandomizationCapabilities.supports_reset_term">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">supports_reset_term</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">term</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">supported_reset_terms</span></div>
+
+
+<div class="viewcode-block" id="DomainRandomizationCapabilities.supports_interval_term">
+<a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.html#unilab.dr.DomainRandomizationCapabilities.supports_interval_term">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">supports_interval_term</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return whether the backend declares support for one interval term.</span>
+
+<span class="sd">        Set membership in ``supported_interval_terms`` wins; otherwise the</span>
+<span class="sd">        deprecated legacy bool mapped to ``term`` decides.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">term</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">supported_interval_terms</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="n">flag</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_LEGACY_INTERVAL_TERM_FLAGS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">term</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">flag</span><span class="p">))</span> <span class="k">if</span> <span class="n">flag</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">False</span></div>
+
+
+<div class="viewcode-block" id="DomainRandomizationCapabilities.get_unsupported_interval_terms">
+<a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.html#unilab.dr.DomainRandomizationCapabilities.get_unsupported_interval_terms">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_unsupported_interval_terms</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">terms</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">term</span> <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">terms</span> <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">supports_interval_term</span><span class="p">(</span><span class="n">term</span><span class="p">))</span></div>
 
 
 <div class="viewcode-block" id="DomainRandomizationCapabilities.get_unsupported_reset_terms">
@@ -709,17 +759,58 @@
 <a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.html#unilab.dr.IntervalRandomizationPlan">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">IntervalRandomizationPlan</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Scheduled interval randomization request.</span>
+
+<span class="sd">    The five legacy fields (``push_perturbation_limit``, ``body_ids``,</span>
+<span class="sd">    ``body_linear_velocity_delta``, ``body_angular_velocity_delta``,</span>
+<span class="sd">    ``body_force``, ``body_torque``) are deprecated: they are kept for</span>
+<span class="sd">    backward compatibility and will be removed in the next major release.</span>
+<span class="sd">    New code should populate ``ops`` with :class:`IntervalTermOp` entries.</span>
+<span class="sd">    :meth:`iter_ops` translates each set legacy field into one op; mixing</span>
+<span class="sd">    legacy fields and explicit ops is allowed and both are yielded.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
     <span class="n">push_perturbation_limit</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">body_linear_velocity_delta</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">body_angular_velocity_delta</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">body_force</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">body_torque</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">ops</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">IntervalTermOp</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+
+<div class="viewcode-block" id="IntervalRandomizationPlan.iter_ops">
+<a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.html#unilab.dr.IntervalRandomizationPlan.iter_ops">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">iter_ops</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">IntervalTermOp</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return ops derived 1:1 from set legacy fields, then explicit ops.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">push_perturbation_limit</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">body_linear_velocity_delta</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">body_angular_velocity_delta</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">body_force</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">body_torque</span> <span class="ow">is</span> <span class="kc">None</span>
+        <span class="p">):</span>
+            <span class="c1"># Hot-path fast path: ops-only plans avoid per-call re-allocation.</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">ops</span>
+        <span class="n">derived</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">IntervalTermOp</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_perturbation_limit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">derived</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">IntervalTermOp</span><span class="p">(</span><span class="n">INTERVAL_TERM_PUSH</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">push_perturbation_limit</span><span class="p">))</span>
+            <span class="p">)</span>
+        <span class="k">for</span> <span class="n">term</span><span class="p">,</span> <span class="n">payload</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">body_linear_velocity_delta</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">INTERVAL_TERM_BODY_ANGULAR_VELOCITY_DELTA</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">body_angular_velocity_delta</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">body_force</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">body_torque</span><span class="p">),</span>
+        <span class="p">):</span>
+            <span class="k">if</span> <span class="n">payload</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">derived</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">IntervalTermOp</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="n">payload</span><span class="p">,</span> <span class="n">body_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">body_ids</span><span class="p">))</span>
+        <span class="k">return</span> <span class="p">(</span><span class="o">*</span><span class="n">derived</span><span class="p">,</span> <span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">ops</span><span class="p">)</span></div>
+
 
 <div class="viewcode-block" id="IntervalRandomizationPlan.is_empty">
 <a class="viewcode-back" href="../../../api_reference/dr/_autosummary/unilab.dr.html#unilab.dr.IntervalRandomizationPlan.is_empty">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">is_empty</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-        <span class="k">return</span> <span class="p">(</span>
+        <span class="k">return</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">ops</span> <span class="ow">and</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">push_perturbation_limit</span> <span class="ow">is</span> <span class="kc">None</span>
             <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">body_linear_velocity_delta</span> <span class="ow">is</span> <span class="kc">None</span>
             <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">body_angular_velocity_delta</span> <span class="ow">is</span> <span class="kc">None</span>

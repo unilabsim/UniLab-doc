@@ -456,21 +456,57 @@ force plans.</p></li>
 <li><p>Interval behavior through <code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan</span></code> when needed.</p></li>
 <li><p>Env construction that calls <code class="docutils literal notranslate"><span class="pre">self._init_domain_randomization(...)</span></code>.</p></li>
 </ol>
-<p>Shared types live in <code class="docutils literal notranslate"><span class="pre">src/unilab/dr/types.py</span></code>, and manager behavior lives in
-<code class="docutils literal notranslate"><span class="pre">src/unilab/dr/manager.py</span></code>.</p>
+<p>Shared types live in <code class="docutils literal notranslate"><span class="pre">unisim.dr.types</span></code> (interval term descriptors in
+<code class="docutils literal notranslate"><span class="pre">unisim.dr.interval</span></code>); both are re-exported from <code class="docutils literal notranslate"><span class="pre">src/unilab/dr/__init__.py</span></code>.
+Manager behavior lives in <code class="docutils literal notranslate"><span class="pre">src/unilab/dr/manager.py</span></code>.</p>
 </section>
 <section id="backend-capability-boundary">
 <h2>Backend Capability Boundary<a class="headerlink" href="#backend-capability-boundary" title="Link to this heading">¶</a></h2>
 <p>Backend support is explicit. A reset or interval item only counts as a unified
 DR item when three pieces exist together:</p>
 <ol class="arabic simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload</span></code> or <code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan</span></code> has an explicit
-field.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload</span></code> has an explicit field, or
+<code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan.ops</span></code> carries an <code class="docutils literal notranslate"><span class="pre">IntervalTermOp</span></code> for the term.</p></li>
 <li><p>The backend declares and implements the capability.</p></li>
-<li><p>The task config/provider samples and dispatches that field.</p></li>
+<li><p>The task config/provider samples and dispatches that field or op.</p></li>
 </ol>
 <p>MuJoCo and Motrix differences stay in backend capability declarations,
 backend implementations, and owner YAMLs.</p>
+</section>
+<section id="interval-term-descriptors">
+<h2>Interval Term Descriptors<a class="headerlink" href="#interval-term-descriptors" title="Link to this heading">¶</a></h2>
+<p>Interval plans are term-descriptor based: <code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan.ops</span></code>
+carries a tuple of <code class="docutils literal notranslate"><span class="pre">IntervalTermOp</span></code> entries (term name, NumPy payload,
+optional <code class="docutils literal notranslate"><span class="pre">body_ids</span></code>) from <code class="docutils literal notranslate"><span class="pre">unisim.dr.interval</span></code>, re-exported through
+<code class="docutils literal notranslate"><span class="pre">unilab.dr</span></code>.</p>
+<ul class="simple">
+<li><p>Builtin term names are the <code class="docutils literal notranslate"><span class="pre">INTERVAL_TERM_*</span></code> constants; their payload
+contracts are pinned by <code class="docutils literal notranslate"><span class="pre">INTERVAL_TERM_SPECS</span></code> (<code class="docutils literal notranslate"><span class="pre">push</span></code>: payload shape <code class="docutils literal notranslate"><span class="pre">(3,)</span></code>,
+no <code class="docutils literal notranslate"><span class="pre">body_ids</span></code>; the four body terms: payload shape
+<code class="docutils literal notranslate"><span class="pre">(num_envs,</span> <span class="pre">len(body_ids),</span> <span class="pre">3)</span></code> with required <code class="docutils literal notranslate"><span class="pre">body_ids</span></code>).
+<code class="docutils literal notranslate"><span class="pre">IntervalTermOp.validate()</span></code> enforces these contracts for builtin terms;
+unknown custom terms pass validation through untouched.</p></li>
+<li><p>Capability ownership stays with the backend:
+<code class="docutils literal notranslate"><span class="pre">DomainRandomizationCapabilities.supported_interval_terms</span></code> is the
+authoritative declaration, queried via <code class="docutils literal notranslate"><span class="pre">supports_interval_term</span></code> /
+<code class="docutils literal notranslate"><span class="pre">get_unsupported_interval_terms</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DomainRandomizationManager.apply_interval_randomization_if_due</span></code> is generic:
+it contains no term names and no per-term branches, so a backend-owned
+custom term needs no manager change. Terms missing from the capability set
+fail closed with <code class="docutils literal notranslate"><span class="pre">NotImplementedError</span></code> naming the backend type and the
+terms; on the backend side, <code class="docutils literal notranslate"><span class="pre">SimBackend.apply_interval_randomization</span></code>
+routes each op through its handler table and fails closed with the backend
+class and term name when no handler exists.</p></li>
+<li><p>Ops and plans must stay pickle-safe (protocol 4) across spawn-based
+collector processes: stdlib + NumPy frozen dataclasses only.</p></li>
+<li><p>The legacy plan fields (<code class="docutils literal notranslate"><span class="pre">push_perturbation_limit</span></code>, <code class="docutils literal notranslate"><span class="pre">body_ids</span></code>,
+<code class="docutils literal notranslate"><span class="pre">body_linear_velocity_delta</span></code>, <code class="docutils literal notranslate"><span class="pre">body_angular_velocity_delta</span></code>, <code class="docutils literal notranslate"><span class="pre">body_force</span></code>,
+<code class="docutils literal notranslate"><span class="pre">body_torque</span></code>) and the legacy <code class="docutils literal notranslate"><span class="pre">supports_interval_*</span></code> capability bools are
+deprecated: <code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan.iter_ops()</span></code> still adapts set legacy
+fields into ops 1:1, and the bools remain as capability fallbacks. New
+providers should populate <code class="docutils literal notranslate"><span class="pre">ops</span></code>; the legacy fields will be removed in the
+next unisim-core major release.</p></li>
+</ul>
 </section>
 <section id="mujoco-batchenvpool-snapshot">
 <h2>MuJoCo BatchEnvPool Snapshot<a class="headerlink" href="#mujoco-batchenvpool-snapshot" title="Link to this heading">¶</a></h2>
@@ -478,7 +514,7 @@ backend implementations, and owner YAMLs.</p>
 available through <code class="docutils literal notranslate"><span class="pre">get_field_indexed(...)</span></code> and <code class="docutils literal notranslate"><span class="pre">set_field_indexed(...)</span></code>. This
 interface lives in the <code class="docutils literal notranslate"><span class="pre">mujoco-uni-runtime</span></code> package (<code class="docutils literal notranslate"><span class="pre">mujoco_uni.batch_env</span></code>), not in this
 repository; the reset-term constants that map onto it are in
-<code class="docutils literal notranslate"><span class="pre">src/unilab/dr/types.py</span></code>.</p>
+<code class="docutils literal notranslate"><span class="pre">unisim.dr.types</span></code>.</p>
 <p>The supported reset fields and their per-env block shapes are below. The leading
 dimension is always <code class="docutils literal notranslate"><span class="pre">len(env_ids)</span></code>; the trailing block size is the field’s full
 flat width in a single <code class="docutils literal notranslate"><span class="pre">mjModel</span></code>.</p>
@@ -528,7 +564,7 @@ not.</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">geom_size</span></code> is not in <code class="docutils literal notranslate"><span class="pre">SUPPORTED_FIELDS</span></code>. Geometry size is expressed through
 init-lifecycle model materialization (see <code class="docutils literal notranslate"><span class="pre">GeomSizeOverride</span></code> /
-<code class="docutils literal notranslate"><span class="pre">ModelVariantSpec</span></code> in <code class="docutils literal notranslate"><span class="pre">src/unilab/dr/types.py</span></code>), not reset randomization.</p></li>
+<code class="docutils literal notranslate"><span class="pre">ModelVariantSpec</span></code> in <code class="docutils literal notranslate"><span class="pre">unisim.dr.types</span></code>), not reset randomization.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">gravity</span></code> reset randomization requires a <code class="docutils literal notranslate"><span class="pre">mujoco-uni-runtime</span></code> build that ships
 it. This repository depends on the official <code class="docutils literal notranslate"><span class="pre">mujoco</span></code> package (<code class="docutils literal notranslate"><span class="pre">&gt;=3.5</span></code>, with
 the default version pinned by <code class="docutils literal notranslate"><span class="pre">uv.lock</span></code>)
@@ -550,7 +586,8 @@ payloads.</p>
 <section id="evidence-in-repo">
 <h2>Evidence In Repo<a class="headerlink" href="#evidence-in-repo" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p>DR types: <code class="docutils literal notranslate"><span class="pre">src/unilab/dr/types.py</span></code></p></li>
+<li><p>DR types: <code class="docutils literal notranslate"><span class="pre">unisim.dr.types</span></code> and <code class="docutils literal notranslate"><span class="pre">unisim.dr.interval</span></code>, re-exported by
+<code class="docutils literal notranslate"><span class="pre">src/unilab/dr/__init__.py</span></code></p></li>
 <li><p>DR manager: <code class="docutils literal notranslate"><span class="pre">src/unilab/dr/manager.py</span></code></p></li>
 <li><p>Backend interface: <code class="docutils literal notranslate"><span class="pre">unisim.backend.base</span></code></p></li>
 <li><p>Example providers: <code class="docutils literal notranslate"><span class="pre">src/unilab/tasks/locomotion/common/dr_provider.py</span></code>,
@@ -622,6 +659,7 @@ payloads.</p>
 <li><a class="reference internal" href="#lifecycle-classes">Lifecycle Classes</a></li>
 <li><a class="reference internal" href="#provider-minimum">Provider Minimum</a></li>
 <li><a class="reference internal" href="#backend-capability-boundary">Backend Capability Boundary</a></li>
+<li><a class="reference internal" href="#interval-term-descriptors">Interval Term Descriptors</a></li>
 <li><a class="reference internal" href="#mujoco-batchenvpool-snapshot">MuJoCo BatchEnvPool Snapshot</a></li>
 <li><a class="reference internal" href="#motor-control-extension">Motor Control Extension</a></li>
 <li><a class="reference internal" href="#evidence-in-repo">Evidence In Repo</a></li>

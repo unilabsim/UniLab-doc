@@ -570,8 +570,10 @@
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.drake.playback</span><span class="w"> </span><span class="kn">import</span> <span class="n">run_drake_playback</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span>
     <span class="n">DomainRandomizationCapabilities</span><span class="p">,</span>
     <span class="n">IntervalRandomizationPlan</span><span class="p">,</span>
+    <span class="n">IntervalTermOp</span><span class="p">,</span>
     <span class="n">ResetRandomizationPayload</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.scene</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneCfg</span>
@@ -1128,37 +1130,35 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_dr_capabilities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DomainRandomizationCapabilities</span><span class="p">:</span>
         <span class="c1"># Unsupported randomization knobs fail explicitly instead of silently</span>
         <span class="c1"># becoming no-ops.</span>
-        <span class="k">return</span> <span class="n">DomainRandomizationCapabilities</span><span class="p">(</span><span class="n">supports_interval_body_force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="n">DomainRandomizationCapabilities</span><span class="p">(</span>
+            <span class="n">supports_interval_body_force</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">supported_interval_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">({</span><span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">}),</span>
+        <span class="p">)</span></div>
 
+
+    <span class="n">_interval_term_handler_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">IntervalTermOp</span><span class="p">],</span> <span class="kc">None</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
 <div class="viewcode-block" id="DrakeBackend.apply_interval_randomization">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.drake.backend.DrakeBackend.html#unisim.backend.drake.backend.DrakeBackend.apply_interval_randomization">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">apply_interval_randomization</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">plan</span><span class="p">:</span> <span class="n">IntervalRandomizationPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
             <span class="k">return</span>
+        <span class="c1"># A non-empty plan starts from cleared pending forces; the force</span>
+        <span class="c1"># handler then accumulates into ``_pending_body_forces``.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pending_body_forces</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">push_perturbation_limit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="s2">&quot;DrakeBackend interval pushes require explicit body_ids and body_force&quot;</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="s2">&quot;DrakeUni batch backend does not support interval body torque perturbation&quot;</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_force</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Interval body-force perturbation requires body_ids&quot;</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_force</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_linear_velocity_delta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="s2">&quot;DrakeUni batch backend does not support interval body velocity perturbation&quot;</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_angular_velocity_delta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="s2">&quot;DrakeUni batch backend does not support interval body angular velocity &quot;</span>
-                <span class="s2">&quot;perturbation&quot;</span>
-            <span class="p">)</span></div>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">apply_interval_randomization</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_interval_term_handlers</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">IntervalTermOp</span><span class="p">],</span> <span class="kc">None</span><span class="p">]]:</span>
+        <span class="c1"># Built lazily once; only body force has a handler.  Push, torque and</span>
+        <span class="c1"># velocity terms fail closed in the base dispatch.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span>
+                    <span class="n">op</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span>
+                <span class="p">),</span>
+            <span class="p">}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span>
 
 <div class="viewcode-block" id="DrakeBackend.get_play_capabilities">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.drake.backend.DrakeBackend.html#unisim.backend.drake.backend.DrakeBackend.get_play_capabilities">[docs]</a>
