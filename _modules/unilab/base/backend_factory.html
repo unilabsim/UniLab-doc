@@ -556,17 +556,37 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimBackend</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.assets.hub</span><span class="w"> </span><span class="kn">import</span> <span class="n">ensure_robot_assets_for_paths</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.process_device</span><span class="w"> </span><span class="kn">import</span> <span class="n">bind_genesis_process_device</span>
 
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">EnvCfg</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.scene</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneCfg</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_legacy_genesis_device_option_error</span><span class="p">(</span><span class="n">exc</span><span class="p">:</span> <span class="ne">TypeError</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Identify an old UniSim adapter rejecting the optional device keyword.</span>
+
+<span class="sd">    UniSim 1.1 reports unknown backend options from ``GenesisBackend`` while</span>
+<span class="sd">    other compatible releases may expose Python&#39;s usual ``unexpected keyword``</span>
+<span class="sd">    wording.  Keep the compatibility retry narrowly scoped to those messages;</span>
+<span class="sd">    constructor errors from the actual Genesis runtime must still propagate.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">message</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="n">mentions_device</span> <span class="o">=</span> <span class="s2">&quot;genesis_device_id&quot;</span> <span class="ow">in</span> <span class="n">message</span> <span class="ow">or</span> <span class="s2">&quot;device_id&quot;</span> <span class="ow">in</span> <span class="n">message</span>
+    <span class="n">rejects_keyword</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="s2">&quot;does not accept backend options&quot;</span> <span class="ow">in</span> <span class="n">message</span>
+        <span class="ow">or</span> <span class="s2">&quot;unexpected keyword argument&quot;</span> <span class="ow">in</span> <span class="n">message</span>
+        <span class="ow">or</span> <span class="s2">&quot;unexpected keyword&quot;</span> <span class="ow">in</span> <span class="n">message</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">mentions_device</span> <span class="ow">and</span> <span class="n">rejects_keyword</span>
+
+
 <div class="viewcode-block" id="env_backend_kwargs">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.backend_factory.env_backend_kwargs.html#unilab.base.backend_factory.env_backend_kwargs">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">env_backend_kwargs</span><span class="p">(</span><span class="n">cfg</span><span class="p">:</span> <span class="s2">&quot;EnvCfg&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Translate ``EnvCfg`` backend knobs into UniSim adapter options.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="p">{</span>
+    <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">&quot;post_step_forward_sensor&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">post_step_forward_sensor</span><span class="p">,</span>
         <span class="s2">&quot;motrix_max_iterations&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">motrix_max_iterations</span><span class="p">,</span>
         <span class="s2">&quot;chunk_size&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">chunk_size</span><span class="p">,</span>
@@ -588,7 +608,14 @@
         <span class="s2">&quot;isaacsim_render_mode&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacsim_render_mode</span><span class="p">,</span>
         <span class="s2">&quot;isaacsim_render_width&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacsim_render_width</span><span class="p">,</span>
         <span class="s2">&quot;isaacsim_render_height&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacsim_render_height</span><span class="p">,</span>
-    <span class="p">}</span></div>
+    <span class="p">}</span>
+    <span class="c1"># Keep the optional key absent for legacy unisim-core releases that do not</span>
+    <span class="c1"># know about Genesis&#39; explicit device argument.  Once a rank selects a</span>
+    <span class="c1"># device the key is added below and ``create_backend`` supplies a narrow</span>
+    <span class="c1"># compatibility fallback for those releases.</span>
+    <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">genesis_device_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;genesis_device_id&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">genesis_device_id</span>
+    <span class="k">return</span> <span class="n">result</span></div>
 
 
 
@@ -610,7 +637,38 @@
         <span class="p">[</span><span class="n">scene</span><span class="o">.</span><span class="n">model_file</span><span class="p">,</span> <span class="n">scene</span><span class="o">.</span><span class="n">visual_model_file</span><span class="p">,</span> <span class="o">*</span><span class="n">scene</span><span class="o">.</span><span class="n">fragment_files</span><span class="p">]</span>
     <span class="p">)</span>
     <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;body_state_required&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">body_state_required</span>
-    <span class="k">return</span> <span class="n">unisim</span><span class="o">.</span><span class="n">create_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">,</span> <span class="n">scene</span><span class="p">,</span> <span class="n">num_envs</span><span class="p">,</span> <span class="n">sim_dt</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+    <span class="k">if</span> <span class="n">backend_type</span> <span class="o">==</span> <span class="s2">&quot;genesis&quot;</span> <span class="ow">and</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;genesis_device_id&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Bind before any unisim-core Genesis constructor can call gs.init.</span>
+        <span class="c1"># New unisim-core releases repeat this idempotently; old releases do</span>
+        <span class="c1"># not accept the keyword, so the retry below still gets the correct</span>
+        <span class="c1"># process-wide device.  Binding a non-zero id pins</span>
+        <span class="c1"># CUDA_VISIBLE_DEVICES (Quadrants only honors the first visible</span>
+        <span class="c1"># device), so forward the *post-pin* in-process index.</span>
+        <span class="n">genesis_device_id</span> <span class="o">=</span> <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;genesis_device_id&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="nb">isinstance</span><span class="p">(</span><span class="n">genesis_device_id</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">genesis_device_id</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">genesis_device_id</span> <span class="o">&lt;</span> <span class="mi">0</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;genesis_device_id must be a non-negative integer or None, &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">genesis_device_id</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">bound</span> <span class="o">=</span> <span class="n">bind_genesis_process_device</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">genesis_device_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;genesis_device_id&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">bound</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">unisim</span><span class="o">.</span><span class="n">create_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">,</span> <span class="n">scene</span><span class="p">,</span> <span class="n">num_envs</span><span class="p">,</span> <span class="n">sim_dt</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">TypeError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">backend_type</span> <span class="o">!=</span> <span class="s2">&quot;genesis&quot;</span> <span class="ow">or</span> <span class="s2">&quot;genesis_device_id&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+            <span class="k">raise</span>
+        <span class="c1"># unisim-core &lt; 1.2 has no Genesis device field and reports the</span>
+        <span class="c1"># unknown option from GenesisBackend.  Retry only for that precise</span>
+        <span class="c1"># capability error; unrelated constructor TypeErrors must propagate.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">_legacy_genesis_device_option_error</span><span class="p">(</span><span class="n">exc</span><span class="p">):</span>
+            <span class="k">raise</span>
+        <span class="n">legacy_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">legacy_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;genesis_device_id&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">unisim</span><span class="o">.</span><span class="n">create_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">,</span> <span class="n">scene</span><span class="p">,</span> <span class="n">num_envs</span><span class="p">,</span> <span class="n">sim_dt</span><span class="p">,</span> <span class="o">**</span><span class="n">legacy_kwargs</span><span class="p">)</span></div>
 
 
 

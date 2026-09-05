@@ -540,24 +540,272 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for unilab.base.process_device</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;Training-worker device routing for UniSim backends.&quot;&quot;&quot;</span>
+<span></span><span class="sd">&quot;&quot;&quot;Training-worker device routing for UniSim backends.</span>
+
+<span class="sd">The learner device and the device consumed by a simulator are related, but</span>
+<span class="sd">they do not always use the same index namespace.  In particular, the</span>
+<span class="sd">off-policy launcher keeps the host-visible CUDA namespace while the PPO</span>
+<span class="sd">``torchrun`` launcher remaps ``CUDA_VISIBLE_DEVICES`` and therefore exposes a</span>
+<span class="sd">rank-local index to child processes.  The helpers in this module keep that</span>
+<span class="sd">translation on the cold path, next to the backend process binding contract.</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Sequence</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">cast</span>
+
+<span class="c1"># These backends consume an explicit integer device id while materializing</span>
+<span class="c1"># their simulator.  MuJoCo/Motrix/Drake either run on the host or own their</span>
+<span class="c1"># device selection internally and must not receive a synthetic override.</span>
+<span class="n">BACKEND_ENV_DEVICE_FIELDS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;isaacgym&quot;</span><span class="p">:</span> <span class="s2">&quot;isaacgym_device_id&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;isaacsim&quot;</span><span class="p">:</span> <span class="s2">&quot;isaacsim_device_id&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;genesis&quot;</span><span class="p">:</span> <span class="s2">&quot;genesis_device_id&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<span class="c1"># Set once ``bind_genesis_process_device`` has pinned CUDA_VISIBLE_DEVICES for</span>
+<span class="c1"># this process.  Genesis/Quadrants binds its CUDA runtime to the first visible</span>
+<span class="c1"># device regardless of torch&#39;s current device (verified on genesis_world</span>
+<span class="c1"># 1.3.3 / Quadrants 1.3.0, issue #1508), so a non-zero request is honored by</span>
+<span class="c1"># shrinking visibility to the target GPU and using the in-process index 0.</span>
+<span class="c1"># The flag flips the resolution helpers into the pinned namespace.</span>
+<span class="n">_genesis_device_pinned</span> <span class="o">=</span> <span class="kc">False</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend_type</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">backend_type</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;backend_type must be a non-empty string, got </span><span class="si">{</span><span class="n">backend_type</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">backend_type</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_device_indices</span><span class="p">(</span><span class="n">devices</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">devices</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">normalized</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">devices</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;training.devices entries must be integer CUDA indices, got </span><span class="si">{</span><span class="n">entry</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">entry</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;training.devices entries must be non-negative, got </span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">normalized</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">entry</span><span class="p">))</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">normalized</span><span class="p">))</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">normalized</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;training.devices must not contain duplicates, got </span><span class="si">{</span><span class="n">normalized</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">normalized</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_cuda_device_index</span><span class="p">(</span><span class="n">device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Extract an integer CUDA index from a device string.</span>
+
+<span class="sd">    ``cuda`` without an explicit suffix is resolved through the current CUDA</span>
+<span class="sd">    device when possible.  This is deliberately a cold-path helper; it is not</span>
+<span class="sd">    used from environment ``step``/``reset`` loops.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+            <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
+                <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_device</span><span class="p">())</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="c1"># Device discovery is only a fallback for an unindexed alias.  A</span>
+            <span class="c1"># configured topology below remains authoritative if available.</span>
+            <span class="k">pass</span>
+        <span class="k">return</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;cuda:&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">index_text</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">index_text</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;CUDA device alias </span><span class="si">{</span><span class="n">device</span><span class="si">!r}</span><span class="s2"> has an empty index&quot;</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">index_text</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;CUDA device alias </span><span class="si">{</span><span class="n">device</span><span class="si">!r}</span><span class="s2"> has a non-integer index&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+    <span class="k">if</span> <span class="n">index</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;CUDA device alias </span><span class="si">{</span><span class="n">device</span><span class="si">!r}</span><span class="s2"> has a negative index&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">index</span>
+
+
+<div class="viewcode-block" id="resolve_backend_env_device_id">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.resolve_backend_env_device_id.html#unilab.base.process_device.resolve_backend_env_device_id">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_backend_env_device_id</span><span class="p">(</span>
+    <span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">devices</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">rank</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">local_rank</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">world_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve the integer simulator device id for a training rank.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        backend_type: Selected UniSim backend.</span>
+<span class="sd">        devices: ``training.devices`` in the host-visible namespace.  This is</span>
+<span class="sd">            used by the off-policy launcher and by single-process PPO.</span>
+<span class="sd">        rank: Off-policy data-parallel rank (rank zero by default).</span>
+<span class="sd">        local_rank: ``LOCAL_RANK`` from torchrun.  In a distributed PPO worker</span>
+<span class="sd">            this is the logical index inside the launcher&#39;s remapped</span>
+<span class="sd">            ``CUDA_VISIBLE_DEVICES`` list.</span>
+<span class="sd">        world_size: Torchrun world size.  Values greater than one select the</span>
+<span class="sd">            ``local_rank`` namespace; values of one select ``devices[rank]``.</span>
+<span class="sd">        learner_device: Explicit learner device fallback when no topology was</span>
+<span class="sd">            configured (for example APPO or a single-device play command).</span>
+
+<span class="sd">    Returns ``None`` for backends without an explicit simulator device field.</span>
+<span class="sd">    For a torchrun worker the returned id is intentionally *local* (rather</span>
+<span class="sd">    than the host index in ``devices``), because the worker subprocess inherits</span>
+<span class="sd">    the remapped ``CUDA_VISIBLE_DEVICES`` environment.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
+    <span class="n">field</span> <span class="o">=</span> <span class="n">BACKEND_ENV_DEVICE_FIELDS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">field</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">if</span> <span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;genesis&quot;</span> <span class="ow">and</span> <span class="n">_genesis_device_pinned</span><span class="p">:</span>
+        <span class="c1"># Post-pin the process sees exactly one CUDA device; every rank-local</span>
+        <span class="c1"># consumer (learner probe, spawn collector, playback) must use the</span>
+        <span class="c1"># in-process index 0 regardless of the original host/rank topology.</span>
+        <span class="k">return</span> <span class="mi">0</span>
+
+    <span class="n">normalized_devices</span> <span class="o">=</span> <span class="n">_normalize_device_indices</span><span class="p">(</span><span class="n">devices</span><span class="p">)</span>
+    <span class="n">world_size</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">world_size</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">world_size</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;world_size must be positive, got </span><span class="si">{</span><span class="n">world_size</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">world_size</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">resolved_local_rank</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">rank</span> <span class="k">if</span> <span class="n">local_rank</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">local_rank</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">resolved_local_rank</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">resolved_local_rank</span> <span class="o">&gt;=</span> <span class="n">world_size</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;local_rank=</span><span class="si">{</span><span class="n">resolved_local_rank</span><span class="si">}</span><span class="s2"> is out of range for world_size=</span><span class="si">{</span><span class="n">world_size</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">normalized_devices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">normalized_devices</span><span class="p">)</span> <span class="o">!=</span> <span class="n">world_size</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;training.devices has </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">normalized_devices</span><span class="p">)</span><span class="si">}</span><span class="s2"> entries but &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;WORLD_SIZE=</span><span class="si">{</span><span class="n">world_size</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="c1"># torchrun launch_torchrun_workers remaps CVD to the selected physical</span>
+        <span class="c1"># devices.  Isaac workers inherit that environment, so LOCAL_RANK is</span>
+        <span class="c1"># the correct payload index.</span>
+        <span class="k">return</span> <span class="n">resolved_local_rank</span>
+
+    <span class="k">if</span> <span class="n">normalized_devices</span><span class="p">:</span>
+        <span class="n">resolved_rank</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">rank</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">resolved_rank</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">resolved_rank</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">normalized_devices</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;rank=</span><span class="si">{</span><span class="n">resolved_rank</span><span class="si">}</span><span class="s2"> is out of range for training.devices=&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">normalized_devices</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">normalized_devices</span><span class="p">[</span><span class="n">resolved_rank</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">_cuda_device_index</span><span class="p">(</span><span class="n">learner_device</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="apply_backend_env_device_override">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.apply_backend_env_device_override.html#unilab.base.process_device.apply_backend_env_device_override">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">apply_backend_env_device_override</span><span class="p">(</span>
+    <span class="n">env_cfg_override</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">devices</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">rank</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">local_rank</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">world_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return an env override carrying the rank-selected simulator device.</span>
+
+<span class="sd">    The input mapping is never mutated.  If no topology/device can be</span>
+<span class="sd">    resolved, the owner-configured value is preserved.  This lets one helper</span>
+<span class="sd">    serve training, playback, and custom entrypoints while retaining the</span>
+<span class="sd">    historical default (device zero) for single-process calls.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">env_cfg_override</span><span class="p">)</span> <span class="k">if</span> <span class="n">env_cfg_override</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{}</span>
+    <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
+    <span class="n">field</span> <span class="o">=</span> <span class="n">BACKEND_ENV_DEVICE_FIELDS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">field</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">result</span>
+    <span class="n">device_id</span> <span class="o">=</span> <span class="n">resolve_backend_env_device_id</span><span class="p">(</span>
+        <span class="n">backend</span><span class="p">,</span>
+        <span class="n">devices</span><span class="o">=</span><span class="n">devices</span><span class="p">,</span>
+        <span class="n">rank</span><span class="o">=</span><span class="n">rank</span><span class="p">,</span>
+        <span class="n">local_rank</span><span class="o">=</span><span class="n">local_rank</span><span class="p">,</span>
+        <span class="n">world_size</span><span class="o">=</span><span class="n">world_size</span><span class="p">,</span>
+        <span class="n">learner_device</span><span class="o">=</span><span class="n">learner_device</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">device_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">result</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">device_id</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span></div>
+
+
+
+<div class="viewcode-block" id="warn_if_backend_device_collision">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.warn_if_backend_device_collision.html#unilab.base.process_device.warn_if_backend_device_collision">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">warn_if_backend_device_collision</span><span class="p">(</span>
+    <span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">devices</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">rank</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">device_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">source</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;environment&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Warn when a multi-rank simulator still resolves to device zero.</span>
+
+<span class="sd">    This is a transition guard for older adapters/configuration paths.  Rank</span>
+<span class="sd">    zero legitimately owns device zero; only a non-zero rank resolving to zero</span>
+<span class="sd">    is a collision.  The warning is intentionally emitted at construction</span>
+<span class="sd">    time, never from a hot simulation path.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">BACKEND_ENV_DEVICE_FIELDS</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="k">if</span> <span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;genesis&quot;</span> <span class="ow">and</span> <span class="n">_genesis_device_pinned</span><span class="p">:</span>
+        <span class="c1"># A successful pin places every rank on its own physical GPU; the</span>
+        <span class="c1"># in-process index 0 that follows is not a collision.</span>
+        <span class="k">return</span>
+    <span class="n">normalized_devices</span> <span class="o">=</span> <span class="n">_normalize_device_indices</span><span class="p">(</span><span class="n">devices</span><span class="p">)</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="n">normalized_devices</span> <span class="ow">is</span> <span class="kc">None</span>
+        <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">normalized_devices</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span>
+        <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span><span class="n">rank</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span>
+        <span class="ow">or</span> <span class="n">device_id</span> <span class="o">!=</span> <span class="mi">0</span>
+    <span class="p">):</span>
+        <span class="k">return</span>
+    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend</span><span class="si">}</span><span class="s2"> rank </span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">rank</span><span class="p">)</span><span class="si">}</span><span class="s2"> resolved its </span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2"> device to 0 while &quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;training.devices=</span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">normalized_devices</span><span class="p">)</span><span class="si">}</span><span class="s2"> requests multiple devices; &quot;</span>
+        <span class="s2">&quot;all simulator workers may be sharing GPU 0&quot;</span><span class="p">,</span>
+        <span class="ne">RuntimeWarning</span><span class="p">,</span>
+        <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
 
 
 <div class="viewcode-block" id="resolve_backend_process_device">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.resolve_backend_process_device.html#unilab.base.process_device.resolve_backend_process_device">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">resolve_backend_process_device</span><span class="p">(</span><span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">backend_type</span> <span class="o">!=</span> <span class="s2">&quot;mjwarp&quot;</span><span class="p">:</span>
+    <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;mjwarp&quot;</span><span class="p">,</span> <span class="s2">&quot;genesis&quot;</span><span class="p">}:</span>
         <span class="k">return</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="n">learner_device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;mjwarp requires an explicit CUDA process device&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend</span><span class="si">}</span><span class="s2"> requires an explicit CUDA process device&quot;</span><span class="p">)</span>
     <span class="n">resolved</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">learner_device</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">resolved</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">!=</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;mjwarp requires a CUDA process device shared with its learner; got </span><span class="si">{</span><span class="n">resolved</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend</span><span class="si">}</span><span class="s2"> requires a CUDA process device shared with its learner; got </span><span class="si">{</span><span class="n">resolved</span><span class="si">!r}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
     <span class="k">return</span> <span class="n">resolved</span></div>
 
@@ -569,6 +817,8 @@
     <span class="n">resolved</span> <span class="o">=</span> <span class="n">resolve_backend_process_device</span><span class="p">(</span><span class="n">backend_type</span><span class="p">,</span> <span class="n">learner_device</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">resolved</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;genesis&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">bind_genesis_process_device</span><span class="p">(</span><span class="n">resolved</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">bind_backend_process_device</span><span class="p">(</span><span class="n">resolved</span><span class="p">)</span></div>
 
 
@@ -589,10 +839,147 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_pin_cuda_visible_devices</span><span class="p">(</span><span class="n">index</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Shrink ``CUDA_VISIBLE_DEVICES`` to the single entry at ``index``.</span>
+
+<span class="sd">    The index addresses the *current* visibility namespace: with no variable</span>
+<span class="sd">    set it is the host index, otherwise it indexes into the existing entries</span>
+<span class="sd">    (which may be physical indices or UUIDs).  This only works before the</span>
+<span class="sd">    first CUDA context exists, so an already-initialized torch runtime fails</span>
+<span class="sd">    closed with an actionable error instead of crashing inside the engine.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+    <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_initialized</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="s2">&quot;genesis device routing must pin CUDA_VISIBLE_DEVICES before any CUDA &quot;</span>
+            <span class="s2">&quot;context is created in this process, but torch CUDA is already &quot;</span>
+            <span class="s2">&quot;initialized; move configure_backend_process_device earlier in the &quot;</span>
+            <span class="s2">&quot;entrypoint (before seeding/learner construction)&quot;</span>
+        <span class="p">)</span>
+    <span class="n">raw</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;CUDA_VISIBLE_DEVICES&quot;</span><span class="p">)</span>
+    <span class="n">entries</span> <span class="o">=</span> <span class="p">[</span><span class="n">entry</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">raw</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span> <span class="k">if</span> <span class="n">raw</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">entries</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">index</span> <span class="o">&gt;=</span> <span class="n">count</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis device index </span><span class="si">{</span><span class="n">index</span><span class="si">}</span><span class="s2"> is out of range; torch.cuda.device_count()=</span><span class="si">{</span><span class="n">count</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">index</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis device index </span><span class="si">{</span><span class="n">index</span><span class="si">}</span><span class="s2"> is out of range for &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;CUDA_VISIBLE_DEVICES=</span><span class="si">{</span><span class="n">raw</span><span class="si">!r}</span><span class="s2"> (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span><span class="si">}</span><span class="s2"> entr(ies))&quot;</span>
+            <span class="p">)</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="n">entries</span><span class="p">[</span><span class="n">index</span><span class="p">]</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;CUDA_VISIBLE_DEVICES&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">target</span>
+    <span class="c1"># ``device_count`` is lru-cached; drop any pre-pin host-wide count so</span>
+    <span class="c1"># later callers observe the pinned single-device namespace.</span>
+    <span class="n">cache_clear</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">,</span> <span class="s2">&quot;cache_clear&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">cache_clear</span><span class="p">):</span>
+        <span class="n">cache_clear</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="pin_genesis_device_before_cuda_init">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.pin_genesis_device_before_cuda_init.html#unilab.base.process_device.pin_genesis_device_before_cuda_init">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pin_genesis_device_before_cuda_init</span><span class="p">(</span>
+    <span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">devices</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">rank</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">local_rank</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">world_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pin Genesis to its rank device before the first torch CUDA call.</span>
+
+<span class="sd">    ``torch.cuda.is_available()`` already latches ``CUDA_VISIBLE_DEVICES`` in</span>
+<span class="sd">    the CUDA runtime, so the pin must run ahead of *any* torch CUDA query —</span>
+<span class="sd">    entrypoints should call this before registry/bootstrap/device detection.</span>
+<span class="sd">    Pure config topology (``training.devices`` / ``LOCAL_RANK`` / an explicit</span>
+<span class="sd">    ``cuda:N`` learner device) resolves without touching torch.  Returns the</span>
+<span class="sd">    in-process device the caller must use when a pin happened, else ``None``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">&quot;genesis&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">device_id</span> <span class="o">=</span> <span class="n">resolve_backend_env_device_id</span><span class="p">(</span>
+        <span class="n">backend_type</span><span class="p">,</span>
+        <span class="n">devices</span><span class="o">=</span><span class="n">devices</span><span class="p">,</span>
+        <span class="n">rank</span><span class="o">=</span><span class="n">rank</span><span class="p">,</span>
+        <span class="n">local_rank</span><span class="o">=</span><span class="n">local_rank</span><span class="p">,</span>
+        <span class="n">world_size</span><span class="o">=</span><span class="n">world_size</span><span class="p">,</span>
+        <span class="n">learner_device</span><span class="o">=</span><span class="n">learner_device</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">device_id</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">bind_genesis_process_device</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">device_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="bind_genesis_process_device">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.bind_genesis_process_device.html#unilab.base.process_device.bind_genesis_process_device">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">bind_genesis_process_device</span><span class="p">(</span><span class="n">resolved</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Select the CUDA device used by an in-process Genesis worker.</span>
+
+<span class="sd">    Genesis initializes a process-wide session whose Quadrants CUDA runtime</span>
+<span class="sd">    always binds the first entry of ``CUDA_VISIBLE_DEVICES``; torch&#39;s current</span>
+<span class="sd">    device alone is *not* honored (issue #1508).  A non-zero request is</span>
+<span class="sd">    therefore honored by pinning visibility to the target GPU before any CUDA</span>
+<span class="sd">    context exists, after which the in-process device is ``cuda:0``.  The</span>
+<span class="sd">    returned string is the device the rest of this process must actually use —</span>
+<span class="sd">    callers that computed a pre-pin device (learner, probes, collectors) have</span>
+<span class="sd">    to adopt the returned value.  Binding must happen before constructing the</span>
+<span class="sd">    backend (and before ``gs.init``), including in spawn-based collector</span>
+<span class="sd">    processes, and remains in effect for the lifetime of the process.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">global</span> <span class="n">_genesis_device_pinned</span>
+    <span class="n">device</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">resolved</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">index</span> <span class="o">=</span> <span class="n">_cuda_device_index</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">index</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;genesis requires a CUDA process device; got </span><span class="si">{</span><span class="n">resolved</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+    <span class="c1"># Pin *before* any torch CUDA query: even ``torch.cuda.is_available()``</span>
+    <span class="c1"># latches CUDA_VISIBLE_DEVICES in the runtime, after which rewriting it</span>
+    <span class="c1"># would silently keep the process on the first previously visible GPU.</span>
+    <span class="k">if</span> <span class="n">index</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">_genesis_device_pinned</span><span class="p">:</span>
+            <span class="n">_pin_cuda_visible_devices</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+            <span class="n">_genesis_device_pinned</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="c1"># Already pinned (or just pinned): the only valid in-process device is</span>
+        <span class="c1"># index 0.  A stale pre-pin index from the same rank maps onto it.</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;genesis requires CUDA device </span><span class="si">{</span><span class="n">device</span><span class="si">!r}</span><span class="s2">, but CUDA is unavailable in this process&quot;</span>
+        <span class="p">)</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">set_device</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">index</span><span class="si">}</span><span class="s2">&quot;</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_reset_genesis_device_pin_for_tests</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Clear the process pin latch; test-only seam (the CVD rewrite itself is</span>
+<span class="sd">    reverted via ``monkeypatch.setitem``/``delitem`` on ``os.environ``).&quot;&quot;&quot;</span>
+
+    <span class="k">global</span> <span class="n">_genesis_device_pinned</span>
+    <span class="n">_genesis_device_pinned</span> <span class="o">=</span> <span class="kc">False</span>
+
+
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;BACKEND_ENV_DEVICE_FIELDS&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;apply_backend_env_device_override&quot;</span><span class="p">,</span>
     <span class="s2">&quot;bind_backend_process_device&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;bind_genesis_process_device&quot;</span><span class="p">,</span>
     <span class="s2">&quot;configure_backend_process_device&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;pin_genesis_device_before_cuda_init&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;resolve_backend_env_device_id&quot;</span><span class="p">,</span>
     <span class="s2">&quot;resolve_backend_process_device&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;warn_if_backend_device_collision&quot;</span><span class="p">,</span>
 <span class="p">]</span>
 </pre></div>
         </article>

@@ -558,6 +558,8 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">uni_rl.env_contract</span><span class="w"> </span><span class="kn">import</span> <span class="n">EnvFactory</span><span class="p">,</span> <span class="n">EnvProtocol</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.process_device</span><span class="w"> </span><span class="kn">import</span> <span class="n">bind_genesis_process_device</span>
+
 
 <div class="viewcode-block" id="make_registry_env">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.env_factory.make_registry_env.html#unilab.base.env_factory.make_registry_env">[docs]</a>
@@ -578,6 +580,32 @@
     <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.registry</span><span class="w"> </span><span class="kn">import</span> <span class="n">ensure_registries</span>
 
     <span class="n">ensure_registries</span><span class="p">()</span>
+    <span class="c1"># Genesis owns a process-wide session whose Quadrants runtime binds the</span>
+    <span class="c1"># first entry of CUDA_VISIBLE_DEVICES.  Off-policy/APPO collectors are</span>
+    <span class="c1"># fresh spawn processes, so the parent-side binding cannot reach them;</span>
+    <span class="c1"># carry the explicit cold-path id in the opaque override and bind</span>
+    <span class="c1"># immediately before registry construction.  Binding a non-zero id pins</span>
+    <span class="c1"># CUDA_VISIBLE_DEVICES for this process, so forward the post-pin</span>
+    <span class="c1"># in-process index downstream.  Newer unisim-core versions repeat this</span>
+    <span class="c1"># check in GenesisBackend itself, making this compatibility guard</span>
+    <span class="c1"># idempotent.</span>
+    <span class="k">if</span> <span class="n">sim_backend</span> <span class="o">==</span> <span class="s2">&quot;genesis&quot;</span> <span class="ow">and</span> <span class="n">env_cfg_override</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">genesis_device_id</span> <span class="o">=</span> <span class="n">env_cfg_override</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;genesis_device_id&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">genesis_device_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="nb">isinstance</span><span class="p">(</span><span class="n">genesis_device_id</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">genesis_device_id</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="n">genesis_device_id</span> <span class="o">&lt;</span> <span class="mi">0</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;genesis_device_id must be a non-negative integer or None, &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">genesis_device_id</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="n">bound</span> <span class="o">=</span> <span class="n">bind_genesis_process_device</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">genesis_device_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">env_cfg_override</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="o">**</span><span class="n">env_cfg_override</span><span class="p">,</span>
+                <span class="s2">&quot;genesis_device_id&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">bound</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">]),</span>
+            <span class="p">}</span>
     <span class="c1"># ABEnv satisfies EnvProtocol at runtime (reset/set_nan_guard live on</span>
     <span class="c1"># NpEnv); the declared ABEnv type predates the uni_rl protocol.</span>
     <span class="k">return</span> <span class="n">cast</span><span class="p">(</span>
