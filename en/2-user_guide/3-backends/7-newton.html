@@ -446,8 +446,10 @@ registered for the <code class="docutils literal notranslate"><span class="pre">
 algo trees (verdict TRANSFERABLE). Support levels: SAC is <strong>Tested</strong> — a
 full 5000-iteration training completed on 2026-09-06 on an RTX 4090 /
 torch 2.8.0+cu128 / newton 1.5.1 / mujoco-warp 3.11 (reward/mean 6.68 →
-242.3, episode length → 983, ~43k steps/s, 4m25s wall), with record
-playback validated on <code class="docutils literal notranslate"><span class="pre">model_5000.pt</span></code>; PPO remains <strong>Configured</strong>
+242.3, episode length → 983, ~43k steps/s, 4m25s wall), with playback
+validated on <code class="docutils literal notranslate"><span class="pre">model_5000.pt</span></code>: native ViewerGL offscreen record (800-frame
+1280x720 mp4) and an interactive ViewerGL window smoke on a live X
+display; PPO remains <strong>Configured</strong>
 (evidence limited to the owner configs, compose/contract checks, and
 fail-closed runtime/import boundaries; no training or playback claim yet).</p>
 <p>Multi-GPU data parallelism (issue
@@ -471,8 +473,12 @@ MuJoCo-Warp 3.11 / Warp 1.16 line:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># In a source checkout:</span>
 uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>newton
 
+<span class="c1"># Native ViewerGL rendering (offline record + interactive) additionally:</span>
+uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>newton<span class="w"> </span>--extra<span class="w"> </span>newton-render
+
 <span class="c1"># From PyPI:</span>
 pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;unilab[newton]&quot;</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;unilab[newton,newton-render]&quot;</span>
 </pre></div>
 </div>
 <p>The extra pins <code class="docutils literal notranslate"><span class="pre">newton==1.5.1</span></code>, <code class="docutils literal notranslate"><span class="pre">mujoco-warp==3.11.0</span></code>, <code class="docutils literal notranslate"><span class="pre">mujoco==3.11.0</span></code>, and
@@ -524,9 +530,20 @@ silently truncates constraints.</p></li>
 </section>
 <section id="playback-and-rendering">
 <h2>Playback and Rendering<a class="headerlink" href="#playback-and-rendering" title="Link to this heading">¶</a></h2>
-<p>The Newton backend has no native UniLab viewer yet: the owner sets
-<code class="docutils literal notranslate"><span class="pre">training.play_render_mode:</span> <span class="pre">record</span></code>, so playback takes the record/headless
-path, and requesting a native interactive renderer fails closed.</p>
+<p>The Newton backend renders natively through the upstream
+<code class="docutils literal notranslate"><span class="pre">newton.viewer.ViewerGL</span></code> (unisim <code class="docutils literal notranslate"><span class="pre">newton-render</span></code> extra, <code class="docutils literal notranslate"><span class="pre">pyglet&gt;=2.1.6,&lt;3</span></code></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">imgui-bundle&gt;=1.92.0</span></code>). The owner inherits the base config’s
+<code class="docutils literal notranslate"><span class="pre">training.play_render_mode:</span> <span class="pre">auto</span></code>: with a display, <code class="docutils literal notranslate"><span class="pre">auto</span></code> resolves to
+<code class="docutils literal notranslate"><span class="pre">interactive</span></code> (the ViewerGL window); without one it resolves to <code class="docutils literal notranslate"><span class="pre">record</span></code>
+(<code class="docutils literal notranslate"><span class="pre">ViewerGL(headless=True)</span></code> offscreen rendering to mp4). Without the render
+dependencies, <code class="docutils literal notranslate"><span class="pre">record</span></code> falls back to the MuJoCo offline snapshot renderer
+(the plan diagnostic reports <code class="docutils literal notranslate"><span class="pre">mujoco-snapshot</span></code> vs the native
+<code class="docutils literal notranslate"><span class="pre">newton-viewer-gl</span></code>), while <code class="docutils literal notranslate"><span class="pre">interactive</span></code> fails closed when dependencies or
+a display are missing. Headless offscreen rendering still needs an OpenGL
+context: set <code class="docutils literal notranslate"><span class="pre">PYOPENGL_PLATFORM=egl</span></code> on display-less Linux hosts and
+<code class="docutils literal notranslate"><span class="pre">PYOPENGL_PLATFORM=glx</span></code> under Wayland.</p></li>
+</ul>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>newton<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--load-run<span class="w"> </span>&lt;run_dir_name&gt;<span class="w"> </span>--render-mode<span class="w"> </span>record
 
@@ -543,7 +560,8 @@ than silently degrading:</p>
 <li><p><strong>Runtime PD-gain randomization</strong>: Newton currently rejects it, and the
 owner keeps <code class="docutils literal notranslate"><span class="pre">events.pd_gains:</span> <span class="pre">null</span></code> to stay fail-closed until the adapter
 adds the capability.</p></li>
-<li><p><strong>Native interactive rendering</strong>: see Playback above.</p></li>
+<li><p><strong>Camera kwargs on the native render path</strong>: the native ViewerGL path
+ignores <code class="docutils literal notranslate"><span class="pre">camera_kwargs</span></code> (the MuJoCo snapshot path still honors them).</p></li>
 </ul>
 </section>
 <section id="cross-backend-migration-sim2sim">
