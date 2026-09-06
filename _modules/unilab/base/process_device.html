@@ -569,6 +569,15 @@
 <span class="p">}</span>
 
 
+<span class="c1"># Newton consumes an explicit ``cuda:N`` device string (``newton_device``)</span>
+<span class="c1"># instead of an integer id.  uni_rl&#39;s collector-side binder gate only knows</span>
+<span class="c1"># mjwarp, so the rank-local device must reach spawn collectors through the</span>
+<span class="c1"># env override rather than through process binding.</span>
+<span class="n">BACKEND_ENV_DEVICE_STR_FIELDS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;newton&quot;</span><span class="p">:</span> <span class="s2">&quot;newton_device&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+
+
 <span class="c1"># Set once ``bind_genesis_process_device`` has pinned CUDA_VISIBLE_DEVICES for</span>
 <span class="c1"># this process.  Genesis/Quadrants binds its CUDA runtime to the first visible</span>
 <span class="c1"># device regardless of torch&#39;s current device (verified on genesis_world</span>
@@ -670,7 +679,7 @@
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
-    <span class="n">field</span> <span class="o">=</span> <span class="n">BACKEND_ENV_DEVICE_FIELDS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
+    <span class="n">field</span> <span class="o">=</span> <span class="n">BACKEND_ENV_DEVICE_FIELDS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span> <span class="ow">or</span> <span class="n">BACKEND_ENV_DEVICE_STR_FIELDS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">field</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">None</span>
 
@@ -736,8 +745,9 @@
 
     <span class="n">result</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">env_cfg_override</span><span class="p">)</span> <span class="k">if</span> <span class="n">env_cfg_override</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{}</span>
     <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
-    <span class="n">field</span> <span class="o">=</span> <span class="n">BACKEND_ENV_DEVICE_FIELDS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">field</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">int_field</span> <span class="o">=</span> <span class="n">BACKEND_ENV_DEVICE_FIELDS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
+    <span class="n">str_field</span> <span class="o">=</span> <span class="n">BACKEND_ENV_DEVICE_STR_FIELDS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">int_field</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">str_field</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">result</span>
     <span class="n">device_id</span> <span class="o">=</span> <span class="n">resolve_backend_env_device_id</span><span class="p">(</span>
         <span class="n">backend</span><span class="p">,</span>
@@ -747,8 +757,12 @@
         <span class="n">world_size</span><span class="o">=</span><span class="n">world_size</span><span class="p">,</span>
         <span class="n">learner_device</span><span class="o">=</span><span class="n">learner_device</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="k">if</span> <span class="n">device_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">result</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">device_id</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">device_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">result</span>
+    <span class="k">if</span> <span class="n">str_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">result</span><span class="p">[</span><span class="n">str_field</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">device_id</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="k">elif</span> <span class="n">int_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">result</span><span class="p">[</span><span class="n">int_field</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">device_id</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">result</span></div>
 
 
@@ -772,7 +786,7 @@
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">BACKEND_ENV_DEVICE_FIELDS</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">BACKEND_ENV_DEVICE_FIELDS</span> <span class="ow">and</span> <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">BACKEND_ENV_DEVICE_STR_FIELDS</span><span class="p">:</span>
         <span class="k">return</span>
     <span class="k">if</span> <span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;genesis&quot;</span> <span class="ow">and</span> <span class="n">_genesis_device_pinned</span><span class="p">:</span>
         <span class="c1"># A successful pin places every rank on its own physical GPU; the</span>
