@@ -688,11 +688,98 @@
 
 <span class="n">_SESSION_ACTIVE</span> <span class="o">=</span> <span class="kc">False</span>
 <span class="n">_SESSION_DESTROYED</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="n">_SESSION_DEVICE_ID</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_pin_cuda_visible_devices</span><span class="p">(</span><span class="n">torch</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">device_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pin ``CUDA_VISIBLE_DEVICES`` to the requested device; return the in-process index.</span>
+
+<span class="sd">    Quadrants (the Genesis 1.3.x compute runtime) binds its CUDA runtime to</span>
+<span class="sd">    the first entry of ``CUDA_VISIBLE_DEVICES`` regardless of torch&#39;s current</span>
+<span class="sd">    device — ``torch.cuda.set_device(N)`` alone leaves the engine on physical</span>
+<span class="sd">    GPU 0 and crashes later with cross-device illegal-memory errors (verified</span>
+<span class="sd">    on genesis_world 1.3.3 / Quadrants 1.3.0, UniLab issue #1508).  The only</span>
+<span class="sd">    owner-layer way to place a session on another physical GPU is to shrink</span>
+<span class="sd">    visibility to that GPU before the first CUDA context exists; afterwards</span>
+<span class="sd">    the in-process device index is 0.</span>
+
+<span class="sd">    ``device_id`` addresses the *current* visibility namespace: without the</span>
+<span class="sd">    variable set it is the host index, otherwise it indexes into the existing</span>
+<span class="sd">    entries (physical indices or UUID strings).  Returns 0 on success so the</span>
+<span class="sd">    session records the in-process index actually used.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_initialized</span><span class="p">()):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;genesis device_id=</span><span class="si">{</span><span class="n">device_id</span><span class="si">}</span><span class="s2"> requires pinning CUDA_VISIBLE_DEVICES &quot;</span>
+            <span class="s2">&quot;before any CUDA context is created in this process, but torch CUDA &quot;</span>
+            <span class="s2">&quot;is already initialized; select the device earlier (entrypoint cold &quot;</span>
+            <span class="s2">&quot;path) or set CUDA_VISIBLE_DEVICES before launching the process&quot;</span>
+        <span class="p">)</span>
+    <span class="n">raw</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;CUDA_VISIBLE_DEVICES&quot;</span><span class="p">)</span>
+    <span class="n">entries</span> <span class="o">=</span> <span class="p">[</span><span class="n">entry</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">raw</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span> <span class="k">if</span> <span class="n">raw</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">entries</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">device_count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">device_id</span> <span class="o">&gt;=</span> <span class="n">device_count</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis device_id=</span><span class="si">{</span><span class="n">device_id</span><span class="si">}</span><span class="s2"> is out of range; &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;torch.cuda.device_count()=</span><span class="si">{</span><span class="n">device_count</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">device_id</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">device_id</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis device_id=</span><span class="si">{</span><span class="n">device_id</span><span class="si">}</span><span class="s2"> is out of range for &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;CUDA_VISIBLE_DEVICES=</span><span class="si">{</span><span class="n">raw</span><span class="si">!r}</span><span class="s2"> (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span><span class="si">}</span><span class="s2"> entr(ies))&quot;</span>
+            <span class="p">)</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="n">entries</span><span class="p">[</span><span class="n">device_id</span><span class="p">]</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;CUDA_VISIBLE_DEVICES&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">target</span>
+    <span class="c1"># ``device_count`` is lru-cached; drop any pre-pin host-wide count so</span>
+    <span class="c1"># later callers observe the pinned single-device namespace.</span>
+    <span class="n">cache_clear</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">,</span> <span class="s2">&quot;cache_clear&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">cache_clear</span><span class="p">):</span>
+        <span class="n">cache_clear</span><span class="p">()</span>
+    <span class="k">return</span> <span class="mi">0</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_resolve_genesis_device_id</span><span class="p">(</span><span class="n">torch</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">device_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Validate and select the CUDA index used by a Genesis session.&quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">device_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">device_id</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">device_id</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">device_id</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis device_id must be a non-negative integer or None, got </span><span class="si">{</span><span class="n">device_id</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">device_id</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># The engine only honors the first visible device; pin visibility</span>
+            <span class="c1"># and continue with the in-process index 0.  The pin must run</span>
+            <span class="c1"># before any torch CUDA query (even ``is_available`` latches</span>
+            <span class="c1"># CUDA_VISIBLE_DEVICES in the runtime), so it precedes the</span>
+            <span class="c1"># availability check below.</span>
+            <span class="n">device_id</span> <span class="o">=</span> <span class="n">_pin_cuda_visible_devices</span><span class="p">(</span><span class="n">torch</span><span class="p">,</span> <span class="n">device_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis device_id=</span><span class="si">{</span><span class="n">device_id</span><span class="si">}</span><span class="s2"> requires CUDA, but CUDA is unavailable&quot;</span>
+            <span class="p">)</span>
+        <span class="c1"># Genesis&#39; ``gs.init`` consults the process-wide current CUDA device.</span>
+        <span class="c1"># Bind it before entering the initialization routine; doing this after</span>
+        <span class="c1"># ``gs.init`` is too late because Genesis has already allocated its</span>
+        <span class="c1"># global backend on device zero.</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">set_device</span><span class="p">(</span><span class="n">device_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">device_id</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()):</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_device</span><span class="p">())</span>
+    <span class="k">return</span> <span class="kc">None</span>
 
 
 <div class="viewcode-block" id="init_genesis_session">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.genesis.materialization.init_genesis_session.html#unisim.backend.genesis.materialization.init_genesis_session">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">init_genesis_session</span><span class="p">(</span><span class="n">deps</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">logging_level</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;warning&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">init_genesis_session</span><span class="p">(</span>
+    <span class="n">deps</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">device_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">logging_level</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;warning&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Initialize the process-wide Genesis session exactly once.</span>
 
 <span class="sd">    Repeated ``init -&gt; destroy`` cycles are functional but leak 200-450 MB of</span>
@@ -702,14 +789,24 @@
 <span class="sd">    after :func:`destroy_genesis_session` any further construction fails</span>
 <span class="sd">    closed with a clear error.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">global</span> <span class="n">_SESSION_ACTIVE</span><span class="p">,</span> <span class="n">_SESSION_DESTROYED</span>
+    <span class="k">global</span> <span class="n">_SESSION_ACTIVE</span><span class="p">,</span> <span class="n">_SESSION_DESTROYED</span><span class="p">,</span> <span class="n">_SESSION_DEVICE_ID</span>
     <span class="k">if</span> <span class="n">_SESSION_DESTROYED</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
             <span class="s2">&quot;genesis backend supports exactly one gs.init per process and the session &quot;</span>
             <span class="s2">&quot;was already destroyed; start a fresh process instead of re-initializing &quot;</span>
             <span class="s2">&quot;(init/destroy cycles leak host RSS, REPORT #1372 §3.5 [9a]).&quot;</span>
         <span class="p">)</span>
+    <span class="n">selected_device_id</span> <span class="o">=</span> <span class="n">_resolve_genesis_device_id</span><span class="p">(</span><span class="n">deps</span><span class="o">.</span><span class="n">torch</span><span class="p">,</span> <span class="n">device_id</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">_SESSION_ACTIVE</span><span class="p">:</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">selected_device_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">_SESSION_DEVICE_ID</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">selected_device_id</span> <span class="o">!=</span> <span class="n">_SESSION_DEVICE_ID</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;genesis session is already initialized on CUDA device &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_SESSION_DEVICE_ID</span><span class="si">}</span><span class="s2">, cannot reuse it on device </span><span class="si">{</span><span class="n">selected_device_id</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
         <span class="k">return</span>
     <span class="n">gs</span> <span class="o">=</span> <span class="n">deps</span><span class="o">.</span><span class="n">genesis</span>
     <span class="n">cuda_available</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">deps</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">())</span>
@@ -723,7 +820,8 @@
             <span class="sa">f</span><span class="s2">&quot;(backend=</span><span class="si">{</span><span class="s1">&#39;gpu&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">cuda_available</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;cpu&#39;</span><span class="si">}</span><span class="s2">; only the gs.gpu lane is &quot;</span>
             <span class="sa">f</span><span class="s2">&quot;validated by REPORT #1372): </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
-    <span class="n">_SESSION_ACTIVE</span> <span class="o">=</span> <span class="kc">True</span></div>
+    <span class="n">_SESSION_ACTIVE</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">_SESSION_DEVICE_ID</span> <span class="o">=</span> <span class="n">selected_device_id</span></div>
 
 
 
@@ -731,20 +829,22 @@
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.genesis.materialization.destroy_genesis_session.html#unisim.backend.genesis.materialization.destroy_genesis_session">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">destroy_genesis_session</span><span class="p">(</span><span class="n">deps</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Tear down the process-wide session; re-initialization stays forbidden.&quot;&quot;&quot;</span>
-    <span class="k">global</span> <span class="n">_SESSION_ACTIVE</span><span class="p">,</span> <span class="n">_SESSION_DESTROYED</span>
+    <span class="k">global</span> <span class="n">_SESSION_ACTIVE</span><span class="p">,</span> <span class="n">_SESSION_DESTROYED</span><span class="p">,</span> <span class="n">_SESSION_DEVICE_ID</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">_SESSION_ACTIVE</span><span class="p">:</span>
         <span class="k">return</span>
     <span class="n">deps</span><span class="o">.</span><span class="n">genesis</span><span class="o">.</span><span class="n">destroy</span><span class="p">()</span>
     <span class="n">_SESSION_ACTIVE</span> <span class="o">=</span> <span class="kc">False</span>
-    <span class="n">_SESSION_DESTROYED</span> <span class="o">=</span> <span class="kc">True</span></div>
+    <span class="n">_SESSION_DESTROYED</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">_SESSION_DEVICE_ID</span> <span class="o">=</span> <span class="kc">None</span></div>
 
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_reset_session_state_for_tests</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Reset the lifecycle guard; test-only seam for the fake runtime lane.&quot;&quot;&quot;</span>
-    <span class="k">global</span> <span class="n">_SESSION_ACTIVE</span><span class="p">,</span> <span class="n">_SESSION_DESTROYED</span>
+    <span class="k">global</span> <span class="n">_SESSION_ACTIVE</span><span class="p">,</span> <span class="n">_SESSION_DESTROYED</span><span class="p">,</span> <span class="n">_SESSION_DEVICE_ID</span>
     <span class="n">_SESSION_ACTIVE</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">_SESSION_DESTROYED</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">_SESSION_DEVICE_ID</span> <span class="o">=</span> <span class="kc">None</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_map_global_option</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">table</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="n">enum_ns</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
