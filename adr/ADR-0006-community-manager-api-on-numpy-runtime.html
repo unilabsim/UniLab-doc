@@ -456,6 +456,38 @@ composer、viewer、simulation 或 training runtime 带入 UniLab，也不恢复
 </section>
 <section id="decision">
 <h2>Decision<a class="headerlink" href="#decision" title="Link to this heading">¶</a></h2>
+<section id="manipulation-reset-and-training-progress-extension-2026-09-07">
+<h3>Manipulation reset and training progress extension (2026-09-07)<a class="headerlink" href="#manipulation-reset-and-training-progress-extension-2026-09-07" title="Link to this heading">¶</a></h3>
+<p><a class="reference external" href="https://github.com/Motphys/UniLab/issues/1539">UniLab #1539</a> extends the existing
+Entity/reset transaction boundary for downstream Wuji training. Entity exposes
+cold bindings and reset writes for <code class="docutils literal notranslate"><span class="pre">geom_size</span></code>, <code class="docutils literal notranslate"><span class="pre">geom_solref</span></code>, <code class="docutils literal notranslate"><span class="pre">geom_solimp</span></code>,
+joint damping and joint frictionloss. Defaults and model-column IDs come from
+declared UniSim capabilities; unsupported fields fail during binding. Writes
+compose with the existing dense reset payload and preserve unselected columns.</p>
+<p>A fixed mocap body is bound explicitly with
+<code class="docutils literal notranslate"><span class="pre">Entity.bind_mocap_pose_write(body_name,</span> <span class="pre">term_name=...)</span></code>; it does not become the
+scene’s primary floating root. <code class="docutils literal notranslate"><span class="pre">write_mocap_pose_to_sim</span></code> stages selected poses.
+The reset transaction validates staged values before any upload and commits
+generalized state first, then mocap poses. A term failure discards all pending
+state. Backend upload failures propagate; this interface does not promise
+rollback after the first backend upload has succeeded. A mocap-only transaction
+does not reset generalized state. Terms read pending poses through
+<code class="docutils literal notranslate"><span class="pre">Entity.read_mocap_pose</span></code>, without accessing backend-native data.</p>
+<p><code class="docutils literal notranslate"><span class="pre">NpEnv.export_training_state()</span></code> returns a versioned cumulative control-step
+counter; <code class="docutils literal notranslate"><span class="pre">import_training_state()</span></code> validates it before replacing the counter.
+The Manager-Based adapter also restores its derived command/simulation counters,
+so the next step continues from the restored progress. This does not serialize
+physics, RNG, episode buffers or task curriculum internals. A downstream training
+state provider explicitly combines this payload with its own validated task
+state. UniRL owns checkpoint storage and the runner; no learner imports UniLab.
+The owner-selected PPO runtime may provide a runner class. Training consumes it,
+while playback loads actor state without restoring training progress.</p>
+<p>Validation lives in <code class="docutils literal notranslate"><span class="pre">tests/base/test_reset_state.py</span></code>,
+<code class="docutils literal notranslate"><span class="pre">tests/base/test_entity_facade.py</span></code> and <code class="docutils literal notranslate"><span class="pre">tests/envs/test_manager_based_rl_env.py</span></code>:
+masked fields, immutable cold defaults, mocap commit order and abort, entity-local
+column mapping, and restore followed by an actual control step. The governing
+package boundary remains <a class="reference internal" href="ADR-0007-unisim-extraction-boundary.html"><span class="std std-doc">ADR-0007</span></a>.</p>
+</section>
 <section id="source-aligned-public-surface">
 <h3>1. Source-aligned public surface<a class="headerlink" href="#source-aligned-public-surface" title="Link to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">src/unilab/managers/</span></code> 按 pinned mjlab package 的模块职责和 exports 直接迁移。以下名称
@@ -830,6 +862,7 @@ compatibility matrix 中先记录。</p></li>
 <li><a class="reference internal" href="#">ADR-0006 Community Manager API On NumPy Runtime</a><ul>
 <li><a class="reference internal" href="#context">Context</a></li>
 <li><a class="reference internal" href="#decision">Decision</a><ul>
+<li><a class="reference internal" href="#manipulation-reset-and-training-progress-extension-2026-09-07">Manipulation reset and training progress extension (2026-09-07)</a></li>
 <li><a class="reference internal" href="#source-aligned-public-surface">1. Source-aligned public surface</a></li>
 <li><a class="reference internal" href="#numpy-runtime-boundary">2. NumPy runtime boundary</a></li>
 <li><a class="reference internal" href="#unilab-envconfig-ipc-boundary">3. UniLab env、config 与 IPC boundary</a></li>

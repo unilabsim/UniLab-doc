@@ -553,13 +553,18 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BackendRootStateLayout</span><span class="p">,</span> <span class="n">SimBackend</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BackendMocapPoseBinding</span><span class="p">,</span> <span class="n">BackendRootStateLayout</span><span class="p">,</span> <span class="n">SimBackend</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">RESET_TERM_BODY_INERTIA</span><span class="p">,</span>
     <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">,</span>
     <span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span>
     <span class="n">RESET_TERM_DOF_ARMATURE</span><span class="p">,</span>
+    <span class="n">RESET_TERM_DOF_DAMPING</span><span class="p">,</span>
+    <span class="n">RESET_TERM_DOF_FRICTIONLOSS</span><span class="p">,</span>
     <span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">,</span>
+    <span class="n">RESET_TERM_GEOM_SIZE</span><span class="p">,</span>
+    <span class="n">RESET_TERM_GEOM_SOLIMP</span><span class="p">,</span>
+    <span class="n">RESET_TERM_GEOM_SOLREF</span><span class="p">,</span>
     <span class="n">RESET_TERM_GRAVITY</span><span class="p">,</span>
     <span class="n">RESET_TERM_KD</span><span class="p">,</span>
     <span class="n">RESET_TERM_KP</span><span class="p">,</span>
@@ -607,7 +612,10 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_committed_gain_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">bool_</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_requesting_terms</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_commit_had_writes</span> <span class="o">=</span> <span class="kc">False</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_last_set_state_timing_ms</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_set_state_timing_ms</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_bindings</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">BackendMocapPoseBinding</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_values</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_masks</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span></div>
 
 
     <span class="nd">@property</span>
@@ -663,6 +671,231 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_commit_had_writes</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_set_state_timing_ms</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_active</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="ResetStateTransaction.bind_geom_size_write">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.bind_geom_size_write">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">bind_geom_size_write</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">column_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind immutable geom_size defaults through the declared backend capability.&quot;&quot;&quot;</span>
+        <span class="n">default</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_randomization_default</span><span class="p">(</span>
+            <span class="n">RESET_TERM_GEOM_SIZE</span><span class="p">,</span>
+            <span class="n">getter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_geom_sizes</span><span class="p">,</span>
+            <span class="n">expected_tail</span><span class="o">=</span><span class="p">(</span><span class="mi">3</span><span class="p">,),</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_columns</span><span class="p">(</span>
+            <span class="n">column_ids</span><span class="p">,</span>
+            <span class="n">width</span><span class="o">=</span><span class="n">default</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;geom_size IDs&quot;</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_readonly_binding</span><span class="p">(</span><span class="n">columns</span><span class="p">,</span> <span class="n">default</span><span class="p">[</span><span class="n">columns</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="ResetStateTransaction.write_geom_size">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.write_geom_size">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_geom_size</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">column_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage selected geom_size values in the active reset.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_selected_randomization</span><span class="p">(</span>
+            <span class="n">RESET_TERM_GEOM_SIZE</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="p">,</span>
+            <span class="n">column_ids</span><span class="p">,</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">value_tail</span><span class="o">=</span><span class="p">(</span><span class="mi">3</span><span class="p">,),</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ResetStateTransaction.bind_geom_solref_write">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.bind_geom_solref_write">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">bind_geom_solref_write</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">column_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind immutable geom_solref defaults through the declared backend capability.&quot;&quot;&quot;</span>
+        <span class="n">default</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_randomization_default</span><span class="p">(</span>
+            <span class="n">RESET_TERM_GEOM_SOLREF</span><span class="p">,</span>
+            <span class="n">getter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_geom_solref</span><span class="p">,</span>
+            <span class="n">expected_tail</span><span class="o">=</span><span class="p">(</span><span class="mi">2</span><span class="p">,),</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_columns</span><span class="p">(</span>
+            <span class="n">column_ids</span><span class="p">,</span>
+            <span class="n">width</span><span class="o">=</span><span class="n">default</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;geom_solref IDs&quot;</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_readonly_binding</span><span class="p">(</span><span class="n">columns</span><span class="p">,</span> <span class="n">default</span><span class="p">[</span><span class="n">columns</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="ResetStateTransaction.write_geom_solref">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.write_geom_solref">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_geom_solref</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">column_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage selected geom_solref values in the active reset.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_selected_randomization</span><span class="p">(</span>
+            <span class="n">RESET_TERM_GEOM_SOLREF</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="p">,</span>
+            <span class="n">column_ids</span><span class="p">,</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">value_tail</span><span class="o">=</span><span class="p">(</span><span class="mi">2</span><span class="p">,),</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ResetStateTransaction.bind_geom_solimp_write">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.bind_geom_solimp_write">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">bind_geom_solimp_write</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">column_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind immutable geom_solimp defaults through the declared backend capability.&quot;&quot;&quot;</span>
+        <span class="n">default</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_randomization_default</span><span class="p">(</span>
+            <span class="n">RESET_TERM_GEOM_SOLIMP</span><span class="p">,</span>
+            <span class="n">getter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_geom_solimp</span><span class="p">,</span>
+            <span class="n">expected_tail</span><span class="o">=</span><span class="p">(</span><span class="mi">5</span><span class="p">,),</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_columns</span><span class="p">(</span>
+            <span class="n">column_ids</span><span class="p">,</span>
+            <span class="n">width</span><span class="o">=</span><span class="n">default</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;geom_solimp IDs&quot;</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_readonly_binding</span><span class="p">(</span><span class="n">columns</span><span class="p">,</span> <span class="n">default</span><span class="p">[</span><span class="n">columns</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="ResetStateTransaction.write_geom_solimp">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.write_geom_solimp">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_geom_solimp</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">column_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage selected geom_solimp values in the active reset.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_selected_randomization</span><span class="p">(</span>
+            <span class="n">RESET_TERM_GEOM_SOLIMP</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="p">,</span>
+            <span class="n">column_ids</span><span class="p">,</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">value_tail</span><span class="o">=</span><span class="p">(</span><span class="mi">5</span><span class="p">,),</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ResetStateTransaction.bind_dof_damping_write">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.bind_dof_damping_write">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">bind_dof_damping_write</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">column_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind immutable dof_damping defaults through the declared backend capability.&quot;&quot;&quot;</span>
+        <span class="n">default</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_randomization_default</span><span class="p">(</span>
+            <span class="n">RESET_TERM_DOF_DAMPING</span><span class="p">,</span>
+            <span class="n">getter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_dof_damping</span><span class="p">,</span>
+            <span class="n">expected_tail</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_columns</span><span class="p">(</span>
+            <span class="n">column_ids</span><span class="p">,</span>
+            <span class="n">width</span><span class="o">=</span><span class="n">default</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;dof_damping IDs&quot;</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_readonly_binding</span><span class="p">(</span><span class="n">columns</span><span class="p">,</span> <span class="n">default</span><span class="p">[</span><span class="n">columns</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="ResetStateTransaction.write_dof_damping">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.write_dof_damping">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_dof_damping</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">column_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage selected dof_damping values in the active reset.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_selected_randomization</span><span class="p">(</span>
+            <span class="n">RESET_TERM_DOF_DAMPING</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="p">,</span>
+            <span class="n">column_ids</span><span class="p">,</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">value_tail</span><span class="o">=</span><span class="p">(),</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ResetStateTransaction.bind_dof_frictionloss_write">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.bind_dof_frictionloss_write">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">bind_dof_frictionloss_write</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">column_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind immutable dof_frictionloss defaults through the declared backend capability.&quot;&quot;&quot;</span>
+        <span class="n">default</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_randomization_default</span><span class="p">(</span>
+            <span class="n">RESET_TERM_DOF_FRICTIONLOSS</span><span class="p">,</span>
+            <span class="n">getter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_dof_frictionloss</span><span class="p">,</span>
+            <span class="n">expected_tail</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_columns</span><span class="p">(</span>
+            <span class="n">column_ids</span><span class="p">,</span>
+            <span class="n">width</span><span class="o">=</span><span class="n">default</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;dof_frictionloss IDs&quot;</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_readonly_binding</span><span class="p">(</span><span class="n">columns</span><span class="p">,</span> <span class="n">default</span><span class="p">[</span><span class="n">columns</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="ResetStateTransaction.write_dof_frictionloss">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.write_dof_frictionloss">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_dof_frictionloss</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">column_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage selected dof_frictionloss values in the active reset.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_selected_randomization</span><span class="p">(</span>
+            <span class="n">RESET_TERM_DOF_FRICTIONLOSS</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="p">,</span>
+            <span class="n">column_ids</span><span class="p">,</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">value_tail</span><span class="o">=</span><span class="p">(),</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
+        <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="ResetStateTransaction.bind_body_mass_write">
@@ -1281,15 +1514,64 @@
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_qpos</span><span class="p">[</span><span class="n">ids</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">qpos_columns</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]],</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
 
 
+<div class="viewcode-block" id="ResetStateTransaction.bind_mocap_pose">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.bind_mocap_pose">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">bind_mocap_pose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BackendMocapPoseBinding</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve a mocap body once, without exposing a native backend handle.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">body_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_bindings</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Mocap bodies must be bound before reset starts&quot;</span><span class="p">)</span>
+            <span class="n">binding</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">bind_mocap_pose</span><span class="p">(</span><span class="n">body_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">binding</span><span class="o">.</span><span class="n">num_envs</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span> <span class="ow">or</span> <span class="n">binding</span><span class="o">.</span><span class="n">body_name</span> <span class="o">!=</span> <span class="n">body_name</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Backend mocap binding does not match the requested body/batch&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_bindings</span><span class="p">[</span><span class="n">body_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">binding</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_values</span><span class="p">[</span><span class="n">body_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="mi">7</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_masks</span><span class="p">[</span><span class="n">body_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">bool_</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_bindings</span><span class="p">[</span><span class="n">body_name</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="ResetStateTransaction.read_mocap_pose">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.read_mocap_pose">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">read_mocap_pose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Read current poses with this transaction&#39;s pending rows overlaid.&quot;&quot;&quot;</span>
+        <span class="n">poses</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_bindings</span><span class="p">[</span><span class="n">body_name</span><span class="p">]</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_masks</span><span class="p">[</span><span class="n">body_name</span><span class="p">]</span>
+        <span class="n">poses</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_values</span><span class="p">[</span><span class="n">body_name</span><span class="p">][</span><span class="n">mask</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">poses</span></div>
+
+
+<div class="viewcode-block" id="ResetStateTransaction.write_mocap_pose">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.write_mocap_pose">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_mocap_pose</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">body_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">poses</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage poses; upload only after the ordinary reset state has committed.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_active</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">body_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_bindings</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Mocap body </span><span class="si">{</span><span class="n">body_name</span><span class="si">!r}</span><span class="s2"> must be bound before writing&quot;</span><span class="p">)</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_ids</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;mocap pose&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="o">~</span><span class="bp">self</span><span class="o">.</span><span class="n">_active_mask</span><span class="p">[</span><span class="n">ids</span><span class="p">]):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">: mocap mutation outside the active reset&quot;</span><span class="p">)</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_values</span><span class="p">(</span>
+            <span class="n">poses</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="mi">7</span><span class="p">),</span> <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;mocap pose&quot;</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_quaternions</span><span class="p">(</span><span class="n">values</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:],</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_values</span><span class="p">[</span><span class="n">body_name</span><span class="p">][</span><span class="n">ids</span><span class="p">]</span> <span class="o">=</span> <span class="n">values</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_masks</span><span class="p">[</span><span class="n">body_name</span><span class="p">][</span><span class="n">ids</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_requesting_terms</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">term_name</span><span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="ResetStateTransaction.commit">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.commit">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">commit</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Commit all staged rows through one public backend call.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_active</span><span class="p">()</span>
         <span class="n">dirty_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_dirty_mask</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_last_commit_had_writes</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">dirty_ids</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+        <span class="n">mocap_dirty</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">mask</span><span class="p">)</span> <span class="k">for</span> <span class="n">mask</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_masks</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_commit_had_writes</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">dirty_ids</span><span class="o">.</span><span class="n">size</span><span class="p">)</span> <span class="ow">or</span> <span class="n">mocap_dirty</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">dirty_ids</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_commit_mocap_poses</span><span class="p">()</span>
                 <span class="k">return</span> <span class="kc">None</span>
             <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_qpos</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_qvel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -1303,6 +1585,7 @@
                     <span class="n">randomization</span><span class="o">=</span><span class="n">randomization</span><span class="p">,</span>
                 <span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_record_committed_payload</span><span class="p">(</span><span class="n">dirty_ids</span><span class="p">,</span> <span class="n">randomization</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_commit_mocap_poses</span><span class="p">()</span>
                 <span class="n">timing</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
                     <span class="s2">&quot;dr_reset_set_state_ms&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">set_state_t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
                 <span class="p">}</span>
@@ -1321,6 +1604,12 @@
         <span class="k">finally</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_finish</span><span class="p">()</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_commit_mocap_poses</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">mask</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_masks</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">mask</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ids</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_bindings</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_values</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="n">ids</span><span class="p">])</span>
 
 <div class="viewcode-block" id="ResetStateTransaction.abort">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.abort">[docs]</a>
@@ -1544,7 +1833,12 @@
             <span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span>
             <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">,</span>
             <span class="n">RESET_TERM_DOF_ARMATURE</span><span class="p">,</span>
+            <span class="n">RESET_TERM_DOF_DAMPING</span><span class="p">,</span>
+            <span class="n">RESET_TERM_DOF_FRICTIONLOSS</span><span class="p">,</span>
             <span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">,</span>
+            <span class="n">RESET_TERM_GEOM_SIZE</span><span class="p">,</span>
+            <span class="n">RESET_TERM_GEOM_SOLREF</span><span class="p">,</span>
+            <span class="n">RESET_TERM_GEOM_SOLIMP</span><span class="p">,</span>
             <span class="n">RESET_TERM_GRAVITY</span><span class="p">,</span>
         <span class="p">):</span>
             <span class="n">mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_randomization_dirty_masks</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
@@ -1629,7 +1923,12 @@
             <span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span>
             <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">,</span>
             <span class="n">RESET_TERM_DOF_ARMATURE</span><span class="p">,</span>
+            <span class="n">RESET_TERM_DOF_DAMPING</span><span class="p">,</span>
+            <span class="n">RESET_TERM_DOF_FRICTIONLOSS</span><span class="p">,</span>
             <span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">,</span>
+            <span class="n">RESET_TERM_GEOM_SIZE</span><span class="p">,</span>
+            <span class="n">RESET_TERM_GEOM_SOLREF</span><span class="p">,</span>
+            <span class="n">RESET_TERM_GEOM_SOLIMP</span><span class="p">,</span>
             <span class="n">RESET_TERM_GRAVITY</span><span class="p">,</span>
         <span class="p">):</span>
             <span class="n">values</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
@@ -1881,6 +2180,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_dirty_mask</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_gain_dirty_mask</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">mask</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_randomization_dirty_masks</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="n">mask</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">mask</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_masks</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
             <span class="n">mask</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_requesting_terms</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span></div>
 
