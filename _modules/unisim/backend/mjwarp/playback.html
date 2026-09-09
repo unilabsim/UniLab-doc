@@ -535,12 +535,16 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Mapping</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="kn">import</span> <span class="n">PathLike</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">TypeVar</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">CameraCfg</span><span class="p">,</span> <span class="n">DebugOverlayGetter</span><span class="p">,</span> <span class="n">validate_debug_overlays</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.playback_common</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">run_offline_snapshot_playback</span><span class="p">,</span>
     <span class="n">validate_offline_visual_model</span><span class="p">,</span>
@@ -582,10 +586,25 @@
     <span class="n">record_video</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
     <span class="n">snapshot_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
     <span class="n">frame_state_getter</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="n">camera_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="n">extra_data_getter</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">camera_kwargs</span><span class="p">:</span> <span class="n">CameraCfg</span> <span class="o">|</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">debug_overlay_getter</span><span class="p">:</span> <span class="n">DebugOverlayGetter</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">on_frame</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">int</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Render detached mjwarp host snapshots with the existing MuJoCo pipeline.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">headless</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">record_video</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;mjwarp interactive playback cannot record video simultaneously.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">on_frame</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;mjwarp interactive playback does not support on_frame callbacks; &quot;</span>
+                <span class="s2">&quot;use play_render_mode=record (offline MuJoCo snapshot renderer)&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">_run_interactive</span><span class="p">(</span>
+            <span class="n">backend</span><span class="o">=</span><span class="n">backend</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">,</span> <span class="n">initialize</span><span class="o">=</span><span class="n">initialize</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="n">step</span><span class="p">,</span>
+            <span class="n">num_steps</span><span class="o">=</span><span class="n">num_steps</span><span class="p">,</span> <span class="n">snapshot_shape</span><span class="o">=</span><span class="n">snapshot_shape</span><span class="p">,</span>
+            <span class="n">frame_state_getter</span><span class="o">=</span><span class="n">frame_state_getter</span><span class="p">,</span> <span class="n">camera_kwargs</span><span class="o">=</span><span class="n">camera_kwargs</span><span class="p">,</span>
+            <span class="n">debug_overlay_getter</span><span class="o">=</span><span class="n">debug_overlay_getter</span><span class="p">,</span>
+        <span class="p">)</span>
     <span class="k">return</span> <span class="n">run_offline_snapshot_playback</span><span class="p">(</span>
         <span class="n">backend</span><span class="o">=</span><span class="n">backend</span><span class="p">,</span>
         <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">,</span>
@@ -600,9 +619,151 @@
         <span class="n">frame_state_getter</span><span class="o">=</span><span class="n">frame_state_getter</span><span class="p">,</span>
         <span class="n">camera_kwargs</span><span class="o">=</span><span class="n">camera_kwargs</span><span class="p">,</span>
         <span class="n">backend_label</span><span class="o">=</span><span class="s2">&quot;mjwarp&quot;</span><span class="p">,</span>
-        <span class="n">extra_data_getter</span><span class="o">=</span><span class="n">extra_data_getter</span><span class="p">,</span>
+        <span class="n">debug_overlay_getter</span><span class="o">=</span><span class="n">debug_overlay_getter</span><span class="p">,</span>
+        <span class="n">on_frame</span><span class="o">=</span><span class="n">on_frame</span><span class="p">,</span>
     <span class="p">)</span></div>
 
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_inject_interactive_debug_overlays</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">user_scn</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">overlays</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">world</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">model</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">mesh_id_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+    <span class="n">mesh_mat_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Inject this frame&#39;s debug primitives into the passive viewer scene.</span>
+
+<span class="sd">    Returns the number of scene geoms written.  The caller owns</span>
+<span class="sd">    ``viewer.lock()``; the scene is reset (``ngeom = 0``) before injection</span>
+<span class="sd">    because ``viewer.sync()`` does not clear user geoms.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">mujoco</span>
+
+    <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.visualization.render_many</span><span class="w"> </span><span class="kn">import</span> <span class="n">_ghost_material_ids</span><span class="p">,</span> <span class="n">append_debug_primitives</span>
+
+    <span class="n">validated</span> <span class="o">=</span> <span class="n">validate_debug_overlays</span><span class="p">(</span><span class="n">overlays</span><span class="p">,</span> <span class="n">num_envs</span><span class="p">)</span>
+    <span class="n">user_scn</span><span class="o">.</span><span class="n">ngeom</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="n">validated</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">0</span>
+    <span class="n">env_primitives</span> <span class="o">=</span> <span class="n">validated</span><span class="p">[</span><span class="n">world</span><span class="p">]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">env_primitives</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">primitive</span> <span class="ow">in</span> <span class="n">env_primitives</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">primitive</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;ghost_geom&quot;</span> <span class="ow">and</span> <span class="n">primitive</span><span class="o">.</span><span class="n">mesh_asset</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">mesh_id_cache</span><span class="p">:</span>
+            <span class="n">mesh_id</span> <span class="o">=</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mj_name2id</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_MESH</span><span class="p">,</span> <span class="n">primitive</span><span class="o">.</span><span class="n">mesh_asset</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">mesh_id</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;mjwarp interactive ghost_geom mesh </span><span class="si">{</span><span class="n">primitive</span><span class="o">.</span><span class="n">mesh_asset</span><span class="si">!r}</span><span class="s2"> is not &quot;</span>
+                    <span class="s2">&quot;registered in the playback model; interactive overlay meshes cannot &quot;</span>
+                    <span class="s2">&quot;be injected from files (see append_debug_primitives)&quot;</span>
+                <span class="p">)</span>
+            <span class="n">mesh_id_cache</span><span class="p">[</span><span class="n">primitive</span><span class="o">.</span><span class="n">mesh_asset</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">mesh_id</span><span class="p">)</span>
+            <span class="c1"># Inherit the textured material of the model geom rendering the</span>
+            <span class="c1"># same mesh (e.g. the goal cube&#39;s sticker texture); assets without</span>
+            <span class="c1"># one keep the flat primitive rgba.</span>
+            <span class="n">mesh_mat_cache</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">_ghost_material_ids</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">mesh_id_cache</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">append_debug_primitives</span><span class="p">(</span>
+        <span class="n">user_scn</span><span class="p">,</span>
+        <span class="p">[</span><span class="n">env_primitives</span><span class="p">],</span>
+        <span class="n">offsets</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">mesh_ids</span><span class="o">=</span><span class="n">mesh_id_cache</span><span class="p">,</span>
+        <span class="n">mesh_materials</span><span class="o">=</span><span class="n">mesh_mat_cache</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_run_interactive</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span> <span class="n">backend</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">initialize</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">ObsT</span><span class="p">],</span>
+    <span class="n">step</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ObsT</span><span class="p">],</span> <span class="n">ObsT</span><span class="p">],</span> <span class="n">num_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">snapshot_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">frame_state_getter</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">camera_kwargs</span><span class="p">:</span> <span class="n">CameraCfg</span> <span class="o">|</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">debug_overlay_getter</span><span class="p">:</span> <span class="n">DebugOverlayGetter</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Display one selected Warp world; MuJoCo only computes visual kinematics.</span>
+
+<span class="sd">    The passive viewer owns detached model/data, so mouse perturbations cannot</span>
+<span class="sd">    mutate the physics state. Closing its window ends playback.  When</span>
+<span class="sd">    ``debug_overlay_getter`` is provided, the current frame&#39;s primitives for</span>
+<span class="sd">    the displayed world are injected into ``viewer.user_scn`` before each</span>
+<span class="sd">    ``viewer.sync()``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">num_steps</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">num_steps</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="n">num_steps</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;mjwarp interactive playback requires positive num_steps or None.&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;linux&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;DISPLAY&quot;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;mjwarp interactive playback requires a desktop DISPLAY (GLFW/X11).&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;MUJOCO_GL&quot;</span><span class="p">,</span> <span class="s2">&quot;glfw&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;glfw&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;mjwarp interactive playback requires MUJOCO_GL=glfw.&quot;</span><span class="p">)</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">mujoco</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">mujoco.viewer</span>
+
+    <span class="n">camera</span> <span class="o">=</span> <span class="n">CameraCfg</span><span class="o">.</span><span class="n">from_kwargs</span><span class="p">(</span><span class="n">camera_kwargs</span><span class="p">)</span>
+    <span class="n">world</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">cam_tracking_env_idx</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">world</span> <span class="o">&lt;</span> <span class="n">snapshot_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;mjwarp interactive camera environment index is out of range.&quot;</span><span class="p">)</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">MjModel</span><span class="o">.</span><span class="n">from_xml_path</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">get_playback_model</span><span class="p">(</span><span class="n">world</span><span class="p">))</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">MjData</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">model</span><span class="o">.</span><span class="n">nmocap</span> <span class="o">!=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_mocap_pos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;mjwarp interactive visual model mocap layout is incompatible.&quot;</span><span class="p">)</span>
+    <span class="n">getter</span> <span class="o">=</span> <span class="n">frame_state_getter</span> <span class="ow">or</span> <span class="n">env</span><span class="o">.</span><span class="n">get_physics_state_snapshot</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.playback_common</span><span class="w"> </span><span class="kn">import</span> <span class="n">env_cfg_value</span>
+
+    <span class="n">ctrl_dt</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">env_cfg_value</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;ctrl_dt&quot;</span><span class="p">,</span> <span class="mi">1</span> <span class="o">/</span> <span class="mi">60</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">getter</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">snapshot_shape</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp interactive snapshot must have shape </span><span class="si">{</span><span class="n">snapshot_shape</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">time</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="n">world</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">qpos</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="n">world</span><span class="p">,</span> <span class="mi">1</span> <span class="p">:</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">model</span><span class="o">.</span><span class="n">nq</span><span class="p">]</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">qvel</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="n">world</span><span class="p">,</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">model</span><span class="o">.</span><span class="n">nq</span> <span class="p">:</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">model</span><span class="o">.</span><span class="n">nq</span> <span class="o">+</span> <span class="n">model</span><span class="o">.</span><span class="n">nv</span><span class="p">]</span>
+        <span class="n">mocap_pos</span><span class="p">,</span> <span class="n">mocap_quat</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_playback_mocap_state</span><span class="p">(</span><span class="n">world</span><span class="p">)</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">mocap_pos</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">mocap_pos</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">mocap_quat</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">mocap_quat</span>
+        <span class="n">mujoco</span><span class="o">.</span><span class="n">mj_forward</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+
+    <span class="n">obs</span> <span class="o">=</span> <span class="n">initialize</span><span class="p">()</span>
+    <span class="n">update</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">viewer</span> <span class="o">=</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">viewer</span><span class="o">.</span><span class="n">launch_passive</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="s2">&quot;mjwarp could not open the MuJoCo viewer; check GLFW/display access &quot;</span>
+            <span class="s2">&quot;(on macOS use mjpython).&quot;</span>
+        <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+    <span class="k">with</span> <span class="n">viewer</span><span class="p">:</span>
+        <span class="n">mesh_id_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">mesh_mat_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">debug_overlay_getter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">viewer</span><span class="o">.</span><span class="n">user_scn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;mjwarp interactive debug overlays require viewer.user_scn support.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">with</span> <span class="n">viewer</span><span class="o">.</span><span class="n">lock</span><span class="p">():</span>
+            <span class="n">viewer</span><span class="o">.</span><span class="n">cam</span><span class="o">.</span><span class="n">distance</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">cam_distance</span>
+            <span class="n">viewer</span><span class="o">.</span><span class="n">cam</span><span class="o">.</span><span class="n">elevation</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">cam_elevation</span>
+            <span class="n">viewer</span><span class="o">.</span><span class="n">cam</span><span class="o">.</span><span class="n">azimuth</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">cam_azimuth</span>
+        <span class="n">viewer</span><span class="o">.</span><span class="n">sync</span><span class="p">()</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">while</span> <span class="n">viewer</span><span class="o">.</span><span class="n">is_running</span><span class="p">()</span> <span class="ow">and</span> <span class="p">(</span><span class="n">num_steps</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">count</span> <span class="o">&lt;</span> <span class="n">num_steps</span><span class="p">):</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span>
+            <span class="n">obs</span> <span class="o">=</span> <span class="n">step</span><span class="p">(</span><span class="n">obs</span><span class="p">)</span>
+            <span class="k">with</span> <span class="n">viewer</span><span class="o">.</span><span class="n">lock</span><span class="p">():</span>
+                <span class="n">update</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">debug_overlay_getter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">_inject_interactive_debug_overlays</span><span class="p">(</span>
+                        <span class="n">user_scn</span><span class="o">=</span><span class="n">viewer</span><span class="o">.</span><span class="n">user_scn</span><span class="p">,</span>
+                        <span class="n">overlays</span><span class="o">=</span><span class="n">debug_overlay_getter</span><span class="p">(),</span>
+                        <span class="n">world</span><span class="o">=</span><span class="n">world</span><span class="p">,</span>
+                        <span class="n">num_envs</span><span class="o">=</span><span class="n">snapshot_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                        <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span>
+                        <span class="n">mesh_id_cache</span><span class="o">=</span><span class="n">mesh_id_cache</span><span class="p">,</span>
+                        <span class="n">mesh_mat_cache</span><span class="o">=</span><span class="n">mesh_mat_cache</span><span class="p">,</span>
+                    <span class="p">)</span>
+            <span class="n">viewer</span><span class="o">.</span><span class="n">sync</span><span class="p">()</span>
+            <span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">ctrl_dt</span> <span class="o">-</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span><span class="p">)))</span>
 </pre></div>
         </article>
       </div>
