@@ -425,9 +425,10 @@
 <h1>MuJoCo Backend<a class="headerlink" href="#mujoco-backend" title="Link to this heading">¶</a></h1>
 <p>MuJoCo is the default backend path in the committed owner configs. The Python
 dependencies are the official <code class="docutils literal notranslate"><span class="pre">mujoco</span></code> package (<code class="docutils literal notranslate"><span class="pre">~=3.11.0</span></code>, with the exact
-default version pinned by the committed <code class="docutils literal notranslate"><span class="pre">uv.lock</span></code>) plus
-<code class="docutils literal notranslate"><span class="pre">mujoco-uni-runtime</span></code> in <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>, and the adapter lives
-under <code class="docutils literal notranslate"><span class="pre">unisim.backend.mujoco</span></code>.</p>
+default version pinned by the committed <code class="docutils literal notranslate"><span class="pre">uv.lock</span></code>) plus the
+<code class="docutils literal notranslate"><span class="pre">mjbatch</span></code> native batch engine (currently pinned to the
+<a class="reference external" href="https://github.com/unilabsim/mjbatch">integration fork</a> in
+<code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>), and the adapter lives under <code class="docutils literal notranslate"><span class="pre">unisim.backend.mujoco</span></code>.</p>
 <section id="when-to-use-it">
 <h2>When To Use It<a class="headerlink" href="#when-to-use-it" title="Link to this heading">¶</a></h2>
 <ul class="simple">
@@ -454,40 +455,22 @@ rather than opening the Motrix native interactive renderer.</p>
 <h2>Switching MuJoCo Versions<a class="headerlink" href="#switching-mujoco-versions" title="Link to this heading">¶</a></h2>
 <p>pyproject constrains <code class="docutils literal notranslate"><span class="pre">mujoco~=3.11.0</span></code>; the committed <code class="docutils literal notranslate"><span class="pre">uv.lock</span></code> pins the exact
 default version, and uv’s prefer-locked semantics keep ordinary relocks from
-drifting. The default install path uses the prebuilt <code class="docutils literal notranslate"><span class="pre">mujoco-uni-runtime</span></code>
-wheel, which binds <code class="docutils literal notranslate"><span class="pre">mujoco==3.11.0</span></code> — no compiler is needed. The support
-window is <code class="docutils literal notranslate"><span class="pre">&gt;=3.5,&lt;3.12</span></code>; switching to any version other than the wheel’s
-binding always takes the source-rebuild path. The
-<code class="docutils literal notranslate"><span class="pre">mujoco-uni-runtime</span></code> native extension records its build-time <code class="docutils literal notranslate"><span class="pre">mujoco</span></code>
-version and refuses to load against any other version,
-so switching versions means installing the requested <code class="docutils literal notranslate"><span class="pre">mujoco</span></code> and rebuilding
-the extension from source (a C++17 toolchain and Python development headers
-are required; the target’s <code class="docutils literal notranslate"><span class="pre">check-cxx-toolchain</span></code> preflight fails fast with
-per-platform install commands when no compiler is found):</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>mujoco<span class="w"> </span><span class="nv">MJ</span><span class="o">=</span><span class="m">3</span>.10.0
-</pre></div>
-</div>
-<p>Because the <code class="docutils literal notranslate"><span class="pre">~=</span></code> bound can never be re-locked to another line, the target
-operates on the environment directly (<code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">pip</span></code>, without touching <code class="docutils literal notranslate"><span class="pre">uv.lock</span></code>):
-it installs <code class="docutils literal notranslate"><span class="pre">mujoco==3.10.0</span></code> plus the runtime’s build requirements
-(<code class="docutils literal notranslate"><span class="pre">pybind11</span></code>, <code class="docutils literal notranslate"><span class="pre">wheel</span></code>, <code class="docutils literal notranslate"><span class="pre">setuptools</span></code>), clears uv’s build
-cache for <code class="docutils literal notranslate"><span class="pre">mujoco-uni-runtime</span></code> (the cache cannot see that the extension
-depends on the mujoco version), and forces an in-env sdist rebuild of the
-runtime.
-Without the Makefile shortcut, the equivalent is:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;mujoco==3.10.0&quot;</span><span class="w"> </span>pybind11<span class="w"> </span>wheel<span class="w"> </span>setuptools
-uv<span class="w"> </span>cache<span class="w"> </span>clean<span class="w"> </span>mujoco-uni-runtime
-uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--force-reinstall<span class="w"> </span>--no-deps<span class="w"> </span>--no-build-isolation<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--no-binary<span class="w"> </span>mujoco-uni-runtime<span class="w"> </span><span class="s2">&quot;mujoco-uni-runtime==0.5.0&quot;</span>
-</pre></div>
-</div>
-<p>Skipping the cache clean or the forced reinstall lets uv reuse a cached
-extension built against the previous mujoco version, which then fails to
-import with a version-watchdog error (fail-closed, never a silent behavior
-change). The override is environment-local: to return to the default
-prebuilt-wheel path, run <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">sync</span> <span class="pre">--extra</span> <span class="pre">mujoco</span> <span class="pre">--reinstall-package</span> <span class="pre">mujoco-uni-runtime</span></code>. The <code class="docutils literal notranslate"><span class="pre">--reinstall-package</span></code> flag is required — a plain
-<code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">sync</span></code> restores mujoco but keeps the locally rebuilt extension, which
-then fails to load against the reverted mujoco.</p>
+drifting. The <code class="docutils literal notranslate"><span class="pre">mjbatch</span></code> engine is built against <code class="docutils literal notranslate"><span class="pre">mujoco==3.11.0</span></code> and records
+its build-time <code class="docutils literal notranslate"><span class="pre">mujoco</span></code> version, refusing to import against any other version
+(fail-closed, never a silent behavior change). Switching versions therefore
+requires an <code class="docutils literal notranslate"><span class="pre">mjbatch</span></code> build against the requested version:</p>
+<ol class="arabic simple">
+<li><p>bump the <code class="docutils literal notranslate"><span class="pre">mujoco</span></code> bound and the <code class="docutils literal notranslate"><span class="pre">mjbatch</span></code> source pin in
+<code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code> (and mirror <code class="docutils literal notranslate"><span class="pre">pyproject.rocm.toml</span></code>),</p></li>
+<li><p>re-lock (<code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">lock</span></code>, plus the ROCm lockfile via <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">sync-rocm</span></code>) and
+re-sync (<code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">sync</span> <span class="pre">--extra</span> <span class="pre">mujoco</span></code>).</p></li>
+</ol>
+<p>The fork’s build pins <code class="docutils literal notranslate"><span class="pre">mujoco==3.11.0</span></code> at build time, so the isolated build
+always compiles against the matching mujoco. The engine is currently consumed
+from the pinned integration fork; its final distribution identity (PyPI
+package vs git pin, and prebuilt wheels) is the roadmap’s open item — until
+then, coordinate version bumps with the
+<a class="reference external" href="https://github.com/unilabsim/mjbatch">fork</a>.</p>
 </section>
 </section>
 
