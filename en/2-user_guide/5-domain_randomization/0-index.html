@@ -261,7 +261,6 @@
 </li>
 <li class="toctree-l2 current has-children current-page"><a class="current reference internal" href="#">Domain Randomization</a><input aria-label="Toggle navigation of Domain Randomization" checked="" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l3"><a class="reference internal" href="1-configuration.html">Configuration</a></li>
-<li class="toctree-l3"><a class="reference internal" href="2-writing_providers.html">Writing Providers</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../6-terrain/0-index.html">Terrain</a><input aria-label="Toggle navigation of Terrain" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -424,32 +423,30 @@
 <section class="tex2jax_ignore mathjax_ignore" id="domain-randomization">
 <h1>Domain Randomization<a class="headerlink" href="#domain-randomization" title="Link to this heading">¶</a></h1>
 <p>This page only describes the current domain randomization status of registered tasks in the repo. All conclusions come from the code; nothing is inferred from design intent.</p>
-<p>Two DR declaration paths exist today:</p>
+<p>Manager-Based event terms are the only DR declaration path:</p>
 <ul class="simple">
 <li><p><strong>Manager-Based (Compatible) tasks</strong>: reset / interval randomization is declared through Hydra <code class="docutils literal notranslate"><span class="pre">events:</span></code> manager terms in the owner YAML; reset-lifecycle events sample at reset, interval-lifecycle events perturb between steps. See the <code class="docutils literal notranslate"><span class="pre">events:</span></code> block of <code class="docutils literal notranslate"><span class="pre">src/unilab/conf/ppo/task/go1_joystick_flat/base.yaml</span></code> for an example.</p></li>
-<li><p><strong>Task-level provider path</strong>: custom tasks (including tasks hosted in external repos) may declare <code class="docutils literal notranslate"><span class="pre">env.domain_rand.*</span></code> configuration through a <code class="docutils literal notranslate"><span class="pre">DomainRandomizationProvider</span></code> + <code class="docutils literal notranslate"><span class="pre">DomainRandomizationManager</span></code>. No in-repo task currently uses this path.</p></li>
 </ul>
-<p>The unified entry point of the legacy provider path lives in <code class="docutils literal notranslate"><span class="pre">NpEnv._init_domain_randomization()</span></code> and <code class="docutils literal notranslate"><span class="pre">DomainRandomizationManager</span></code>:</p>
+<p>The Manager-Based lifecycle is:</p>
 <ul class="simple">
-<li><p>init path: the task provider produces an <code class="docutils literal notranslate"><span class="pre">InitRandomizationPlan</span></code>; the manager calls the backend’s <code class="docutils literal notranslate"><span class="pre">apply_init_randomization(...)</span></code> during env initialization</p></li>
-<li><p>reset path: the task provider produces a <code class="docutils literal notranslate"><span class="pre">ResetPlan</span></code>; the manager validates capability and then calls the backend’s <code class="docutils literal notranslate"><span class="pre">set_state(...,</span> <span class="pre">randomization=...)</span></code></p></li>
-<li><p>interval path: the task provider produces an <code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan</span></code>; the manager calls the backend’s <code class="docutils literal notranslate"><span class="pre">apply_interval_randomization(...)</span></code> as needed before step</p></li>
+<li><p>construction path: fixed model/tool identity is attached to <code class="docutils literal notranslate"><span class="pre">SceneCfg</span></code> before backend construction</p></li>
+<li><p>reset path: event terms compose writes in <code class="docutils literal notranslate"><span class="pre">ResetStateTransaction</span></code>; the transaction calls <code class="docutils literal notranslate"><span class="pre">SimBackend.set_state(...,</span> <span class="pre">randomization=...)</span></code> once</p></li>
+<li><p>interval path: event terms submit backend-owned interval plans through the public contract</p></li>
 </ul>
 <p>These three paths correspond to three lifecycle classes:</p>
 <ul class="simple">
-<li><p><strong>init-lifecycle DR</strong>: items that change the model identity or model geometry; can only take effect during env/backend initialization and materialization, e.g. object <code class="docutils literal notranslate"><span class="pre">geom_size</span></code> scaling via model variants.</p></li>
-<li><p><strong>reset-lifecycle DR</strong>: items that do not change model identity, only change parameters or reset state within the same model, e.g. <code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code>, <code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code>, <code class="docutils literal notranslate"><span class="pre">gravity</span></code>, <code class="docutils literal notranslate"><span class="pre">kp</span></code>, <code class="docutils literal notranslate"><span class="pre">kd</span></code>.</p></li>
+<li><p><strong>construction-lifecycle identity</strong>: fixed model/tool variants and their immutable env assignment take effect only during backend construction/materialization.</p></li>
+<li><p><strong>reset-lifecycle DR</strong>: items that do not change model identity, only change parameters or reset state within the same model, e.g. <code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code>, <code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code>, <code class="docutils literal notranslate"><span class="pre">gravity</span></code>, <code class="docutils literal notranslate"><span class="pre">kp</span></code>, <code class="docutils literal notranslate"><span class="pre">kd</span></code>, and backend-declared geometry/model fields.</p></li>
 <li><p><strong>interval-lifecycle DR</strong>: external perturbations between steps, e.g. push.</p></li>
 </ul>
 <section id="status-conclusions">
 <h2>Status Conclusions<a class="headerlink" href="#status-conclusions" title="Link to this heading">¶</a></h2>
 <ol class="arabic simple">
-<li><p>Manager-Based tasks do not register a DR provider; their reset/interval randomization consists of <code class="docutils literal notranslate"><span class="pre">events:</span></code> manager terms in the owner YAML, executed uniformly by the manager lifecycle. Custom tasks on the provider path instead go through the <code class="docutils literal notranslate"><span class="pre">DomainRandomizationManager</span></code> unified entry point.</p></li>
-<li><p>Provider-path owners define a <code class="docutils literal notranslate"><span class="pre">domain_rand</span></code> config dataclass, a <code class="docutils literal notranslate"><span class="pre">DomainRandomizationProvider</span></code>, and a <code class="docutils literal notranslate"><span class="pre">ResetPlan</span></code>; Manager-Based owners declare reset behavior through Hydra command/event terms. G1 motion reset perturbations belong to <code class="docutils literal notranslate"><span class="pre">MotionCommandCfg</span></code>, while WBT adds <code class="docutils literal notranslate"><span class="pre">EventTermCfg</span></code> reset and interval terms.</p></li>
-<li><p>What is “unified” today is mainly the entry point and execution flow, not every randomization item itself. The legacy path’s shared helper <code class="docutils literal notranslate"><span class="pre">build_common_reset_randomization()</span></code> currently generates <code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code>, <code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code>, <code class="docutils literal notranslate"><span class="pre">gravity</span></code>, <code class="docutils literal notranslate"><span class="pre">kp</span></code>, <code class="docutils literal notranslate"><span class="pre">kd</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload</span></code> can already express <code class="docutils literal notranslate"><span class="pre">gravity</span></code>, <code class="docutils literal notranslate"><span class="pre">body_iquat</span></code>, <code class="docutils literal notranslate"><span class="pre">body_inertia</span></code>, <code class="docutils literal notranslate"><span class="pre">kp</span></code>, <code class="docutils literal notranslate"><span class="pre">kd</span></code>, and <code class="docutils literal notranslate"><span class="pre">MuJoCoBackend</span></code> has declared support. Whether these are actually used still depends on whether the task provider samples and dispatches them.</p></li>
+<li><p>Reset/interval randomization consists of <code class="docutils literal notranslate"><span class="pre">events:</span></code> manager terms in the owner YAML, executed uniformly by the manager lifecycle.</p></li>
+<li><p>Manager-Based owners declare reset behavior through Hydra command/event terms. G1 motion reset perturbations belong to <code class="docutils literal notranslate"><span class="pre">MotionCommandCfg</span></code>, while WBT adds <code class="docutils literal notranslate"><span class="pre">EventTermCfg</span></code> reset and interval terms.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload</span></code> expresses curated reset terms; a backend must advertise every requested term and own its derived-quantity obligation.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">MotrixBackend</span></code> currently supports <code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code>, <code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code>, <code class="docutils literal notranslate"><span class="pre">kp</span></code>, <code class="docutils literal notranslate"><span class="pre">kd</span></code>, and interval push; and it requires all model actuators to be position actuators during initialization.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">geom_size</span></code> is not a reset-lifecycle field; object geom scale is handled by init-lifecycle model materialization.</p></li>
+<li><p>Fixed mesh/tool identity is declared by <code class="docutils literal notranslate"><span class="pre">env.fixed_model_variants</span></code>; reset-time geometry fields remain behind backend capability declarations and never change that identity.</p></li>
 </ol>
 </section>
 <section id="uniformity-assessment-table">
@@ -582,97 +579,27 @@
 </table>
 </div>
 </section>
-<section id="current-unified-dr-capabilities-and-boundaries">
-<h2>Current Unified DR Capabilities and Boundaries<a class="headerlink" href="#current-unified-dr-capabilities-and-boundaries" title="Link to this heading">¶</a></h2>
-<section id="the-legacy-provider-entry-point-is-unified">
-<h3>1. The Legacy Provider Entry Point Is Unified<a class="headerlink" href="#the-legacy-provider-entry-point-is-unified" title="Link to this heading">¶</a></h3>
-<p>The unified entry point of the legacy provider path is guaranteed by <code class="docutils literal notranslate"><span class="pre">NpEnv</span></code>
-and <code class="docutils literal notranslate"><span class="pre">DomainRandomizationManager</span></code>:</p>
+<section id="current-dr-capabilities-and-boundaries">
+<h2>Current DR Capabilities and Boundaries<a class="headerlink" href="#current-dr-capabilities-and-boundaries" title="Link to this heading">¶</a></h2>
+<p>The owner YAML declares event terms; <code class="docutils literal notranslate"><span class="pre">ResetStateTransaction</span></code> composes selected
+rows and validates shapes; UniSim backends advertise and apply the curated
+payload. Task-specific reset sampling remains owned by command/event terms:</p>
 <ul class="simple">
-<li><p>Tasks only need to register a provider</p></li>
-<li><p>The manager uniformly performs capability validation</p></li>
-<li><p>The backend is uniformly responsible for actually applying the randomization payload</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">G1MotionTracking</span></code> pose / velocity / joint noise is owned by its manager command.</p></li>
+<li><p>Allegro grasp / object initial-state sampling is task-specific event logic.</p></li>
+<li><p>Fixed model/tool identity is construction-time and never reset-time DR.</p></li>
 </ul>
-<p>So from an execution-path perspective, provider-path tasks are unified;
-Manager-Based tasks instead execute the <code class="docutils literal notranslate"><span class="pre">events:</span></code> terms declared in the owner
-YAML through the manager lifecycle.</p>
-</section>
-<section id="the-shared-helpers-are-still-narrow">
-<h3>2. The Shared Helpers Are Still Narrow<a class="headerlink" href="#the-shared-helpers-are-still-narrow" title="Link to this heading">¶</a></h3>
-<p>The legacy path’s <code class="docutils literal notranslate"><span class="pre">dr_utils.py</span></code> builds and validates common reset payloads:</p>
-<ul class="simple">
-<li><p>reset common payload: <code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code>, <code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code>, <code class="docutils literal notranslate"><span class="pre">gravity</span></code>, <code class="docutils literal notranslate"><span class="pre">kp</span></code>, <code class="docutils literal notranslate"><span class="pre">kd</span></code></p></li>
-</ul>
-<p>This means:</p>
-<ul class="simple">
-<li><p>Provider-path tasks sample their task-specific state directly inside each provider</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">G1MotionTracking</span></code>’s pose / velocity / joint noise is owned by its manager command</p></li>
-<li><p>Allegro’s grasp / object initial state sampling is entirely task-specific logic</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">geom_size</span></code> scale is init-lifecycle model materialization and is not part of the reset common payload</p></li>
-</ul>
-<p>So today’s “uniformity” is more about the contract and the calling convention than “all tasks share the same set of randomization-item schemas”.</p>
-</section>
-<section id="backend-capabilities-already-exceed-what-tasks-currently-use">
-<h3>3. Backend Capabilities Already Exceed What Tasks Currently Use<a class="headerlink" href="#backend-capabilities-already-exceed-what-tasks-currently-use" title="Link to this heading">¶</a></h3>
-<p><code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload</span></code> now contains:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">gravity</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">body_iquat</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">body_inertia</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">kp</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">kd</span></code></p></li>
-</ul>
-<p>Backend capability today:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">MuJoCoBackend</span></code>: supports the 7 reset terms above, plus interval push, interval body velocity delta (linear and world-frame angular), and interval body force/torque</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">MotrixBackend</span></code>: supports <code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code>, <code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code>, <code class="docutils literal notranslate"><span class="pre">kp</span></code>, <code class="docutils literal notranslate"><span class="pre">kd</span></code>, plus interval push; requires actuators to all be position actuators during initialization</p></li>
-</ul>
-<p>Notes:</p>
-<ul class="simple">
-<li><p>The current <code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan</span></code> supports <code class="docutils literal notranslate"><span class="pre">push_perturbation_limit</span></code>, <code class="docutils literal notranslate"><span class="pre">body_linear_velocity_delta</span></code>, <code class="docutils literal notranslate"><span class="pre">body_angular_velocity_delta</span></code>, <code class="docutils literal notranslate"><span class="pre">body_force</span></code>, and <code class="docutils literal notranslate"><span class="pre">body_torque</span></code>; among these, <code class="docutils literal notranslate"><span class="pre">body_force</span></code>/<code class="docutils literal notranslate"><span class="pre">body_torque</span></code> express hot-path direct external-wrench perturbations without exposing the backend-private <code class="docutils literal notranslate"><span class="pre">xfrc_applied</span></code> details.</p></li>
-<li><p>The current MuJoCo backend’s interval push and interval body force are both dispatched through <code class="docutils literal notranslate"><span class="pre">xfrc_applied</span></code>.</p></li>
-<li><p>The Motrix backend currently still does not support direct body-force disturbance, so such owner configs must continue to be explicitly disabled.</p></li>
-</ul>
-<p>But on the task side, the current reality is: not every provider constructs these fields. The backend contract is the capability boundary; whether the task config and provider dispatch a payload is what determines whether a given task actually enables the corresponding DR item.</p>
-</section>
+<p>A requested backend capability that is not advertised fails closed; there is no
+filtering or silent fallback.</p>
 </section>
 <section id="reset-gravity-usage">
 <h2>Reset gravity Usage<a class="headerlink" href="#reset-gravity-usage" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">gravity</span></code> is a reset-lifecycle DR: on each reset, a full MuJoCo gravity vector <code class="docutils literal notranslate"><span class="pre">(gx,</span> <span class="pre">gy,</span> <span class="pre">gz)</span></code> is sampled per env subset and dispatched to the backend via <code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload.gravity</span></code>. This vector expresses both direction and magnitude:</p>
-<ul class="simple">
-<li><p>Direction: determined by the direction of <code class="docutils literal notranslate"><span class="pre">(gx,</span> <span class="pre">gy,</span> <span class="pre">gz)</span></code>.</p></li>
-<li><p>Magnitude: determined by the vector norm <code class="docutils literal notranslate"><span class="pre">sqrt(gx^2</span> <span class="pre">+</span> <span class="pre">gy^2</span> <span class="pre">+</span> <span class="pre">gz^2)</span></code>.</p></li>
-<li><p>Lifecycle: only sampled and written at reset; the env retains that gravity until the next reset re-samples it.</p></li>
-<li><p>Backend: currently in UniLab, only the MuJoCo backend declares support for this reset term; the Motrix backend does not. Some tasks filter it by capability and skip it; others raise an error in the validate stage.</p></li>
-</ul>
-<p>The config entry lives under <code class="docutils literal notranslate"><span class="pre">env.domain_rand</span></code> in provider-path task owners;
-Manager-Based tasks have no <code class="docutils literal notranslate"><span class="pre">env.domain_rand</span></code>:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">env</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">domain_rand</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">randomize_gravity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-<span class="w">    </span><span class="nt">gravity_range</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">-0.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">-0.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">-10.5</span><span class="p p-Indicator">]</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">-8.5</span><span class="p p-Indicator">]</span>
-</pre></div>
-</div>
-<p>Field semantics:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">randomize_gravity</span></code>: whether to enable gravity reset DR; defaults to <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">gravity_range</span></code>: a <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">3)</span></code>-shaped per-dimension sampling range; the first and second rows give the upper and lower bounds of each component.</p></li>
-<li><p>On each reset, each dimension is uniformly sampled within <code class="docutils literal notranslate"><span class="pre">[min(row0,</span> <span class="pre">row1),</span> <span class="pre">max(row0,</span> <span class="pre">row1)]</span></code>. The direction is not automatically normalized, and the gravity norm is not fixed.</p></li>
-</ul>
-<p>If you only want to randomize the magnitude while keeping the vertical-down direction, only open up the <code class="docutils literal notranslate"><span class="pre">z</span></code> component; to randomize both direction and magnitude, open up <code class="docutils literal notranslate"><span class="pre">x/y/z</span></code>. Enable it from the CLI with <code class="docutils literal notranslate"><span class="pre">env.domain_rand.randomize_gravity=true</span></code> and a <code class="docutils literal notranslate"><span class="pre">env.domain_rand.gravity_range=[...]</span></code> override on a provider-path task owner.</p>
-<p>Notes:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">gravity_range</span></code> must be convertible into a <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">3)</span></code> array; otherwise reset will raise an error when constructing the payload.</p></li>
-<li><p>This term does not call <code class="docutils literal notranslate"><span class="pre">mj_setConst</span></code>; MuJoCo step / forward reads <code class="docutils literal notranslate"><span class="pre">mjModel.opt.gravity</span></code> directly.</p></li>
-<li><p>Do not enable this term under the Motrix backend; the current Motrix capability does not include <code class="docutils literal notranslate"><span class="pre">gravity</span></code>.</p></li>
-<li><p>The MuJoCo backend writes gravity through the <code class="docutils literal notranslate"><span class="pre">mjbatch</span></code> per-simulation model
-expansion (<code class="docutils literal notranslate"><span class="pre">expand(&quot;gravity&quot;)</span></code>), which the pinned <code class="docutils literal notranslate"><span class="pre">mjbatch</span></code> build ships.</p></li>
-<li><p>During training it is recommended to start from a small tilt range; otherwise sampling a too-large horizontal gravity early on may degrade the task into being unlearnable.</p></li>
-</ul>
+<p><code class="docutils literal notranslate"><span class="pre">gravity</span></code> is a reset-lifecycle DR: on each reset, a full MuJoCo gravity vector
+<code class="docutils literal notranslate"><span class="pre">(gx,</span> <span class="pre">gy,</span> <span class="pre">gz)</span></code> is sampled per selected environment and dispatched through
+<code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload.gravity</span></code>. Configure it with a reset <code class="docutils literal notranslate"><span class="pre">EventTermCfg</span></code>
+that calls <code class="docutils literal notranslate"><span class="pre">randomize_physics_scene_gravity</span></code>; unsupported backends fail closed.
+A small tilt range is recommended because large horizontal gravity can make an
+early task unlearnable.</p>
 </section>
 <section id="interval-push-usage">
 <h2>Interval push Usage<a class="headerlink" href="#interval-push-usage" title="Link to this heading">¶</a></h2>
@@ -684,21 +611,42 @@ term. For example, <code class="docutils literal notranslate"><span class="pre">
 </pre></div>
 </div>
 </section>
-<section id="geom-size-lifecycle-boundary">
-<h2><code class="docutils literal notranslate"><span class="pre">geom_size</span></code> Lifecycle Boundary<a class="headerlink" href="#geom-size-lifecycle-boundary" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">geom_size</span></code> is explicitly not part of <code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload</span></code>, and must not be modified on the hot path via <code class="docutils literal notranslate"><span class="pre">BatchEnvPool.reset(...,</span> <span class="pre">randomization=...)</span></code>.</p>
-<p>The reason is that <code class="docutils literal notranslate"><span class="pre">geom_size</span></code> changes model geometry and model identity; the correct lifecycle is:</p>
-<ol class="arabic simple">
-<li><p>The task provider generates the model variants and env-to-model assignment in <code class="docutils literal notranslate"><span class="pre">build_init_randomization_plan(...)</span></code>.</p></li>
-<li><p>The MuJoCo backend modifies geom size on the cold path using <code class="docutils literal notranslate"><span class="pre">MjSpec</span></code> and compiles scale-specific <code class="docutils literal notranslate"><span class="pre">MjModel</span></code>s.</p></li>
-<li><p>The backend constructs <code class="docutils literal notranslate"><span class="pre">BatchEnvPool</span></code> with a model sequence of length <code class="docutils literal notranslate"><span class="pre">num_envs</span></code>.</p></li>
-</ol>
+<section id="fixed-model-tool-variant-boundary">
+<h2>Fixed Model/Tool Variant Boundary<a class="headerlink" href="#fixed-model-tool-variant-boundary" title="Link to this heading">¶</a></h2>
+<p>Manager-Based owners declare fixed variants on the environment config. The task
+owns names, source descriptors, and the final assignment; it does not compile a
+model:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">env</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">fixed_model_variants</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">variants</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tool_a</span>
+<span class="w">        </span><span class="nt">source_model_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tools/tool_a.xml</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tool_b</span>
+<span class="w">        </span><span class="nt">source_model_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tools/tool_b.xml</span>
+<span class="w">    </span><span class="c1"># Omit explicit_variant_names for deterministic round-robin assignment.</span>
+<span class="w">    </span><span class="nt">explicit_variant_names</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">tool_a</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">tool_b</span><span class="p p-Indicator">]</span>
+</pre></div>
+</div>
+<p>The Manager factory turns the declaration into a read-only <code class="docutils literal notranslate"><span class="pre">int32</span></code> assignment
+with shape <code class="docutils literal notranslate"><span class="pre">(num_envs,)</span></code>; an empty explicit list selects round-robin.
+The assignment is task identity: it is fixed after backend construction and is
+not resampled by reset events.</p>
+<p>UniLab does not open, parse, or compile <code class="docutils literal notranslate"><span class="pre">source_model_file</span></code>, and does not hold
+<code class="docutils literal notranslate"><span class="pre">MjSpec</span></code>, <code class="docutils literal notranslate"><span class="pre">MjModel</span></code>, mjbatch, or Warp objects. UniSim adapters own source
+realization and must declare <code class="docutils literal notranslate"><span class="pre">supports_fixed_variants</span></code>. Until that
+contract lands, a task configured with fixed variants fails closed before env
+construction. Heterogeneous variants that cannot expose one public
+state/action/sensor layout also fail closed.</p>
+<p>Reset-time model-field DR stays inside the selected identity. Its canonical or
+per-env baselines come from the backend’s declared
+<code class="docutils literal notranslate"><span class="pre">get_reset_term_default(term)</span></code> contract; Manager terms do not recompile the
+scene or apply a canonical baseline to every tool. When only part of a model
+table is randomized, unwritten columns retain the selected environment’s
+variant baseline.</p>
+<p>The ownership boundary and MJWarp/CPU executor split are recorded in
+<a class="reference internal" href="../../../adr/ADR-0010-fixed-model-variant-ownership-boundary.html"><span class="doc">ADR-0010</span></a>.</p>
 <div class="toctree-wrapper compound">
 </div>
-<ol class="arabic simple" start="4">
-<li><p>The reset stage only performs state and parameter perturbations within the same model identity; it does not handle <code class="docutils literal notranslate"><span class="pre">geom_size</span></code>.</p></li>
-</ol>
-<p>This boundary exists to honor the cold-path asset/model-metadata access principle: <code class="docutils literal notranslate"><span class="pre">step()</span></code>, <code class="docutils literal notranslate"><span class="pre">reset()</span></code>, and hot-path DR do not parse XML, do not read assets, and do not branch at runtime based on asset metadata.</p>
 </section>
 <section id="related-tasks">
 <h2>Related Tasks<a class="headerlink" href="#related-tasks" title="Link to this heading">¶</a></h2>
@@ -706,9 +654,8 @@ term. For example, <code class="docutils literal notranslate"><span class="pre">
 <li><p><a class="reference internal" href="../4-tasks/2-motion_tracking.html"><span class="doc">G1 Motion Tracking</span></a>: confirm motion assets and replay first before enabling DR.</p></li>
 <li><p><a class="reference internal" href="../4-tasks/1-locomotion.html"><span class="doc">Go2 Rough Terrain</span></a>: common items are mass, COM, friction, and push.</p></li>
 </ul>
-<p>For configuration examples, see <a class="reference internal" href="1-configuration.html"><span class="doc">Configuration</span></a>. For the developer
-provider interface and backend capability boundary, see
-<a class="reference internal" href="2-writing_providers.html"><span class="doc">Writing Providers</span></a> and <a class="reference internal" href="../../4-developer_guide/2-contracts/4-dr_contract.html"><span class="doc">Domain Randomization Contract</span></a>.</p>
+<p>For the backend capability boundary, see
+<a class="reference internal" href="../../4-developer_guide/2-contracts/4-dr_contract.html"><span class="doc">Domain Randomization Contract</span></a>.</p>
 </section>
 </section>
 
@@ -774,15 +721,10 @@ provider interface and backend capability boundary, see
 <li><a class="reference internal" href="#status-conclusions">Status Conclusions</a></li>
 <li><a class="reference internal" href="#uniformity-assessment-table">Uniformity Assessment Table</a></li>
 <li><a class="reference internal" href="#per-task-domain-randomization-list">Per-task Domain Randomization List</a></li>
-<li><a class="reference internal" href="#current-unified-dr-capabilities-and-boundaries">Current Unified DR Capabilities and Boundaries</a><ul>
-<li><a class="reference internal" href="#the-legacy-provider-entry-point-is-unified">1. The Legacy Provider Entry Point Is Unified</a></li>
-<li><a class="reference internal" href="#the-shared-helpers-are-still-narrow">2. The Shared Helpers Are Still Narrow</a></li>
-<li><a class="reference internal" href="#backend-capabilities-already-exceed-what-tasks-currently-use">3. Backend Capabilities Already Exceed What Tasks Currently Use</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#current-dr-capabilities-and-boundaries">Current DR Capabilities and Boundaries</a></li>
 <li><a class="reference internal" href="#reset-gravity-usage">Reset gravity Usage</a></li>
 <li><a class="reference internal" href="#interval-push-usage">Interval push Usage</a></li>
-<li><a class="reference internal" href="#geom-size-lifecycle-boundary"><code class="docutils literal notranslate"><span class="pre">geom_size</span></code> Lifecycle Boundary</a></li>
+<li><a class="reference internal" href="#fixed-model-tool-variant-boundary">Fixed Model/Tool Variant Boundary</a></li>
 <li><a class="reference internal" href="#related-tasks">Related Tasks</a></li>
 </ul>
 </li>

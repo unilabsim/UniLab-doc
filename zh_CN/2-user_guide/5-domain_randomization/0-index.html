@@ -261,7 +261,6 @@
 </li>
 <li class="toctree-l2 current has-children current-page"><a class="current reference internal" href="#">域随机化</a><input aria-label="Toggle navigation of 域随机化" checked="" class="toctree-checkbox" id="toctree-checkbox-27" name="toctree-checkbox-27" role="switch" type="checkbox"/><label for="toctree-checkbox-27"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l3"><a class="reference internal" href="1-configuration.html">配置</a></li>
-<li class="toctree-l3"><a class="reference internal" href="2-writing_providers.html">编写 Provider</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../6-terrain/0-index.html">地形</a><input aria-label="Toggle navigation of 地形" class="toctree-checkbox" id="toctree-checkbox-28" name="toctree-checkbox-28" role="switch" type="checkbox"/><label for="toctree-checkbox-28"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -325,7 +324,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../4-developer_guide/2-contracts/1-env_contract.html">Env 契约</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../4-developer_guide/2-contracts/2-backend_contract.html">Backend 能力契约</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../4-developer_guide/2-contracts/3-task_owner.html">任务 owner config 契约</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../4-developer_guide/2-contracts/4-dr_contract.html">Domain Randomization 契约</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../4-developer_guide/2-contracts/4-dr_contract.html">域随机化 Contract</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../4-developer_guide/2-contracts/5-runner_lifecycle.html">Runner 生命周期</a></li>
 </ul>
 </li>
@@ -425,32 +424,24 @@
 <section class="tex2jax_ignore mathjax_ignore" id="id1">
 <h1>域随机化<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
 <p>本页仅描述仓库中已注册任务的域随机化现状。所有结论都来自代码；不从设计意图推断任何内容。</p>
-<p>当前存在两条 DR 声明路径：</p>
+<p>Manager-Based event term 是唯一 DR 声明路径：</p>
 <ul class="simple">
 <li><p><strong>Manager-Based（Compatible）任务</strong>：reset / interval 随机化通过 owner YAML 中的 Hydra <code class="docutils literal notranslate"><span class="pre">events:</span></code> manager term 声明；reset 生命周期的 event 在 reset 时采样，interval 生命周期的 event 在 step 之间施加扰动。例如 <code class="docutils literal notranslate"><span class="pre">src/unilab/conf/ppo/task/go1_joystick_flat/base.yaml</span></code> 的 <code class="docutils literal notranslate"><span class="pre">events:</span></code> 段。</p></li>
-<li><p><strong>任务级 provider 路径</strong>：自定义任务（包括托管在外部仓库中的任务）可以通过 <code class="docutils literal notranslate"><span class="pre">DomainRandomizationProvider</span></code> + <code class="docutils literal notranslate"><span class="pre">DomainRandomizationManager</span></code> 声明 <code class="docutils literal notranslate"><span class="pre">env.domain_rand.*</span></code> 配置。当前仓库内没有任务使用该路径。</p></li>
-</ul>
-<p>legacy provider 路径的统一入口点位于 <code class="docutils literal notranslate"><span class="pre">NpEnv._init_domain_randomization()</span></code> 和 <code class="docutils literal notranslate"><span class="pre">DomainRandomizationManager</span></code>：</p>
-<ul class="simple">
-<li><p>init 路径：task provider 产生一个 <code class="docutils literal notranslate"><span class="pre">InitRandomizationPlan</span></code>；manager 在 env 初始化期间调用后端的 <code class="docutils literal notranslate"><span class="pre">apply_init_randomization(...)</span></code></p></li>
-<li><p>reset 路径：task provider 产生一个 <code class="docutils literal notranslate"><span class="pre">ResetPlan</span></code>；manager 验证能力，然后调用后端的 <code class="docutils literal notranslate"><span class="pre">set_state(...,</span> <span class="pre">randomization=...)</span></code></p></li>
-<li><p>interval 路径：task provider 产生一个 <code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan</span></code>；manager 在 step 之前按需调用后端的 <code class="docutils literal notranslate"><span class="pre">apply_interval_randomization(...)</span></code></p></li>
 </ul>
 <p>这三条路径对应三个生命周期类别：</p>
 <ul class="simple">
-<li><p><strong>init 生命周期 DR</strong>：改变模型 identity 或模型几何的项；只能在 env/backend 初始化和 materialization 期间生效，例如通过模型变体进行的物体 <code class="docutils literal notranslate"><span class="pre">geom_size</span></code> 缩放。</p></li>
-<li><p><strong>reset 生命周期 DR</strong>：不改变模型 identity，只在同一模型内改变参数或 reset 状态的项，例如 <code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code>、<code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code>、<code class="docutils literal notranslate"><span class="pre">gravity</span></code>、<code class="docutils literal notranslate"><span class="pre">kp</span></code>、<code class="docutils literal notranslate"><span class="pre">kd</span></code>。</p></li>
+<li><p><strong>construction 生命周期 identity</strong>：固定 model/tool variant 及其 immutable env assignment，只在 backend construction/materialization 期间生效。</p></li>
+<li><p><strong>reset 生命周期 DR</strong>：不改变模型 identity，只在同一模型内改变参数或 reset 状态的项，例如 <code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code>、<code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code>、<code class="docutils literal notranslate"><span class="pre">gravity</span></code>、<code class="docutils literal notranslate"><span class="pre">kp</span></code>、<code class="docutils literal notranslate"><span class="pre">kd</span></code>，以及 backend 显式声明支持的 geometry/model 字段。</p></li>
 <li><p><strong>interval 生命周期 DR</strong>：step 之间的外部扰动，例如 push。</p></li>
 </ul>
 <section id="id2">
 <h2>状态结论<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
 <ol class="arabic simple">
-<li><p>Manager-Based 任务不注册 DR provider；它们的 reset/interval 随机化是 owner YAML 中的 <code class="docutils literal notranslate"><span class="pre">events:</span></code> manager term，由 manager 生命周期统一执行。走 provider 路径的自定义任务则经过 <code class="docutils literal notranslate"><span class="pre">DomainRandomizationManager</span></code> 统一入口。</p></li>
-<li><p>provider 路径的 owner 定义 <code class="docutils literal notranslate"><span class="pre">domain_rand</span></code> 配置 dataclass、<code class="docutils literal notranslate"><span class="pre">DomainRandomizationProvider</span></code> 和 <code class="docutils literal notranslate"><span class="pre">ResetPlan</span></code>；Manager-Based owner 则通过 Hydra command/event term 声明 reset 行为。G1 motion reset 扰动归 <code class="docutils literal notranslate"><span class="pre">MotionCommandCfg</span></code> 所有，WBT 另加 <code class="docutils literal notranslate"><span class="pre">EventTermCfg</span></code> reset 与 interval term。</p></li>
-<li><p>今天所”统一”的主要是入口点和执行流程，而不是每一个随机化项本身。legacy 路径的共享辅助函数 <code class="docutils literal notranslate"><span class="pre">build_common_reset_randomization()</span></code> 目前生成 <code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code>、<code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code>、<code class="docutils literal notranslate"><span class="pre">gravity</span></code>、<code class="docutils literal notranslate"><span class="pre">kp</span></code>、<code class="docutils literal notranslate"><span class="pre">kd</span></code>。</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload</span></code> 已经可以表达 <code class="docutils literal notranslate"><span class="pre">gravity</span></code>、<code class="docutils literal notranslate"><span class="pre">body_iquat</span></code>、<code class="docutils literal notranslate"><span class="pre">body_inertia</span></code>、<code class="docutils literal notranslate"><span class="pre">kp</span></code>、<code class="docutils literal notranslate"><span class="pre">kd</span></code>，并且 <code class="docutils literal notranslate"><span class="pre">MuJoCoBackend</span></code> 已声明支持。这些是否实际被使用，仍取决于 task provider 是否对它们进行采样和 dispatch。</p></li>
+<li><p>reset/interval 随机化由 owner YAML 中的 <code class="docutils literal notranslate"><span class="pre">events:</span></code> manager term 声明，并由 manager 生命周期统一执行。</p></li>
+<li><p>Manager-Based owner 通过 Hydra command/event term 声明 reset 行为。G1 motion reset 扰动归 <code class="docutils literal notranslate"><span class="pre">MotionCommandCfg</span></code> 所有，WBT 另加 <code class="docutils literal notranslate"><span class="pre">EventTermCfg</span></code> reset 与 interval term。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload</span></code> 表达 curated reset terms；backend 必须声明每个请求 term，并拥有其派生量重算义务。</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">MotrixBackend</span></code> 目前支持 <code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code>、<code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code>、<code class="docutils literal notranslate"><span class="pre">kp</span></code>、<code class="docutils literal notranslate"><span class="pre">kd</span></code> 和 interval push；并且它要求在初始化期间所有模型 actuator 都是 position actuator。</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">geom_size</span></code> 不是 reset 生命周期字段；物体 geom 缩放由 init 生命周期的模型 materialization 处理。</p></li>
+<li><p>固定 mesh/tool identity 由 <code class="docutils literal notranslate"><span class="pre">env.fixed_model_variants</span></code> 声明；reset-time geometry 字段仍位于 backend capability 声明之后，且不会改变该 identity。</p></li>
 </ol>
 </section>
 <section id="id3">
@@ -584,92 +575,23 @@
 </div>
 </section>
 <section id="dr">
-<h2>当前统一 DR 的能力与边界<a class="headerlink" href="#dr" title="Link to this heading">¶</a></h2>
-<section id="legacy-provider">
-<h3>1. legacy provider 入口是统一的<a class="headerlink" href="#legacy-provider" title="Link to this heading">¶</a></h3>
-<p>legacy provider 路径的统一入口点由 <code class="docutils literal notranslate"><span class="pre">NpEnv</span></code> 和 <code class="docutils literal notranslate"><span class="pre">DomainRandomizationManager</span></code> 保证：</p>
+<h2>当前 DR 的能力与边界<a class="headerlink" href="#dr" title="Link to this heading">¶</a></h2>
+<p>owner YAML 声明 event term；<code class="docutils literal notranslate"><span class="pre">ResetStateTransaction</span></code> 组合 selected rows 并校验
+shape；UniSim backend 声明并应用 curated payload。task-specific reset 采样仍由
+command/event term 拥有：</p>
 <ul class="simple">
-<li><p>任务只需注册一个 provider</p></li>
-<li><p>manager 统一执行能力验证</p></li>
-<li><p>后端统一负责实际施加随机化 payload</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">G1MotionTracking</span></code> 的 pose / velocity / joint noise 归 manager command 所有。</p></li>
+<li><p>Allegro grasp / object 初始状态采样是 task-specific event logic。</p></li>
+<li><p>固定 model/tool identity 是 construction-time，不是 reset-time DR。</p></li>
 </ul>
-<p>因此从执行路径的角度看，provider 路径的任务是统一的；Manager-Based 任务则由 manager 生命周期统一执行 owner YAML 声明的 <code class="docutils literal notranslate"><span class="pre">events:</span></code> term。</p>
-</section>
-<section id="id5">
-<h3>2. 共享辅助函数仍然较窄<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
-<p>legacy 路径的 <code class="docutils literal notranslate"><span class="pre">dr_utils.py</span></code> 构造并校验通用 reset payload：</p>
-<ul class="simple">
-<li><p>reset common payload：<code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code>、<code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code>、<code class="docutils literal notranslate"><span class="pre">gravity</span></code>、<code class="docutils literal notranslate"><span class="pre">kp</span></code>、<code class="docutils literal notranslate"><span class="pre">kd</span></code></p></li>
-</ul>
-<p>这意味着：</p>
-<ul class="simple">
-<li><p>provider 路径的任务直接在各自的 provider 内部采样 task 专属状态</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">G1MotionTracking</span></code> 的 pose / velocity / joint 噪声由其 manager command 所有</p></li>
-<li><p>Allegro 的 grasp / 物体初始状态采样完全是 task 专属逻辑</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">geom_size</span></code> 缩放是 init 生命周期的模型 materialization，不属于 reset common payload</p></li>
-</ul>
-<p>所以今天的”统一性”更多是关于 contract 和调用约定，而不是”所有任务共享同一套随机化项 schema”。</p>
-</section>
-<section id="id6">
-<h3>3. 后端能力已经超出任务当前使用的范围<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
-<p><code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload</span></code> 现在包含：</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">gravity</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">body_iquat</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">body_inertia</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">kp</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">kd</span></code></p></li>
-</ul>
-<p>当前的后端能力：</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">MuJoCoBackend</span></code>：支持上述 7 个 reset 项，外加 interval push、interval body velocity delta（线速度与世界系角速度）和 interval body force/torque</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">MotrixBackend</span></code>：支持 <code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code>、<code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code>、<code class="docutils literal notranslate"><span class="pre">kp</span></code>、<code class="docutils literal notranslate"><span class="pre">kd</span></code>，外加 interval push；要求在初始化期间 actuator 全部为 position actuator</p></li>
-</ul>
-<p>说明：</p>
-<ul class="simple">
-<li><p>当前的 <code class="docutils literal notranslate"><span class="pre">IntervalRandomizationPlan</span></code> 支持 <code class="docutils literal notranslate"><span class="pre">push_perturbation_limit</span></code>、<code class="docutils literal notranslate"><span class="pre">body_linear_velocity_delta</span></code>、<code class="docutils literal notranslate"><span class="pre">body_angular_velocity_delta</span></code>、<code class="docutils literal notranslate"><span class="pre">body_force</span></code> 和 <code class="docutils literal notranslate"><span class="pre">body_torque</span></code>；其中 <code class="docutils literal notranslate"><span class="pre">body_force</span></code>/<code class="docutils literal notranslate"><span class="pre">body_torque</span></code> 表达热路径上的直接外力/力矩扰动，而不暴露后端私有的 <code class="docutils literal notranslate"><span class="pre">xfrc_applied</span></code> 细节。</p></li>
-<li><p>当前 MuJoCo 后端的 interval push 和 interval body force 都通过 <code class="docutils literal notranslate"><span class="pre">xfrc_applied</span></code> dispatch。</p></li>
-<li><p>Motrix 后端目前仍不支持直接 body-force 扰动，因此这类 owner 配置必须继续显式禁用。</p></li>
-</ul>
-<p>但在任务侧，当前的现实是：并非每个 provider 都构造这些字段。后端 contract 是能力边界；task 配置和 provider 是否 dispatch 一个 payload，才决定了某个任务是否实际启用对应的 DR 项。</p>
-</section>
+<p>未显式声明支持的后端能力会 fail closed；不存在过滤或静默回退。</p>
 </section>
 <section id="reset-gravity">
 <h2>Reset gravity 用法<a class="headerlink" href="#reset-gravity" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">gravity</span></code> 是一个 reset 生命周期 DR：在每次 reset 时，会按 env 子集采样一个完整的 MuJoCo gravity 向量 <code class="docutils literal notranslate"><span class="pre">(gx,</span> <span class="pre">gy,</span> <span class="pre">gz)</span></code>，并通过 <code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload.gravity</span></code> dispatch 到后端。该向量同时表达方向和大小：</p>
-<ul class="simple">
-<li><p>方向：由 <code class="docutils literal notranslate"><span class="pre">(gx,</span> <span class="pre">gy,</span> <span class="pre">gz)</span></code> 的方向决定。</p></li>
-<li><p>大小：由向量范数 <code class="docutils literal notranslate"><span class="pre">sqrt(gx^2</span> <span class="pre">+</span> <span class="pre">gy^2</span> <span class="pre">+</span> <span class="pre">gz^2)</span></code> 决定。</p></li>
-<li><p>生命周期：仅在 reset 时采样和写入；env 会保留该重力，直到下一次 reset 重新采样。</p></li>
-<li><p>后端：当前在 UniLab 中，只有 MuJoCo 后端声明支持该 reset 项；Motrix 后端不支持。一些任务按能力过滤并跳过它；另一些任务在 validate 阶段抛出错误。</p></li>
-</ul>
-<p>配置入口位于 provider 路径任务 owner 的 <code class="docutils literal notranslate"><span class="pre">env.domain_rand</span></code> 下；Manager-Based 任务没有 <code class="docutils literal notranslate"><span class="pre">env.domain_rand</span></code>：</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">env</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">domain_rand</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">randomize_gravity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-<span class="w">    </span><span class="nt">gravity_range</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">-0.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">-0.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">-10.5</span><span class="p p-Indicator">]</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">-8.5</span><span class="p p-Indicator">]</span>
-</pre></div>
-</div>
-<p>字段语义：</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">randomize_gravity</span></code>：是否启用 gravity reset DR；默认为 <code class="docutils literal notranslate"><span class="pre">false</span></code>。</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">gravity_range</span></code>：一个形状为 <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">3)</span></code> 的逐维采样范围；第一行和第二行给出每个分量的上界和下界。</p></li>
-<li><p>在每次 reset 时，每个维度在 <code class="docutils literal notranslate"><span class="pre">[min(row0,</span> <span class="pre">row1),</span> <span class="pre">max(row0,</span> <span class="pre">row1)]</span></code> 内均匀采样。方向不会自动归一化，重力范数也不固定。</p></li>
-</ul>
-<p>如果你只想随机化大小而保持竖直向下的方向，只开放 <code class="docutils literal notranslate"><span class="pre">z</span></code> 分量；如果想同时随机化方向和大小，开放 <code class="docutils literal notranslate"><span class="pre">x/y/z</span></code>。在 provider 路径的任务 owner 上，可通过 CLI 以 <code class="docutils literal notranslate"><span class="pre">env.domain_rand.randomize_gravity=true</span></code> 与 <code class="docutils literal notranslate"><span class="pre">env.domain_rand.gravity_range=[...]</span></code> override 启用。</p>
-<p>说明：</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">gravity_range</span></code> 必须可转换为 <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">3)</span></code> 数组；否则 reset 在构造 payload 时会抛出错误。</p></li>
-<li><p>该项不调用 <code class="docutils literal notranslate"><span class="pre">mj_setConst</span></code>；MuJoCo step / forward 直接读取 <code class="docutils literal notranslate"><span class="pre">mjModel.opt.gravity</span></code>。</p></li>
-<li><p>不要在 Motrix 后端下启用该项；当前 Motrix 能力不包含 <code class="docutils literal notranslate"><span class="pre">gravity</span></code>。</p></li>
-<li><p>MuJoCo 后端通过 <code class="docutils literal notranslate"><span class="pre">mjbatch</span></code> 的 per-simulation 模型展开（<code class="docutils literal notranslate"><span class="pre">expand(&quot;gravity&quot;)</span></code>）
-写入 gravity，钉住的 <code class="docutils literal notranslate"><span class="pre">mjbatch</span></code> 构建已包含该字段。</p></li>
-<li><p>在训练期间，建议从较小的倾斜范围开始；否则在早期采样到过大的水平重力，可能会使任务退化为不可学习。</p></li>
-</ul>
+<p><code class="docutils literal notranslate"><span class="pre">gravity</span></code> 是 reset 生命周期 DR：每次 reset 按选中环境采样完整的 MuJoCo gravity
+向量 <code class="docutils literal notranslate"><span class="pre">(gx,</span> <span class="pre">gy,</span> <span class="pre">gz)</span></code>，并通过 <code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload.gravity</span></code> 提交。请通过调用
+<code class="docutils literal notranslate"><span class="pre">randomize_physics_scene_gravity</span></code> 的 reset <code class="docutils literal notranslate"><span class="pre">EventTermCfg</span></code> 配置；不支持的后端
+fail closed。建议从较小倾斜范围开始，避免早期训练任务不可学习。</p>
 </section>
 <section id="interval-push">
 <h2>Interval push 用法<a class="headerlink" href="#interval-push" title="Link to this heading">¶</a></h2>
@@ -681,31 +603,46 @@
 </pre></div>
 </div>
 </section>
-<section id="geom-size">
-<h2><code class="docutils literal notranslate"><span class="pre">geom_size</span></code> 生命周期边界<a class="headerlink" href="#geom-size" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">geom_size</span></code> 明确不属于 <code class="docutils literal notranslate"><span class="pre">ResetRandomizationPayload</span></code>，并且不得在热路径上通过 <code class="docutils literal notranslate"><span class="pre">BatchEnvPool.reset(...,</span> <span class="pre">randomization=...)</span></code> 修改。</p>
-<p>原因在于 <code class="docutils literal notranslate"><span class="pre">geom_size</span></code> 会改变模型几何和模型 identity；正确的生命周期是：</p>
-<ol class="arabic simple">
-<li><p>task provider 在 <code class="docutils literal notranslate"><span class="pre">build_init_randomization_plan(...)</span></code> 中生成模型变体以及 env 到模型的分配。</p></li>
-<li><p>MuJoCo 后端在冷路径上使用 <code class="docutils literal notranslate"><span class="pre">MjSpec</span></code> 修改 geom size，并编译 scale 专属的 <code class="docutils literal notranslate"><span class="pre">MjModel</span></code>。</p></li>
-<li><p>后端使用长度为 <code class="docutils literal notranslate"><span class="pre">num_envs</span></code> 的模型序列构造 <code class="docutils literal notranslate"><span class="pre">BatchEnvPool</span></code>。</p></li>
-</ol>
+<section id="model-tool-variant">
+<h2>固定 Model/Tool Variant 边界<a class="headerlink" href="#model-tool-variant" title="Link to this heading">¶</a></h2>
+<p>Manager-Based owner 在 environment config 中声明 fixed variants。Task 拥有
+名称、source descriptor 和最终 assignment，但不编译模型：</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">env</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">fixed_model_variants</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">variants</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tool_a</span>
+<span class="w">        </span><span class="nt">source_model_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tools/tool_a.xml</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tool_b</span>
+<span class="w">        </span><span class="nt">source_model_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tools/tool_b.xml</span>
+<span class="w">    </span><span class="c1"># 省略 explicit_variant_names 时使用确定性 round-robin assignment。</span>
+<span class="w">    </span><span class="nt">explicit_variant_names</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">tool_a</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">tool_b</span><span class="p p-Indicator">]</span>
+</pre></div>
+</div>
+<p>Manager factory 会把它物化为形状 <code class="docutils literal notranslate"><span class="pre">(num_envs,)</span></code>、只读的 <code class="docutils literal notranslate"><span class="pre">int32</span></code> assignment；
+空 explicit list 选择 round-robin。Assignment 是
+task identity：backend construction 后固定，reset event 不会重新采样。</p>
+<p>UniLab 不打开、解析或编译 <code class="docutils literal notranslate"><span class="pre">source_model_file</span></code>，也不持有 <code class="docutils literal notranslate"><span class="pre">MjSpec</span></code>、<code class="docutils literal notranslate"><span class="pre">MjModel</span></code>、
+mjbatch 或 Warp object。UniSim adapter 负责 source realization，并必须声明
+<code class="docutils literal notranslate"><span class="pre">supports_fixed_variants</span></code>。在该 contract 落地前，配置 fixed variants 的
+task 会在 env 构造前 fail closed。无法投影到统一 public
+state/action/sensor layout 的 heterogeneous variants 同样 fail closed。</p>
+<p>Reset-time model-field DR 保持在已选 identity 内。其 canonical 或 per-env
+基线来自 backend 声明的 <code class="docutils literal notranslate"><span class="pre">get_reset_term_default(term)</span></code> contract；Manager term
+不会重新编译场景，也不会把 canonical 基线套到每个工具上。只随机化模型表的一
+部分时，未写入的列保留所选环境的 variant 基线。</p>
+<p>所有权边界以及 MJWarp/CPU executor 分工记录在
+<a class="reference internal" href="../../../adr/ADR-0010-fixed-model-variant-ownership-boundary.html"><span class="doc">ADR-0010</span></a>。</p>
 <div class="toctree-wrapper compound">
 </div>
-<ol class="arabic simple" start="4">
-<li><p>reset 阶段只在同一模型 identity 内执行状态和参数扰动；它不处理 <code class="docutils literal notranslate"><span class="pre">geom_size</span></code>。</p></li>
-</ol>
-<p>这条边界存在的目的是遵循冷路径 asset/model-metadata 访问原则：<code class="docutils literal notranslate"><span class="pre">step()</span></code>、<code class="docutils literal notranslate"><span class="pre">reset()</span></code> 和热路径 DR 不解析 XML、不读取 asset，也不在运行时基于 asset 元数据进行分支。</p>
 </section>
-<section id="id7">
-<h2>相关任务<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<section id="id5">
+<h2>相关任务<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="../4-tasks/2-motion_tracking.html"><span class="doc">G1 Motion Tracking</span></a>：开启 DR 前先确认 motion 资产和 replay。</p></li>
 <li><p><a class="reference internal" href="../4-tasks/1-locomotion.html"><span class="doc">Go2 Rough Terrain</span></a>：常见的是 mass、COM、friction、push。</p></li>
 </ul>
-<p>有关配置示例，请参阅 <a class="reference internal" href="1-configuration.html"><span class="doc">配置</span></a>。有关开发者
-provider 接口和后端能力边界，请参阅
-<a class="reference internal" href="2-writing_providers.html"><span class="doc">编写 Provider</span></a> 和 <a class="reference internal" href="../../4-developer_guide/2-contracts/4-dr_contract.html"><span class="doc">Domain Randomization Contract</span></a>。</p>
+<p>有关后端能力边界，请参阅
+<a class="reference internal" href="../../4-developer_guide/2-contracts/4-dr_contract.html"><span class="doc">Domain Randomization Contract</span></a>。</p>
 </section>
 </section>
 
@@ -771,16 +708,11 @@ provider 接口和后端能力边界，请参阅
 <li><a class="reference internal" href="#id2">状态结论</a></li>
 <li><a class="reference internal" href="#id3">统一性评估表</a></li>
 <li><a class="reference internal" href="#id4">各任务域随机化清单</a></li>
-<li><a class="reference internal" href="#dr">当前统一 DR 的能力与边界</a><ul>
-<li><a class="reference internal" href="#legacy-provider">1. legacy provider 入口是统一的</a></li>
-<li><a class="reference internal" href="#id5">2. 共享辅助函数仍然较窄</a></li>
-<li><a class="reference internal" href="#id6">3. 后端能力已经超出任务当前使用的范围</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#dr">当前 DR 的能力与边界</a></li>
 <li><a class="reference internal" href="#reset-gravity">Reset gravity 用法</a></li>
 <li><a class="reference internal" href="#interval-push">Interval push 用法</a></li>
-<li><a class="reference internal" href="#geom-size"><code class="docutils literal notranslate"><span class="pre">geom_size</span></code> 生命周期边界</a></li>
-<li><a class="reference internal" href="#id7">相关任务</a></li>
+<li><a class="reference internal" href="#model-tool-variant">固定 Model/Tool Variant 边界</a></li>
+<li><a class="reference internal" href="#id5">相关任务</a></li>
 </ul>
 </li>
 </ul>
