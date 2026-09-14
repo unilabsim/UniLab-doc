@@ -427,9 +427,10 @@ algorithm runner submits each metric once to the same training logger. The termi
 refreshes on a fixed 2 Hz clock and shows a two-second sliding average;
 <code class="docutils literal notranslate"><span class="pre">training.logger=tensorboard</span></code> (the default) or <code class="docutils literal notranslate"><span class="pre">training.logger=wandb</span></code> selects the
 persistent backend, which keeps each unsmoothed iteration value.</p>
-<p>This page first covers the log directory shared by all algorithms, then documents the
-off-policy terminal used by SAC / TD3 / FlashSAC and APPO. Every terminal field in the
-tables maps directly to one backend key; an <code class="docutils literal notranslate"><span class="pre">_ms</span></code> suffix always means milliseconds.</p>
+<p>This page first covers the log directory shared by all algorithms and the
+Manager-Based reward metric contract, then documents the off-policy terminal used by
+SAC / TD3 / FlashSAC and APPO. Every terminal field in the tables maps directly to one
+backend key; an <code class="docutils literal notranslate"><span class="pre">_ms</span></code> suffix always means milliseconds.</p>
 <section id="log-directory-and-backend">
 <h2>Log Directory and Backend<a class="headerlink" href="#log-directory-and-backend" title="Link to this heading">¶</a></h2>
 <p>Run training with the default TensorBoard backend:</p>
@@ -484,6 +485,47 @@ stack overrides <code class="docutils literal notranslate"><span class="pre">tra
 <code class="docutils literal notranslate"><span class="pre">training.wandb_notes</span></code>, and <code class="docutils literal notranslate"><span class="pre">training.wandb_mode</span></code>. <code class="docutils literal notranslate"><span class="pre">ExperimentTracker</span></code> writes
 <code class="docutils literal notranslate"><span class="pre">run_config.json</span></code> and <code class="docutils literal notranslate"><span class="pre">run_summary.json</span></code>; RSL-RL PPO also connects its writer in W&amp;B
 mode. A MuJoCo <code class="docutils literal notranslate"><span class="pre">play_video.mp4</span></code> is uploaded when the run produces one.</p>
+</section>
+<section id="manager-based-reward-metrics">
+<h2>Manager-Based Reward Metrics<a class="headerlink" href="#manager-based-reward-metrics" title="Link to this heading">¶</a></h2>
+<p>Manager-Based environments place structured metrics in <code class="docutils literal notranslate"><span class="pre">info[&quot;log&quot;]</span></code>. The RSL-RL PPO
+logger forwards slash-prefixed entries in that dictionary to TensorBoard / W&amp;B and also
+writes its own native aggregate training metrics. The reward-related keys have the
+following contract:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Owner</p></th>
+<th class="head"><p>Meaning</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">reward/&lt;term&gt;</span></code></p></td>
+<td><p>UniLab <code class="docutils literal notranslate"><span class="pre">RewardManager</span></code></p></td>
+<td><p>Per-term diagnostic for the current reward computation: the mean across environments of <code class="docutils literal notranslate"><span class="pre">raw_value</span> <span class="pre">*</span> <span class="pre">weight</span></code>, before <code class="docutils literal notranslate"><span class="pre">dt</span></code> scaling</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Train/mean_reward</span></code></p></td>
+<td><p>Native RSL-RL PPO logger</p></td>
+<td><p>Aggregate mean completed-episode return; use this for overall training progress</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Train/mean_episode_length</span></code></p></td>
+<td><p>Native RSL-RL PPO logger</p></td>
+<td><p>Aggregate mean completed-episode length</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Episode_Termination/&lt;term&gt;</span></code></p></td>
+<td><p>UniLab <code class="docutils literal notranslate"><span class="pre">TerminationManager</span></code></p></td>
+<td><p>Count of reset environments for which that termination term fired; this is a distinct diagnostic and is not a reward</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Episode_Reward/&lt;term&gt;</span></code></p></td>
+<td><p>Removed</p></td>
+<td><p>Historical normalized cumulative per-term value; it is intentionally no longer emitted because it duplicated <code class="docutils literal notranslate"><span class="pre">reward/&lt;term&gt;</span></code> with a different meaning</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Historical TensorBoard event files are immutable, so runs made before this change can
+still display <code class="docutils literal notranslate"><span class="pre">Episode_Reward/&lt;term&gt;</span></code>. New Manager-Based runs should not emit it.</p>
 </section>
 <section id="off-policy-terminal">
 <h2>Off-policy Terminal<a class="headerlink" href="#off-policy-terminal" title="Link to this heading">¶</a></h2>
@@ -928,6 +970,7 @@ asynchronous H2D, device gather, collector, and learner work actually overlap.</
             <ul>
 <li><a class="reference internal" href="#">Logging</a><ul>
 <li><a class="reference internal" href="#log-directory-and-backend">Log Directory and Backend</a></li>
+<li><a class="reference internal" href="#manager-based-reward-metrics">Manager-Based Reward Metrics</a></li>
 <li><a class="reference internal" href="#off-policy-terminal">Off-policy Terminal</a><ul>
 <li><a class="reference internal" href="#learner-main-timeline">Learner Main Timeline</a></li>
 <li><a class="reference internal" href="#learner-nested-and-background-diagnostics">Learner Nested and Background Diagnostics</a></li>
