@@ -543,7 +543,29 @@
     <span class="n">_validate_reset_term</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="n">PreStepControlFn</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span>
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PreStepControlOutput</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Per-substep actuator control plus an optional dynamic body wrench.</span>
+
+<span class="sd">    ``force`` and ``torque`` are world-frame arrays with shape</span>
+<span class="sd">    ``(num_envs, len(body_ids), 3)`` in newtons and newton-meters.  The force</span>
+<span class="sd">    acts at the target body&#39;s center of mass and the torque is about that</span>
+<span class="sd">    center, matching MuJoCo ``xfrc_applied`` semantics.  The wrench is</span>
+<span class="sd">    recomputed by the callback before every physics substep and replaces the</span>
+<span class="sd">    previous substep&#39;s dynamic wrench; it is never accumulated across substeps</span>
+<span class="sd">    or across control steps, and it composes additively with wrenches staged</span>
+<span class="sd">    through the interval randomization path for the same step call.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">ctrl</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">force</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">torque</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<span class="n">PreStepControlResult</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">PreStepControlOutput</span>
+<span class="n">PreStepControlFn</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span> <span class="n">PreStepControlResult</span><span class="p">]</span>
 <span class="n">TerrainHeightSampleFn</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span>
 <span class="n">SensorReadFn</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span>
 
@@ -1072,7 +1094,8 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">SimBackend</span><span class="p">(</span><span class="n">abc</span><span class="o">.</span><span class="n">ABC</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Unified simulation backend contract.&quot;&quot;&quot;</span>
 
-    <span class="n">_pre_step_control_fn</span><span class="p">:</span> <span class="n">PreStepControlFn</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">_pre_step_control_fn</span><span class="p">:</span> <span class="n">PreStepControlFn</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_pre_step_control_active</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">_scene_cleanup_handle</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
     <span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span>
 
@@ -1525,21 +1548,88 @@
 
 <span class="sd">        The callback receives ``(backend, ctrl)`` so owner code can read the</span>
 <span class="sd">        backend&#39;s freshly-updated sensor contract before every physics substep.</span>
-<span class="sd">        It must return backend-native actuator control with the same shape.</span>
+<span class="sd">        It must return either backend-native actuator control with the same</span>
+<span class="sd">        shape, or a :class:`PreStepControlOutput` carrying that control plus an</span>
+<span class="sd">        optional per-substep body wrench.  A returned wrench is recomposed from</span>
+<span class="sd">        scratch every substep and cleared when the ``step()`` call finishes.</span>
 <span class="sd">        Position-actuator envs leave this unset and keep the direct control path.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span> <span class="o">=</span> <span class="n">fn</span></div>
 
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_pre_step_control</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctrl</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_reject_wrench_write_inside_pre_step_control</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">operation</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fail closed on staging writes made from inside a substep callback.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_active</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">operation</span><span class="si">}</span><span class="s2"> must not be called from inside a pre-step control callback; &quot;</span>
+                <span class="s2">&quot;return a PreStepControlOutput wrench instead so it applies to the current &quot;</span>
+                <span class="s2">&quot;substep&quot;</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_convert_pre_step_control</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctrl</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PreStepControlOutput</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">ctrl</span>
-        <span class="n">converted</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctrl</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">ctrl</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">PreStepControlOutput</span><span class="p">(</span><span class="n">ctrl</span><span class="o">=</span><span class="n">ctrl</span><span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctrl</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">PreStepControlOutput</span><span class="p">):</span>
+            <span class="n">converted</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">ctrl</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">ctrl</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+            <span class="n">body_ids</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">body_ids</span>
+            <span class="n">force</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">force</span>
+            <span class="n">torque</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">torque</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">converted</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">ctrl</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+            <span class="n">body_ids</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">force</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">torque</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="n">converted</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">ctrl</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;pre-step control must return shape </span><span class="si">{</span><span class="n">ctrl</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">converted</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
-        <span class="k">return</span> <span class="n">converted</span>
+        <span class="k">if</span> <span class="n">force</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">torque</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">body_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;pre-step control wrench requires force and/or torque; body_ids alone &quot;</span>
+                    <span class="s2">&quot;names no wrench&quot;</span>
+                <span class="p">)</span>
+            <span class="k">return</span> <span class="n">PreStepControlOutput</span><span class="p">(</span><span class="n">ctrl</span><span class="o">=</span><span class="n">converted</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">body_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;pre-step control wrench requires body_ids&quot;</span><span class="p">)</span>
+        <span class="n">body_ids_np</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">expected_wrench</span> <span class="o">=</span> <span class="p">(</span><span class="n">ctrl</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">body_ids_np</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="n">force_np</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">force</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">force</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="n">torque_np</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">torque</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">torque</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="p">((</span><span class="s2">&quot;force&quot;</span><span class="p">,</span> <span class="n">force_np</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;torque&quot;</span><span class="p">,</span> <span class="n">torque_np</span><span class="p">)):</span>
+            <span class="k">if</span> <span class="n">values</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">values</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected_wrench</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;pre-step control </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must have shape </span><span class="si">{</span><span class="n">expected_wrench</span><span class="si">}</span><span class="s2">, &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">values</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;pre-step control </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> contains NaN or Inf&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">force_np</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">torque_np</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;pre-step control wrench requires force and/or torque&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">PreStepControlOutput</span><span class="p">(</span>
+            <span class="n">ctrl</span><span class="o">=</span><span class="n">converted</span><span class="p">,</span>
+            <span class="n">body_ids</span><span class="o">=</span><span class="n">body_ids_np</span><span class="p">,</span>
+            <span class="n">force</span><span class="o">=</span><span class="n">force_np</span><span class="p">,</span>
+            <span class="n">torque</span><span class="o">=</span><span class="n">torque_np</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_pre_step_control</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctrl</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return only the converted actuator control (wrench backends use more).</span>
+
+<span class="sd">        Backends that call this wrapper implement the ctrl-only pre-step</span>
+<span class="sd">        contract.  A callback that returns a wrench must fail closed here</span>
+<span class="sd">        instead of being silently downgraded to its ``ctrl`` component.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_convert_pre_step_control</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">output</span><span class="o">.</span><span class="n">force</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">output</span><span class="o">.</span><span class="n">torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> does not support pre-step control wrenches; return &quot;</span>
+                <span class="s2">&quot;ctrl only or select a wrench-capable backend&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">output</span><span class="o">.</span><span class="n">ctrl</span>
 
 <div class="viewcode-block" id="SimBackend.set_state">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.backend_factory.html#unisim.backend.isaacsim.backend.SimBackend.set_state">[docs]</a>

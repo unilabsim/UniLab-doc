@@ -562,6 +562,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span>
     <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">,</span>
+    <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">,</span>
     <span class="n">INTERVAL_TERM_PUSH</span><span class="p">,</span>
     <span class="n">RESET_TERM_BASE_COM</span><span class="p">,</span>
     <span class="n">RESET_TERM_BASE_MASS</span><span class="p">,</span>
@@ -576,11 +577,13 @@
     <span class="n">RESET_TERM_GEOM_SIZE</span><span class="p">,</span>
     <span class="n">RESET_TERM_GEOM_SOLIMP</span><span class="p">,</span>
     <span class="n">RESET_TERM_GEOM_SOLREF</span><span class="p">,</span>
+    <span class="n">RESET_TERM_GRAVITY</span><span class="p">,</span>
     <span class="n">RESET_TERM_KD</span><span class="p">,</span>
     <span class="n">RESET_TERM_KP</span><span class="p">,</span>
     <span class="n">DomainRandomizationCapabilities</span><span class="p">,</span>
     <span class="n">FixedVariantLayout</span><span class="p">,</span>
     <span class="n">FixedVariantPlan</span><span class="p">,</span>
+    <span class="n">IntervalRandomizationPlan</span><span class="p">,</span>
     <span class="n">IntervalTermOp</span><span class="p">,</span>
     <span class="n">ResetRandomizationPayload</span><span class="p">,</span>
     <span class="n">_validate_reset_term</span><span class="p">,</span>
@@ -676,8 +679,9 @@
 <span class="sd">    interval DR stages ``xfrc_applied`` pushes/body forces for the next step</span>
 <span class="sd">    barrier or kicks root velocity through the reset upload+forward path.</span>
 <span class="sd">    A registered pre-step control converter runs on the host before every</span>
-<span class="sd">    physics substep (see ``set_pre_step_control``); per-world gravity DR and</span>
-<span class="sd">    native rendering remain fail-closed. Detached host snapshots support</span>
+<span class="sd">    physics substep (see ``set_pre_step_control``) and may additionally return</span>
+<span class="sd">    a per-substep body wrench that composes with the staged interval wrenches;</span>
+<span class="sd">    native rendering remains fail-closed. Detached host snapshots support</span>
 <span class="sd">    finite MuJoCo-based offline recording.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -732,7 +736,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">scene_model_file</span> <span class="o">=</span> <span class="n">scene_context</span><span class="o">.</span><span class="n">diagnostic_model_file</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">scene_visual_model_file</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">scene</span><span class="o">.</span><span class="n">visual_model_file</span> <span class="ow">or</span> <span class="n">scene</span><span class="o">.</span><span class="n">model_file</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_playback_model_validated</span> <span class="o">=</span> <span class="kc">False</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_kinematics_scratch_data</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">backend_type</span> <span class="o">=</span> <span class="s2">&quot;mjwarp&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">num_envs</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_sim_dt</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sim_dt</span><span class="p">)</span>
@@ -999,6 +1004,9 @@
         <span class="n">cpu</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span>
         <span class="n">num_envs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_default_body_mass</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">cpu</span><span class="o">.</span><span class="n">body_mass</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_dr_gravity</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">broadcast_to</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">cpu</span><span class="o">.</span><span class="n">opt</span><span class="o">.</span><span class="n">gravity</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_default_body_ipos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">cpu</span><span class="o">.</span><span class="n">body_ipos</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_dr_body_mass</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">broadcast_to</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_default_body_mass</span><span class="p">,</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nbody</span><span class="p">)</span>
@@ -1860,12 +1868,14 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Register or clear the env-owned per-substep control converter.</span>
 
 <span class="sd">        Semantics match the MuJoCo backend: the callback runs once before</span>
-<span class="sd">        every physics substep with the host qpos/qvel cache refreshed to the</span>
-<span class="sd">        substep-start state, and its return value becomes that substep&#39;s</span>
-<span class="sd">        device ctrl.  Each invocation costs one explicit device round trip,</span>
-<span class="sd">        so the callback path intentionally uses eager kernel launches instead</span>
-<span class="sd">        of replaying the captured step graph.  Passing ``None`` restores the</span>
-<span class="sd">        direct control path.</span>
+<span class="sd">        every physics substep with the host qpos/qvel and tracked-body sensor</span>
+<span class="sd">        caches refreshed to the substep-start state.  Its return value becomes</span>
+<span class="sd">        that substep&#39;s device ctrl, and a :class:`PreStepControlOutput` may</span>
+<span class="sd">        additionally carry a dynamic body wrench that composes with the staged</span>
+<span class="sd">        interval wrench for that substep only.  Each invocation costs explicit</span>
+<span class="sd">        device round trips, so the callback path intentionally uses eager</span>
+<span class="sd">        kernel launches instead of replaying the captured step graph.  Passing</span>
+<span class="sd">        ``None`` restores the direct control path.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span> <span class="o">=</span> <span class="n">fn</span></div>
 
@@ -1875,44 +1885,73 @@
         <span class="n">ctrl</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">nsteps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Advance one legacy step through the registered per-substep converter.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Advance one step through the registered per-substep converter.</span>
 
 <span class="sd">        Mirrors the MuJoCo backend&#39;s ``_step_with_pre_step_control`` substep</span>
 <span class="sd">        boundary: before every substep the host qpos/qvel cache holds the</span>
 <span class="sd">        substep-start state (the previous step/reset barrier already covers</span>
 <span class="sd">        substep 0), the owner callback converts the policy control, and the</span>
-<span class="sd">        result is uploaded as that substep&#39;s device ctrl.  Sensordata stays on</span>
-<span class="sd">        the end-of-step barrier, matching the MuJoCo backend&#39;s decision to not</span>
-<span class="sd">        refresh sensordata per substep: action terms read</span>
-<span class="sd">        physics-state-backed getters only.</span>
+<span class="sd">        result is uploaded as that substep&#39;s device ctrl.  Tracked-body world</span>
+<span class="sd">        state is recomputed host-side from the fresh qpos/qvel (sensordata</span>
+<span class="sd">        lags one substep behind the integrated state inside ``step``, matching</span>
+<span class="sd">        ``mj_step`` itself, so it cannot source substep-start kinematics).</span>
+<span class="sd">        ``xfrc_applied`` is recomposed and uploaded absolutely before every</span>
+<span class="sd">        substep as the sum of the staged interval wrench and the callback&#39;s</span>
+<span class="sd">        dynamic wrench; both channels are cleared when the call finishes.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">control_upload_ms</span> <span class="o">=</span> <span class="mf">0.0</span>
         <span class="n">host_cache_ms</span> <span class="o">=</span> <span class="mf">0.0</span>
-
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span><span class="p">:</span>
-            <span class="c1"># Staged interval push/body forces apply for the whole upcoming</span>
-            <span class="c1"># step (all substeps), matching the direct-control path.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">xfrc_applied</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="p">)</span>
+        <span class="n">composed_xfrc</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="p">)</span>
 
         <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="k">for</span> <span class="n">substep</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nsteps</span><span class="p">):</span>
-            <span class="k">if</span> <span class="n">substep</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_active</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">substep</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nsteps</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">substep</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">t1</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_download</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">qpos</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_qpos_cache_storage</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_download</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">qvel</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_qvel_cache_storage</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_synchronize</span><span class="p">()</span>
+                    <span class="c1"># Tracked-body world state is recomputed lazily on the</span>
+                    <span class="c1"># first body-state getter call of this substep, so</span>
+                    <span class="c1"># ctrl-only converters never pay the host-kinematics cost.</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="n">host_cache_ms</span> <span class="o">+=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
                 <span class="n">t1</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_download</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">qpos</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_qpos_cache_storage</span><span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_download</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">qvel</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_qvel_cache_storage</span><span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_synchronize</span><span class="p">()</span>
-                <span class="n">host_cache_ms</span> <span class="o">+=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-            <span class="n">t1</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ctrl_staging</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_pre_step_control</span><span class="p">(</span><span class="n">ctrl</span><span class="p">))</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">ctrl</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ctrl_staging</span><span class="p">)</span>
-            <span class="n">control_upload_ms</span> <span class="o">+=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-            <span class="c1"># Eager launch: a captured step graph cannot observe the</span>
-            <span class="c1"># per-substep host ctrl upload between kernel boundaries.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">xfrc_applied</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="n">output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_convert_pre_step_control</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ctrl_staging</span><span class="p">,</span> <span class="n">output</span><span class="o">.</span><span class="n">ctrl</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">ctrl</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ctrl_staging</span><span class="p">)</span>
+                <span class="c1"># Absolute per-substep wrench write: fixed interval wrench +</span>
+                <span class="c1"># this substep&#39;s dynamic callback wrench.  A substep whose</span>
+                <span class="c1"># callback returns no wrench applies the fixed part alone, so</span>
+                <span class="c1"># dynamic wrenches never leak across substeps.</span>
+                <span class="n">composed_xfrc</span><span class="p">[:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span>
+                <span class="k">if</span> <span class="n">output</span><span class="o">.</span><span class="n">force</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">output</span><span class="o">.</span><span class="n">torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">for</span> <span class="n">body_offset</span><span class="p">,</span> <span class="n">body_id</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">output</span><span class="o">.</span><span class="n">body_ids</span><span class="p">)):</span>
+                        <span class="k">if</span> <span class="n">output</span><span class="o">.</span><span class="n">force</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                            <span class="n">composed_xfrc</span><span class="p">[:,</span> <span class="nb">int</span><span class="p">(</span><span class="n">body_id</span><span class="p">),</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">+=</span> <span class="n">output</span><span class="o">.</span><span class="n">force</span><span class="p">[</span>
+                                <span class="p">:,</span> <span class="n">body_offset</span><span class="p">,</span> <span class="p">:</span>
+                            <span class="p">]</span>
+                        <span class="k">if</span> <span class="n">output</span><span class="o">.</span><span class="n">torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                            <span class="n">composed_xfrc</span><span class="p">[:,</span> <span class="nb">int</span><span class="p">(</span><span class="n">body_id</span><span class="p">),</span> <span class="mi">3</span><span class="p">:</span><span class="mi">6</span><span class="p">]</span> <span class="o">+=</span> <span class="n">output</span><span class="o">.</span><span class="n">torque</span><span class="p">[</span>
+                                <span class="p">:,</span> <span class="n">body_offset</span><span class="p">,</span> <span class="p">:</span>
+                            <span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">xfrc_applied</span><span class="p">,</span> <span class="n">composed_xfrc</span><span class="p">)</span>
+                <span class="n">control_upload_ms</span> <span class="o">+=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+                <span class="c1"># Eager launch: a captured step graph cannot observe the</span>
+                <span class="c1"># per-substep host ctrl/xfrc uploads between kernel boundaries.</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_active</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="c1"># The end-of-call host-cache refresh restores authoritative values.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="c1"># The loop wrote absolute wrenches every substep, so the device channel</span>
+        <span class="c1"># must be returned to zero unconditionally (not only when a staged</span>
+        <span class="c1"># interval wrench existed); otherwise the final dynamic wrench would</span>
+        <span class="c1"># leak into the next step.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">xfrc_applied</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_synchronize</span><span class="p">()</span>
         <span class="n">physics_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
 
@@ -1925,6 +1964,47 @@
             <span class="s2">&quot;physics_ms&quot;</span><span class="p">:</span> <span class="n">physics_ms</span><span class="p">,</span>
             <span class="s2">&quot;host_cache_refresh_ms&quot;</span><span class="p">:</span> <span class="n">host_cache_ms</span><span class="p">,</span>
         <span class="p">}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_sync_tracked_body_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Recompute the tracked-body views on the first read of a substep.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_recompute_tracked_body_state_host</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_recompute_tracked_body_state_host</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Recompute tracked-body world state from the current qpos/qvel caches.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kinematics_scratch_data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_kinematics_scratch_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco</span><span class="o">.</span><span class="n">MjData</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_object_velocity_buffer</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="n">scratch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kinematics_scratch_data</span>
+        <span class="n">velocity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_object_velocity_buffer</span>
+        <span class="n">tracked_ids</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span><span class="p">]</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_pos_w_all</span>
+        <span class="n">quat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_quat_w_all</span>
+        <span class="n">lin_vel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_linvel_w_all</span>
+        <span class="n">ang_vel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_angvel_w_all</span>
+        <span class="k">for</span> <span class="n">env</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">):</span>
+            <span class="n">scratch</span><span class="o">.</span><span class="n">qpos</span><span class="p">[:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_qpos_cache</span><span class="p">[</span><span class="n">env</span><span class="p">]</span>
+            <span class="n">scratch</span><span class="o">.</span><span class="n">qvel</span><span class="p">[:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_qvel_cache</span><span class="p">[</span><span class="n">env</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco</span><span class="o">.</span><span class="n">mj_kinematics</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="p">,</span> <span class="n">scratch</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco</span><span class="o">.</span><span class="n">mj_comPos</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="p">,</span> <span class="n">scratch</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco</span><span class="o">.</span><span class="n">mj_comVel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="p">,</span> <span class="n">scratch</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">row</span><span class="p">,</span> <span class="n">body_id</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">tracked_ids</span><span class="p">):</span>
+                <span class="n">pos</span><span class="p">[</span><span class="n">env</span><span class="p">,</span> <span class="n">row</span><span class="p">]</span> <span class="o">=</span> <span class="n">scratch</span><span class="o">.</span><span class="n">xpos</span><span class="p">[</span><span class="n">body_id</span><span class="p">]</span>
+                <span class="n">quat</span><span class="p">[</span><span class="n">env</span><span class="p">,</span> <span class="n">row</span><span class="p">]</span> <span class="o">=</span> <span class="n">scratch</span><span class="o">.</span><span class="n">xquat</span><span class="p">[</span><span class="n">body_id</span><span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco</span><span class="o">.</span><span class="n">mj_objectVelocity</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="p">,</span>
+                    <span class="n">scratch</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_XBODY</span><span class="p">,</span>
+                    <span class="nb">int</span><span class="p">(</span><span class="n">body_id</span><span class="p">),</span>
+                    <span class="n">velocity</span><span class="p">,</span>
+                    <span class="kc">False</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">lin_vel</span><span class="p">[</span><span class="n">env</span><span class="p">,</span> <span class="n">row</span><span class="p">]</span> <span class="o">=</span> <span class="n">velocity</span><span class="p">[</span><span class="mi">3</span><span class="p">:]</span>
+                <span class="n">ang_vel</span><span class="p">[</span><span class="n">env</span><span class="p">,</span> <span class="n">row</span><span class="p">]</span> <span class="o">=</span> <span class="n">velocity</span><span class="p">[:</span><span class="mi">3</span><span class="p">]</span>
 
 <div class="viewcode-block" id="MjwarpBackend.step">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.step">[docs]</a>
@@ -2071,6 +2151,11 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">kp</span><span class="p">,</span> <span class="n">kd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_actuator_gains</span><span class="p">()</span>
                 <span class="n">values</span> <span class="o">=</span> <span class="n">kp</span> <span class="k">if</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_KP</span> <span class="k">else</span> <span class="n">kd</span>
+        <span class="k">elif</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_GRAVITY</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">per_env</span><span class="p">:</span>
+                <span class="n">values</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dr_gravity</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">opt</span><span class="o">.</span><span class="n">gravity</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">contract_name</span> <span class="o">=</span> <span class="p">{</span>
                 <span class="n">RESET_TERM_BODY_IQUAT</span><span class="p">:</span> <span class="s2">&quot;body_iquat&quot;</span><span class="p">,</span>
@@ -2103,6 +2188,7 @@
                 <span class="p">{</span>
                     <span class="n">RESET_TERM_BASE_MASS</span><span class="p">,</span>
                     <span class="n">RESET_TERM_BASE_COM</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_GRAVITY</span><span class="p">,</span>
                     <span class="n">RESET_TERM_BODY_IQUAT</span><span class="p">,</span>
                     <span class="n">RESET_TERM_BODY_INERTIA</span><span class="p">,</span>
                     <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">,</span>
@@ -2123,8 +2209,9 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_interval_root_velocity_qvel_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="p">),</span>
             <span class="n">supports_interval_body_force</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">supports_interval_body_torque</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">supported_interval_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span>
-                <span class="p">{</span><span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">}</span>
+                <span class="p">{</span><span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span> <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">}</span>
                 <span class="o">|</span> <span class="p">({</span><span class="n">INTERVAL_TERM_PUSH</span><span class="p">}</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">set</span><span class="p">())</span>
                 <span class="o">|</span> <span class="p">(</span>
                     <span class="p">{</span><span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">}</span>
@@ -2240,6 +2327,17 @@
         <span class="n">needs_set_const_0</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="n">wrote_fields</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
 
+        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">gravity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># ``opt.gravity`` is a per-world option vector read directly by the</span>
+            <span class="c1"># passive-force, energy-sensor, and world-acceleration kernels; no</span>
+            <span class="c1"># compiler-derived constant depends on it, so no ``set_const*``</span>
+            <span class="c1"># recompute is needed.  The write lands before the reset forward,</span>
+            <span class="c1"># so the post-reset host cache already reflects the new gravity.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_dr_gravity</span><span class="p">[</span><span class="n">rows</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_dr_field</span><span class="p">(</span>
+                <span class="s2">&quot;gravity&quot;</span><span class="p">,</span> <span class="n">randomization</span><span class="o">.</span><span class="n">gravity</span><span class="p">,</span> <span class="n">num_reset</span><span class="p">,</span> <span class="p">(</span><span class="mi">3</span><span class="p">,)</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="o">.</span><span class="n">opt</span><span class="o">.</span><span class="n">gravity</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dr_gravity</span><span class="p">)</span>
+
         <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">body_mass</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_dr_body_mass</span><span class="p">[</span><span class="n">rows</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_dr_field</span><span class="p">(</span>
                 <span class="s2">&quot;body_mass&quot;</span><span class="p">,</span> <span class="n">randomization</span><span class="o">.</span><span class="n">body_mass</span><span class="p">,</span> <span class="n">num_reset</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nbody</span><span class="p">,)</span>
@@ -2337,24 +2435,49 @@
 
     <span class="n">_interval_term_handler_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">IntervalTermOp</span><span class="p">],</span> <span class="kc">None</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
+<div class="viewcode-block" id="MjwarpBackend.apply_interval_randomization">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.apply_interval_randomization">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply_interval_randomization</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">plan</span><span class="p">:</span> <span class="n">IntervalRandomizationPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reject_wrench_write_inside_pre_step_control</span><span class="p">(</span><span class="s2">&quot;apply_interval_randomization&quot;</span><span class="p">)</span>
+        <span class="c1"># A non-empty plan starts from cleared external wrenches, matching the</span>
+        <span class="c1"># MuJoCo backend: ops within one plan accumulate, while a later plan</span>
+        <span class="c1"># replaces anything a previous plan staged before it was consumed.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">apply_interval_randomization</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span></div>
+
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_interval_term_handlers</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">IntervalTermOp</span><span class="p">],</span> <span class="kc">None</span><span class="p">]]:</span>
-        <span class="c1"># Built lazily once.  Torque and angular-velocity terms intentionally</span>
-        <span class="c1"># have no handler and fail closed in the base dispatch (previously</span>
-        <span class="c1"># they were silently dropped).</span>
+        <span class="c1"># Built lazily once.  The angular-velocity term intentionally has no</span>
+        <span class="c1"># handler and fails closed in the base dispatch (previously it was</span>
+        <span class="c1"># silently dropped).</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="o">=</span> <span class="p">{</span>
                 <span class="n">INTERVAL_TERM_PUSH</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_robots</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
                 <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
+                <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_torque</span><span class="p">(</span>
+                    <span class="n">op</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span>
+                <span class="p">),</span>
                 <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">:</span> <span class="p">(</span>
                     <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_linear_velocity_delta</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span>
                 <span class="p">),</span>
             <span class="p">}</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_reject_wrench_write_inside_pre_step_control</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">operation</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_active</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">operation</span><span class="si">}</span><span class="s2"> must not be called from inside a pre-step control callback; &quot;</span>
+                <span class="s2">&quot;return a PreStepControlOutput wrench instead so it applies to the current &quot;</span>
+                <span class="s2">&quot;substep&quot;</span>
+            <span class="p">)</span>
+
 <div class="viewcode-block" id="MjwarpBackend.push_robots">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.push_robots">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">push_robots</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force_range</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample one world-frame push force per env and stage it for the next step.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reject_wrench_write_inside_pre_step_control</span><span class="p">(</span><span class="s2">&quot;push_robots&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="s2">&quot;mjwarp interval push requires base_name or push_body_name to identify &quot;</span>
@@ -2377,9 +2500,14 @@
         <span class="n">force</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">torque</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Accumulate world-frame forces on the staged ``xfrc_applied`` rows.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;mjwarp backend does not support interval body torque yet&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Accumulate a world-frame wrench on the staged ``xfrc_applied`` rows.</span>
+
+<span class="sd">        The force acts at each target body&#39;s center of mass and the torque is</span>
+<span class="sd">        about that center, matching MuJoCo ``xfrc_applied`` semantics.  The</span>
+<span class="sd">        staged wrench applies to every substep of the next ``step()`` call and</span>
+<span class="sd">        is cleared after it; repeated calls accumulate until consumed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reject_wrench_write_inside_pre_step_control</span><span class="p">(</span><span class="s2">&quot;apply_body_force&quot;</span><span class="p">)</span>
         <span class="n">body_ids_np</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">body_ids_np</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">body_ids_np</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nbody</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;body_ids must be in [0, </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_nbody</span><span class="si">}</span><span class="s2">), got </span><span class="si">{</span><span class="n">body_ids_np</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -2389,10 +2517,26 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;body force must have shape </span><span class="si">{</span><span class="n">expected_shape</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">force_np</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">force_np</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;body force contains NaN or Inf&quot;</span><span class="p">)</span>
+        <span class="n">torque_np</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">torque_np</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">torque</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">torque_np</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected_shape</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;body torque must have shape </span><span class="si">{</span><span class="n">expected_shape</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">torque_np</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">torque_np</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;body torque contains NaN or Inf&quot;</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">body_offset</span><span class="p">,</span> <span class="n">body_id</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">body_ids_np</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="p">[:,</span> <span class="nb">int</span><span class="p">(</span><span class="n">body_id</span><span class="p">),</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">+=</span> <span class="n">force_np</span><span class="p">[:,</span> <span class="n">body_offset</span><span class="p">,</span> <span class="p">:]</span>
+            <span class="k">if</span> <span class="n">torque_np</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="p">[:,</span> <span class="nb">int</span><span class="p">(</span><span class="n">body_id</span><span class="p">),</span> <span class="mi">3</span><span class="p">:</span><span class="mi">6</span><span class="p">]</span> <span class="o">+=</span> <span class="n">torque_np</span><span class="p">[:,</span> <span class="n">body_offset</span><span class="p">,</span> <span class="p">:]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="o">=</span> <span class="kc">True</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_body_torque</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">torque</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Accumulate a torque-only wrench through the shared staging buffer.&quot;&quot;&quot;</span>
+        <span class="n">zero_force</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">body_ids</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">zero_force</span><span class="p">,</span> <span class="n">torque</span><span class="o">=</span><span class="n">torque</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_apply_body_linear_velocity_delta</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -2687,6 +2831,7 @@
 <div class="viewcode-block" id="MjwarpBackend.get_body_pos_w">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_pos_w">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_pos_w</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_tracked_body_state</span><span class="p">()</span>
         <span class="n">mapped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mapped_tracked_ids</span><span class="p">(</span><span class="s2">&quot;world-frame body positions&quot;</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_pos_w_all</span><span class="p">[:,</span> <span class="n">mapped</span><span class="p">,</span> <span class="p">:]</span></div>
 
@@ -2694,6 +2839,7 @@
 <div class="viewcode-block" id="MjwarpBackend.get_body_quat_w">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_quat_w">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_quat_w</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_tracked_body_state</span><span class="p">()</span>
         <span class="n">mapped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mapped_tracked_ids</span><span class="p">(</span><span class="s2">&quot;world-frame body orientations&quot;</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_quat_w_all</span><span class="p">[:,</span> <span class="n">mapped</span><span class="p">,</span> <span class="p">:]</span></div>
 
@@ -2703,6 +2849,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_pose_w_rows</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_tracked_body_state</span><span class="p">()</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Gather world-frame body pose for selected environments only.&quot;&quot;&quot;</span>
         <span class="n">rows</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
         <span class="n">mapped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mapped_tracked_ids</span><span class="p">(</span><span class="s2">&quot;world-frame body poses&quot;</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">)</span>
@@ -2714,6 +2861,7 @@
 <div class="viewcode-block" id="MjwarpBackend.get_body_lin_vel_w">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_lin_vel_w">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_lin_vel_w</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_tracked_body_state</span><span class="p">()</span>
         <span class="n">mapped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mapped_tracked_ids</span><span class="p">(</span><span class="s2">&quot;world-frame body linear velocities&quot;</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_linvel_w_all</span><span class="p">[:,</span> <span class="n">mapped</span><span class="p">,</span> <span class="p">:]</span></div>
 
@@ -2721,6 +2869,7 @@
 <div class="viewcode-block" id="MjwarpBackend.get_body_ang_vel_w">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_ang_vel_w">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_ang_vel_w</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_tracked_body_state</span><span class="p">()</span>
         <span class="n">mapped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mapped_tracked_ids</span><span class="p">(</span><span class="s2">&quot;world-frame body angular velocities&quot;</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_angvel_w_all</span><span class="p">[:,</span> <span class="n">mapped</span><span class="p">,</span> <span class="p">:]</span></div>
 
@@ -2728,6 +2877,7 @@
 <div class="viewcode-block" id="MjwarpBackend.get_body_lin_vel_w_rows">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_lin_vel_w_rows">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_lin_vel_w_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_tracked_body_state</span><span class="p">()</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Gather world-frame body linear velocity for selected rows.&quot;&quot;&quot;</span>
         <span class="n">rows</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
         <span class="n">mapped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mapped_tracked_ids</span><span class="p">(</span><span class="s2">&quot;world-frame body linear velocities&quot;</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">)</span>
@@ -2737,6 +2887,7 @@
 <div class="viewcode-block" id="MjwarpBackend.get_body_ang_vel_w_rows">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_ang_vel_w_rows">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_ang_vel_w_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_tracked_body_state</span><span class="p">()</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Gather world-frame body angular velocity for selected rows.&quot;&quot;&quot;</span>
         <span class="n">rows</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
         <span class="n">mapped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mapped_tracked_ids</span><span class="p">(</span><span class="s2">&quot;world-frame body angular velocities&quot;</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">)</span>
@@ -2753,6 +2904,7 @@
         <span class="n">out_lin_vel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">out_ang_vel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_tracked_body_state</span><span class="p">()</span>
         <span class="n">mapped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mapped_tracked_ids</span><span class="p">(</span><span class="s2">&quot;world-frame body state&quot;</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">)</span>
         <span class="n">copy_selected_body_state</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_pos_w_all</span><span class="p">,</span>
@@ -2785,6 +2937,7 @@
 <div class="viewcode-block" id="MjwarpBackend.get_body_lin_vel_b">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_lin_vel_b">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_lin_vel_b</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_tracked_body_state</span><span class="p">()</span>
         <span class="c1"># Analytical per the SimBackend contract (#1254): world-frame velocity</span>
         <span class="c1"># rotated into each body&#39;s own frame, matching MuJoCoBackend.</span>
         <span class="n">mapped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mapped_tracked_ids</span><span class="p">(</span><span class="s2">&quot;base-frame body linear velocities&quot;</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">)</span>
@@ -2797,6 +2950,7 @@
 <div class="viewcode-block" id="MjwarpBackend.get_body_ang_vel_b">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_ang_vel_b">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_ang_vel_b</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_tracked_body_state</span><span class="p">()</span>
         <span class="n">mapped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mapped_tracked_ids</span><span class="p">(</span><span class="s2">&quot;base-frame body angular velocities&quot;</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">np_quat_apply_inverse_batched</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_quat_w_all</span><span class="p">[:,</span> <span class="n">mapped</span><span class="p">,</span> <span class="p">:],</span>

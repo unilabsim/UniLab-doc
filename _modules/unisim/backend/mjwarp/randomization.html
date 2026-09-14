@@ -553,6 +553,13 @@
 <span class="n">SET_CONST_FIELDS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;body_mass&quot;</span><span class="p">,</span> <span class="s2">&quot;body_ipos&quot;</span><span class="p">,</span> <span class="s2">&quot;body_iquat&quot;</span><span class="p">)</span>
 <span class="c1"># Payload-writable fields that require ``mujoco_warp.set_const_0`` afterwards.</span>
 <span class="n">SET_CONST_0_FIELDS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;body_inertia&quot;</span><span class="p">,</span> <span class="s2">&quot;dof_armature&quot;</span><span class="p">)</span>
+<span class="c1"># ``Model.opt`` sub-struct fields with per-world semantics.  ``gravity`` is</span>
+<span class="c1"># declared ``array(&quot;*&quot;, wp.vec3)`` by mujoco-warp and every consumer kernel</span>
+<span class="c1"># (passive gravity forces, potential-energy sensors, and the world</span>
+<span class="c1"># acceleration seed) indexes it with ``worldid % gravity.shape[0]``, so tiling</span>
+<span class="c1"># it alongside the model fields yields per-world gravity without kernel</span>
+<span class="c1"># changes.  It needs no derived-quantity recomputation.</span>
+<span class="n">OPTION_VEC_FIELDS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;gravity&quot;</span><span class="p">,)</span>
 <span class="c1"># Payload-writable fields that need no derived-quantity recomputation.</span>
 <span class="n">NO_RECOMPUTE_FIELDS</span> <span class="o">=</span> <span class="p">(</span>
     <span class="s2">&quot;geom_friction&quot;</span><span class="p">,</span>
@@ -662,7 +669,7 @@
 <div class="viewcode-block" id="expand_model_fields">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.randomization.expand_model_fields.html#unisim.backend.mjwarp.randomization.expand_model_fields">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">expand_model_fields</span><span class="p">(</span><span class="n">warp</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">nworld</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tile the declared DR model fields from ``(1, ...)`` to ``(nworld, ...)``.</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tile the declared DR model and option fields from ``(1, ...)`` to ``(nworld, ...)``.</span>
 
 <span class="sd">    Returns the names actually expanded.  Fields already per-world (e.g. from a</span>
 <span class="sd">    prior expansion) are skipped, mirroring mjlab&#39;s guard.  A single-world</span>
@@ -700,6 +707,36 @@
         <span class="n">replacement</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">tiled</span><span class="p">)</span>
         <span class="nb">setattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">replacement</span><span class="p">)</span>
         <span class="n">expanded</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="n">opt</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="s2">&quot;opt&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">opt</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">OPTION_VEC_FIELDS</span><span class="p">:</span>
+            <span class="n">array</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">opt</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">array</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;mujoco-warp Model.opt no longer declares DR field </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">; update the &quot;</span>
+                    <span class="s2">&quot;mjwarp expansion field list for the pinned mujoco-warp version&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">nworld</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;mujoco-warp Model.opt field </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> has unexpected leading dim &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">; expected 1 (shared) or </span><span class="si">{</span><span class="n">nworld</span><span class="si">}</span><span class="s2"> (per-world)&quot;</span>
+                <span class="p">)</span>
+            <span class="c1"># ``array.shape`` counts warp vector elements (one ``wp.vec3`` per</span>
+            <span class="c1"># world), while ``array.numpy()`` materializes the trailing vector</span>
+            <span class="c1"># components, so the replacement keeps the element-wise shape and</span>
+            <span class="c1"># the tiled host copy keeps the NumPy shape.</span>
+            <span class="n">host</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">array</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span>
+            <span class="n">tiled</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">broadcast_to</span><span class="p">(</span><span class="n">host</span><span class="p">,</span> <span class="p">(</span><span class="n">nworld</span><span class="p">,</span> <span class="o">*</span><span class="n">host</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:])))</span>
+            <span class="n">replacement</span> <span class="o">=</span> <span class="n">warp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+                <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">nworld</span><span class="p">,</span> <span class="o">*</span><span class="n">array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:]),</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="n">array</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="n">array</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">replacement</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">tiled</span><span class="p">)</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">opt</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">replacement</span><span class="p">)</span>
+            <span class="n">expanded</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;opt.</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">expanded</span><span class="p">)</span></div>
 
 </pre></div>
