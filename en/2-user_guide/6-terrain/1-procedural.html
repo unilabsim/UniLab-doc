@@ -281,7 +281,7 @@
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../3-deployment/1-sim_to_real/0-index.html">Sim-to-Real</a><input aria-label="Toggle navigation of Sim-to-Real" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../3-deployment/1-sim_to_real/1-overview.html">Sim-to-Real Overview</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../3-deployment/1-sim_to_real/2-g1_whole_body.html">G1 Whole-Body Motion Tracking on Hardware</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../3-deployment/1-sim_to_real/3-go2_locomotion.html">Go2 / Go2W Locomotion Deployment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../3-deployment/1-sim_to_real/3-go2_locomotion.html">Go2 Locomotion Deployment</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../3-deployment/1-sim_to_real/4-allegro_inhand.html">Allegro In-Hand Manipulation Deployment</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../3-deployment/1-sim_to_real/5-onnx_runtime.html">ONNX Runtime</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../3-deployment/1-sim_to_real/6-domain_randomization.html">Domain Randomization for Real-World Transfer</a></li>
@@ -422,274 +422,69 @@
 </script>
 <section class="tex2jax_ignore mathjax_ignore" id="procedural-terrain">
 <h1>Procedural Terrain<a class="headerlink" href="#procedural-terrain" title="Link to this heading">¶</a></h1>
-<p>This page only answers four questions:</p>
-<ol class="arabic simple">
-<li><p>How do I run the rough terrain task that already exists in the current repo?</p></li>
-<li><p>What can and cannot be changed via the Hydra command line?</p></li>
-<li><p>When I want to change the sub-terrain composition, what is the correct entry point?</p></li>
-<li><p>What are the currently known boundaries — not bugs, but constraints?</p></li>
-</ol>
-<p>For the underlying contracts (cold-path materialization, registering a new sub-terrain, hfield export), see the source comments in <code class="docutils literal notranslate"><span class="pre">unisim.backend.mujoco.xml</span></code>, <code class="docutils literal notranslate"><span class="pre">unisim.backend.motrix.scene</span></code>, and <code class="docutils literal notranslate"><span class="pre">unisim.terrain.generator</span></code>.</p>
-<section id="current-status">
-<h2>Current Status<a class="headerlink" href="#current-status" title="Link to this heading">¶</a></h2>
-<p>Only one task in the current repo registers and wires up procedural terrain:</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Task</p></th>
-<th class="head"><p>owner YAML</p></th>
-<th class="head"><p>Backend</p></th>
-<th class="head"><p>Entry Algorithm</p></th>
-<th class="head"><p>Code</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Go2JoystickRough</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">mujoco.yaml</span></code>, <code class="docutils literal notranslate"><span class="pre">motrix.yaml</span></code></p></td>
-<td><p>MuJoCo / Motrix</p></td>
-<td><p>PPO (<code class="docutils literal notranslate"><span class="pre">train_rsl_rl.py</span></code>)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">go2/rough.py</span></code></p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p>During env construction:</p>
-<ol class="arabic simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">Go2JoystickRoughCfg</span></code> declares a <code class="docutils literal notranslate"><span class="pre">SceneCfg</span></code> whose <code class="docutils literal notranslate"><span class="pre">model_file</span></code> points to <code class="docutils literal notranslate"><span class="pre">go2.xml</span></code>, <code class="docutils literal notranslate"><span class="pre">fragment_files</span></code> brings in the task-level contact sensors and <code class="docutils literal notranslate"><span class="pre">home</span></code> keyframe from <code class="docutils literal notranslate"><span class="pre">locomotion_task.xml</span></code>, and <code class="docutils literal notranslate"><span class="pre">scene.terrain</span></code> declares an hfield named <code class="docutils literal notranslate"><span class="pre">terrain_hfield</span></code> to be generated.</p></li>
-<li><p>The backend scene materializer calls <code class="docutils literal notranslate"><span class="pre">TerrainGenerator(...)</span></code> to produce a backend-agnostic merged height matrix and <code class="docutils literal notranslate"><span class="pre">terrain_origins</span></code>; the terrain generator itself does not depend on MuJoCo or Motrix.</p></li>
-<li><p>The MuJoCo materializer uses <code class="docutils literal notranslate"><span class="pre">MjSpec.add_hfield(...)</span></code> / <code class="docutils literal notranslate"><span class="pre">worldbody.add_geom(...)</span></code> to create the terrain, then uses <code class="docutils literal notranslate"><span class="pre">MjSpec.attach(...)</span></code> to attach the robot spec to the scene, and finally <code class="docutils literal notranslate"><span class="pre">compile()</span></code> produces the <code class="docutils literal notranslate"><span class="pre">MjModel</span></code>.</p></li>
-<li><p>The Motrix materializer uses <code class="docutils literal notranslate"><span class="pre">motrixsim.msd.World</span></code> to create the terrain world, uses <code class="docutils literal notranslate"><span class="pre">World.attach(...)</span></code> to stitch in the robot world and task fragment, and finally <code class="docutils literal notranslate"><span class="pre">msd.build(...)</span></code> produces the <code class="docutils literal notranslate"><span class="pre">SceneModel</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">go2.xml</span></code> is the robot model; <code class="docutils literal notranslate"><span class="pre">locomotion_task.xml</span></code> is the task fragment for rough terrain and contains the contact sensors associated with the terrain <code class="docutils literal notranslate"><span class="pre">floor</span></code> plus the task-level <code class="docutils literal notranslate"><span class="pre">home</span></code> keyframe.</p></li>
-<li><p>The backend instance owns the cold-path scene artifacts until env <code class="docutils literal notranslate"><span class="pre">close()</span></code>; <code class="docutils literal notranslate"><span class="pre">terrain_origins</span></code> is passed back to env via a backend scene attribute, used for spawn / curriculum.</p></li>
-</ol>
-<p><code class="docutils literal notranslate"><span class="pre">step()</span></code>, <code class="docutils literal notranslate"><span class="pre">reset()</span></code>, and Manager-Based event terms never read XML or access
-asset files; everything terrain-related happens on the cold path.</p>
-</section>
-<section id="direct-training">
-<h2>1. Direct Training<a class="headerlink" href="#direct-training" title="Link to this heading">¶</a></h2>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Default single-patch random_rough, critic additionally receives a 17×11 height scan</span>
-uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_joystick_rough<span class="w"> </span>--sim<span class="w"> </span>mujoco
-</pre></div>
-</div>
-<p>The Motrix backend uses the same task owner:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_joystick_rough<span class="w"> </span>--sim<span class="w"> </span>motrix
-</pre></div>
-</div>
-</section>
-<section id="overriding-terrain-parameters-via-hydra-command-line">
-<h2>2. Overriding Terrain Parameters via Hydra Command Line<a class="headerlink" href="#overriding-terrain-parameters-via-hydra-command-line" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">Go2JoystickRough</span></code> explicitly lists a set of override-able fields in <code class="docutils literal notranslate"><span class="pre">src/unilab/conf/ppo/task/go2_joystick_rough/{mujoco,motrix}.yaml</span></code>; these fields allow Hydra struct mode to accept command-line overrides.</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Field</p></th>
-<th class="head"><p>Purpose</p></th>
-<th class="head"><p>YAML Default</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">env.scene.terrain.generator.seed</span></code></p></td>
-<td><p>Random seed, <code class="docutils literal notranslate"><span class="pre">null</span></code> means re-randomize each time</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">42</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">env.scene.terrain.generator.curriculum</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code>: one column per sub-terrain, difficulty increases along rows; <code class="docutils literal notranslate"><span class="pre">false</span></code>: random sampling by <code class="docutils literal notranslate"><span class="pre">proportion</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">env.scene.terrain.generator.size</span></code></p></td>
-<td><p>x/y size of a single terrain patch (meters)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">[8.0,</span> <span class="pre">8.0]</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">env.scene.terrain.generator.num_rows</span></code></p></td>
-<td><p>grid row count (in curriculum mode = number of difficulty levels)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">1</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">env.scene.terrain.generator.num_cols</span></code></p></td>
-<td><p>grid column count (ignored in curriculum mode; column count = <code class="docutils literal notranslate"><span class="pre">len(sub_terrains)</span></code>)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">1</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">env.scene.terrain.generator.border_width</span></code></p></td>
-<td><p>width of the flat border around the grid (meters)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">env.scene.terrain.generator.difficulty_range</span></code></p></td>
-<td><p>difficulty sampling range <code class="docutils literal notranslate"><span class="pre">[min,</span> <span class="pre">max]</span></code>, ∈ <code class="docutils literal notranslate"><span class="pre">[0,</span> <span class="pre">1]</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">[0.0,</span> <span class="pre">1.0]</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">env.terrain_scan.enabled</span></code></p></td>
-<td><p>Whether to concatenate the backend-native height scan to the critic obs</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">env.terrain_scan.geom_name</span></code></p></td>
-<td><p>The hfield geom name sampled by the height scan</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">floor</span></code></p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p>Example: local small-scale smoke + fixed seed + curriculum mode.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_joystick_rough<span class="w"> </span>--sim<span class="w"> </span>mujoco<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>env.scene.terrain.generator.num_rows<span class="o">=</span><span class="m">4</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>env.scene.terrain.generator.num_cols<span class="o">=</span><span class="m">6</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>env.scene.terrain.generator.seed<span class="o">=</span><span class="m">42</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>env.scene.terrain.generator.curriculum<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>algo.num_envs<span class="o">=</span><span class="m">64</span><span class="w"> </span>algo.max_iterations<span class="o">=</span><span class="m">2</span><span class="w"> </span>training.no_play<span class="o">=</span><span class="nb">true</span>
-</pre></div>
-</div>
-<p>Fields not listed in the YAML (e.g. <code class="docutils literal notranslate"><span class="pre">sub_terrains</span></code>) currently <strong>cannot</strong> be overridden from the command line:</p>
+<p>Procedural terrain is a scene-composition capability, not a separate backend
+mode. A task owner declares <code class="docutils literal notranslate"><span class="pre">env.scene.terrain</span></code> in Hydra; UniLab validates the
+configuration and UniSim’s public backend adapters materialize the terrain only
+during environment construction.</p>
+<section id="owner-declaration">
+<h2>Owner declaration<a class="headerlink" href="#owner-declaration" title="Link to this heading">¶</a></h2>
+<p>The core reusable pieces are:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">sub_terrains</span></code> is <code class="docutils literal notranslate"><span class="pre">dict[str,</span> <span class="pre">SubTerrainCfg]</span></code>, and <code class="docutils literal notranslate"><span class="pre">SubTerrainCfg</span></code> is an abstract base class; rebuilding subclass types from the command line is not safe.</p></li>
-<li><p>The default grids of <code class="docutils literal notranslate"><span class="pre">terrain_scan.measured_points_x</span></code> / <code class="docutils literal notranslate"><span class="pre">terrain_scan.measured_points_y</span></code> are defined by the <code class="docutils literal notranslate"><span class="pre">Go2JoystickRoughCfg</span></code> owner; when the scan layout needs to be changed, adjust it explicitly in the owner cfg and validate <code class="docutils literal notranslate"><span class="pre">obs_groups_spec</span></code> against the critic obs shape.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">unilab.base.scene.SceneCfg</span></code> for <code class="docutils literal notranslate"><span class="pre">terrain</span></code> and scene files.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">unilab.tasks.locomotion.common.rough_manager_terms</span></code> for terrain generation,
+rough reset, velocity-command, height-scan, and action owner terms.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">unilab.tasks.locomotion.common.height_scan</span></code> for cached height sampling.</p></li>
 </ul>
-</section>
-<section id="modifying-sub-terrains">
-<h2>3. Modifying Sub-terrains<a class="headerlink" href="#modifying-sub-terrains" title="Link to this heading">¶</a></h2>
-<p>Sub-terrains are registered in <code class="docutils literal notranslate"><span class="pre">ALL_TERRAIN_PRESETS</span></code> in <code class="docutils literal notranslate"><span class="pre">unilab.terrains.config</span></code>. The 7 sub-terrains mixed by <code class="docutils literal notranslate"><span class="pre">Go2JoystickRough</span></code> by default:</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Name</p></th>
-<th class="head"><p>Implementation</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">flat</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">HfFlatTerrainCfg</span></code></p></td>
-<td><p>All-zero heightfield, baseline patch</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">pyramid_stairs</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">HfPyramidStairsTerrainCfg</span></code></p></td>
-<td><p>Pyramid-shaped ascending stairs (concentric square rings in the heightfield)</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">pyramid_stairs_inv</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">HfInvertedPyramidStairsTerrainCfg</span></code></p></td>
-<td><p>Inverted-pyramid descending stairs</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">hf_pyramid_slope</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">HfPyramidSlopedTerrainCfg</span></code></p></td>
-<td><p>Heightfield pyramid slope</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">hf_pyramid_slope_inv</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">HfPyramidSlopedTerrainCfg(inverted=True)</span></code></p></td>
-<td><p>Inverted pyramid slope</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">random_rough</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">HfRandomUniformTerrainCfg</span></code></p></td>
-<td><p>Random uniform noise heightfield</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">wave_terrain</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">HfWaveTerrainCfg</span></code></p></td>
-<td><p>Sine wave heightfield</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p>Each has its own difficulty parameters (<code class="docutils literal notranslate"><span class="pre">step_height_range</span></code>, <code class="docutils literal notranslate"><span class="pre">slope_range</span></code>, <code class="docutils literal notranslate"><span class="pre">noise_range</span></code>, etc.); full field definitions are in <code class="docutils literal notranslate"><span class="pre">heightfield_terrains.py</span></code>. All sub-terrains (including <code class="docutils literal notranslate"><span class="pre">flat</span></code> and stairs) are now implemented via hfield, with resolution uniformly controlled by <code class="docutils literal notranslate"><span class="pre">TerrainGeneratorCfg.horizontal_scale</span></code> / <code class="docutils literal notranslate"><span class="pre">vertical_scale</span></code>.</p>
-<p>Built-in compositions are defined in <code class="docutils literal notranslate"><span class="pre">unilab.terrains.config</span></code>, and <code class="docutils literal notranslate"><span class="pre">Go2JoystickRoughCfg</span></code> defines its own owner defaults in <code class="docutils literal notranslate"><span class="pre">go2/rough.py</span></code>:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">Go2RoughTerrainCfg</span></code>: 1 × 1, by default only samples <code class="docutils literal notranslate"><span class="pre">random_rough</span></code> (proportion <code class="docutils literal notranslate"><span class="pre">0.2</span></code>, the rest of the sub-terrains are kept as configurable profiles but default to proportion <code class="docutils literal notranslate"><span class="pre">0.0</span></code>), random mode. Each env instance receives its own independent cfg object.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ROUGH_TERRAINS_CFG</span></code>: 10 × 20, 7 sub-terrains mixed by proportion, random mode. Currently kept as a reusable profile; not the default training profile of <code class="docutils literal notranslate"><span class="pre">Go2JoystickRoughCfg</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">STAIRS_TERRAINS_CFG</span></code>: 10 × 4, curriculum mode, difficulty goes from flat → easy → moderate → challenging. Not referenced by any task at this time; can be used in custom task configs.</p></li>
-</ul>
-</section>
-<section id="height-scan-observation">
-<h2>4. Height Scan Observation<a class="headerlink" href="#height-scan-observation" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">Go2JoystickRoughEnv</span></code> only concatenates the height scan into the <code class="docutils literal notranslate"><span class="pre">critic</span></code> group; the actor obs follows the 45-dimensional rough-task contract. Default scan points are 17 in the x direction and 11 in the y direction, totaling 187 dimensions, so <code class="docutils literal notranslate"><span class="pre">obs_groups_spec</span></code> is:</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>obs group</p></th>
-<th class="head text-right"><p>Dimension</p></th>
-<th class="head"><p>Content</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">obs</span></code></p></td>
-<td class="text-right"><p><code class="docutils literal notranslate"><span class="pre">45</span></code></p></td>
-<td><p>actor policy input</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">critic</span></code></p></td>
-<td class="text-right"><p><code class="docutils literal notranslate"><span class="pre">235</span></code></p></td>
-<td><p>rough critic 48 dims + height scan 187 dims</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p>The height scan’s geom/body id and sampling offsets are cached during env init; the hot path only uses the backend-owned scanner created by <code class="docutils literal notranslate"><span class="pre">create_hfield_scanner(...)</span></code> and consumes cached ids / offsets. XML is not parsed and asset metadata is not read in <code class="docutils literal notranslate"><span class="pre">step()</span></code> / <code class="docutils literal notranslate"><span class="pre">reset()</span></code>.</p>
-</section>
-<section id="enabling-procedural-terrain-in-a-new-task">
-<h2>5. Enabling Procedural Terrain in a New Task<a class="headerlink" href="#enabling-procedural-terrain-in-a-new-task" title="Link to this heading">¶</a></h2>
-<p>A new task enables procedural terrain through <code class="docutils literal notranslate"><span class="pre">SceneCfg</span></code>. <code class="docutils literal notranslate"><span class="pre">SceneCfg</span></code> lives in <code class="docutils literal notranslate"><span class="pre">src/unilab/base/scene.py</span></code>, and <code class="docutils literal notranslate"><span class="pre">scene.terrain.generator</span></code> uses <code class="docutils literal notranslate"><span class="pre">TerrainGeneratorCfg</span></code>.</p>
+<p>For example, an owner can declare a generated terrain without putting terrain
+knowledge in the backend:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">env</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">scene</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">model_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.../robot.xml</span>
-<span class="w">    </span><span class="nt">fragment_files</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.../locomotion_task.xml</span>
 <span class="w">    </span><span class="nt">terrain</span><span class="p">:</span>
-<span class="w">      </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hfield</span>
 <span class="w">      </span><span class="nt">hfield_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">terrain_hfield</span>
 <span class="w">      </span><span class="nt">geom_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">floor</span>
 <span class="w">      </span><span class="nt">generator</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">_target_</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">unilab.tasks.locomotion.common.rough_manager_terms.QuadrupedRoughTerrainCfg</span>
 <span class="w">        </span><span class="nt">seed</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">42</span>
-<span class="w">        </span><span class="nt">size</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">8.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">8.0</span><span class="p p-Indicator">]</span>
-<span class="w">        </span><span class="nt">num_rows</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
-<span class="w">        </span><span class="nt">num_cols</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
-<span class="w">        </span><span class="nt">border_width</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20.0</span>
 </pre></div>
 </div>
-<p>The env’s <code class="docutils literal notranslate"><span class="pre">__init__</span></code> does not need to call the XML materializer directly; hand <code class="docutils literal notranslate"><span class="pre">scene</span></code> over to the backend constructor:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.backend_factory</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_backend</span>
-
-<span class="n">backend</span> <span class="o">=</span> <span class="n">create_backend</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">scene</span><span class="p">)</span>
-<span class="n">terrain_origins</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;terrain_origins&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>Note: <code class="docutils literal notranslate"><span class="pre">TerrainGenerator.__init__</span></code> mutates the passed cfg in place (writing values into each <code class="docutils literal notranslate"><span class="pre">sub_cfg.size</span></code>). If the same <code class="docutils literal notranslate"><span class="pre">TerrainGeneratorCfg</span></code> instance is shared across multiple envs they will pollute each other; you must use <code class="docutils literal notranslate"><span class="pre">default_factory</span></code> or <code class="docutils literal notranslate"><span class="pre">copy.deepcopy</span></code> to ensure each instance gets its own cfg. <code class="docutils literal notranslate"><span class="pre">Go2JoystickRoughCfg</span></code> handles this via <code class="docutils literal notranslate"><span class="pre">scene.terrain.generator=Go2RoughTerrainCfg()</span></code>.</p>
+<p>UniLab does not retain a procedural-terrain production owner. The retained
+<code class="docutils literal notranslate"><span class="pre">g1_walk_rough</span></code> task uses the static-heightfield form of the same cold-path
+scene contract, while generator composition itself is covered by core terrain
+and backend materialization tests.</p>
 </section>
-<section id="visualization-and-offline-replay">
-<h2>6. Visualization and Offline Replay<a class="headerlink" href="#visualization-and-offline-replay" title="Link to this heading">¶</a></h2>
-<p>To preview the materialized scene without starting training:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>scripts/visualize_task_env.py<span class="w"> </span>--task<span class="w"> </span>Go2JoystickRough<span class="w"> </span>--num_envs<span class="w"> </span><span class="m">4</span>
+<section id="materialization-boundary">
+<h2>Materialization boundary<a class="headerlink" href="#materialization-boundary" title="Link to this heading">¶</a></h2>
+<p>During <code class="docutils literal notranslate"><span class="pre">registry.make(...)</span></code>:</p>
+<ol class="arabic simple">
+<li><p>Hydra materializes the selected owner into <code class="docutils literal notranslate"><span class="pre">ManagerBasedRlEnvCfg</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">create_backend</span></code> resolves required robot assets and passes <code class="docutils literal notranslate"><span class="pre">SceneCfg</span></code> to the
+selected UniSim backend.</p></li>
+<li><p>The backend’s public scene materializer generates the terrain matrix,
+origins, hfield, and merged scene model.</p></li>
+<li><p>Entity and height-scanner IDs are cached for reset/step use.</p></li>
+</ol>
+<p>Step and reset never parse robot XML or inspect asset metadata. They consume
+cached IDs and public backend capabilities.</p>
+</section>
+<section id="example">
+<h2>Example<a class="headerlink" href="#example" title="Link to this heading">¶</a></h2>
+<p>Use the retained rough-scene reference task:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_rough<span class="w"> </span>--sim<span class="w"> </span>mujoco<span class="w"> </span>training.no_play<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
-</section>
-<section id="validation">
-<h2>7. Validation<a class="headerlink" href="#validation" title="Link to this heading">¶</a></h2>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Procedural terrain + hfield PNG materializer unit/integration tests</span>
-uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/terrains<span class="w"> </span>tests/utils/test_xml_utils.py<span class="w"> </span>-q
-
-<span class="c1"># Hydra compose + Go2JoystickRoughCfg task owner test</span>
-uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/config/test_locomotion_params.py<span class="w"> </span>-k<span class="w"> </span>rough<span class="w"> </span>-q
-
-<span class="c1"># Go2 rough terrain spawn + height scan contract tests</span>
-uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/envs/locomotion/test_go2_terrain_spawn.py<span class="w"> </span>tests/envs/locomotion/test_go2_rough_height_scan.py<span class="w"> </span>-q
-
-<span class="c1"># Hydra command-line override + registry deep-merge loop</span>
-uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/config/test_locomotion_params.py<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-k<span class="w"> </span><span class="s2">&quot;apply_cfg_overrides or hydra_terrain_override&quot;</span><span class="w"> </span>-q
-
-<span class="c1"># End-to-end smoke: Hydra command-line override of grid size + seed, 2-iter PPO</span>
-uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_joystick_rough<span class="w"> </span>--sim<span class="w"> </span>mujoco<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>env.scene.terrain.generator.num_rows<span class="o">=</span><span class="m">4</span><span class="w"> </span>env.scene.terrain.generator.seed<span class="o">=</span><span class="m">42</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>algo.max_iterations<span class="o">=</span><span class="m">2</span><span class="w"> </span>algo.num_envs<span class="o">=</span><span class="m">64</span>
-
-uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_joystick_rough<span class="w"> </span>--sim<span class="w"> </span>motrix<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>env.scene.terrain.generator.num_rows<span class="o">=</span><span class="m">4</span><span class="w"> </span>env.scene.terrain.generator.seed<span class="o">=</span><span class="m">42</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>algo.max_iterations<span class="o">=</span><span class="m">2</span><span class="w"> </span>algo.num_envs<span class="o">=</span><span class="m">64</span>
+<p>Custom owners can tune the terrain grid and seed through Hydra:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>env.scene.terrain.generator.num_rows=4
+env.scene.terrain.generator.seed=42
 </pre></div>
 </div>
 </section>
-<section id="known-constraints">
-<h2>Known Constraints<a class="headerlink" href="#known-constraints" title="Link to this heading">¶</a></h2>
-<ul class="simple">
-<li><p><strong>Both MuJoCo and Motrix materializers have automated smoke coverage</strong>: the MuJoCo path returns <code class="docutils literal notranslate"><span class="pre">MjModel</span></code>, the Motrix path returns <code class="docutils literal notranslate"><span class="pre">SceneModel</span></code>. Production training performance and convergence quality still need to be recorded by independent benchmarks; they are not guaranteed by smoke tests.</p></li>
-<li><p><strong>The MuJoCo assembly path depends on <code class="docutils literal notranslate"><span class="pre">MjSpec.attach</span></code></strong>: the robot XML, terrain, and task sensor fragment are assembled at the materialization stage and compiled directly into <code class="docutils literal notranslate"><span class="pre">MjModel</span></code>.</p></li>
-<li><p><strong>The Motrix assembly path depends on <code class="docutils literal notranslate"><span class="pre">motrixsim.msd.World.attach</span></code></strong>: <code class="docutils literal notranslate"><span class="pre">go2.xml</span></code> provides the robot model, and <code class="docutils literal notranslate"><span class="pre">locomotion_task.xml</span></code> is wired in as the task fragment that carries contact sensors and the task-level keyframe.</p></li>
-<li><p><strong>Height scan support goes through <code class="docutils literal notranslate"><span class="pre">create_hfield_scanner(...)</span></code></strong>: the rough env caches scanner ids and offsets during initialization, then consumes scanner output in observation/reward code without parsing XML on the hot path.</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">scene.terrain.generator</span></code> is a cold-path config</strong>: modifying the generator after env construction does not affect the already materialized scene. To change terrains, the env must be reconstructed (i.e. rerun the training command).</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">import</span> <span class="pre">unilab.terrains</span></code> does not depend on mujoco</strong>: <code class="docutils literal notranslate"><span class="pre">TerrainGenerator.generate()</span></code> / <code class="docutils literal notranslate"><span class="pre">write_png()</span></code> is a pure numpy + imageio path.</p></li>
-</ul>
+<section id="core-validation">
+<h2>Core validation<a class="headerlink" href="#core-validation" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/terrains<span class="w"> </span>tests/utils/test_xml_utils.py<span class="w"> </span>-q
+</pre></div>
+</div>
+<p>Core validation also covers the terrain generator and backend materialization
+boundary; ecosystem packages own evidence for additional task families.</p>
 </section>
 </section>
 
@@ -752,15 +547,10 @@ uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </spa
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Procedural Terrain</a><ul>
-<li><a class="reference internal" href="#current-status">Current Status</a></li>
-<li><a class="reference internal" href="#direct-training">1. Direct Training</a></li>
-<li><a class="reference internal" href="#overriding-terrain-parameters-via-hydra-command-line">2. Overriding Terrain Parameters via Hydra Command Line</a></li>
-<li><a class="reference internal" href="#modifying-sub-terrains">3. Modifying Sub-terrains</a></li>
-<li><a class="reference internal" href="#height-scan-observation">4. Height Scan Observation</a></li>
-<li><a class="reference internal" href="#enabling-procedural-terrain-in-a-new-task">5. Enabling Procedural Terrain in a New Task</a></li>
-<li><a class="reference internal" href="#visualization-and-offline-replay">6. Visualization and Offline Replay</a></li>
-<li><a class="reference internal" href="#validation">7. Validation</a></li>
-<li><a class="reference internal" href="#known-constraints">Known Constraints</a></li>
+<li><a class="reference internal" href="#owner-declaration">Owner declaration</a></li>
+<li><a class="reference internal" href="#materialization-boundary">Materialization boundary</a></li>
+<li><a class="reference internal" href="#example">Example</a></li>
+<li><a class="reference internal" href="#core-validation">Core validation</a></li>
 </ul>
 </li>
 </ul>
