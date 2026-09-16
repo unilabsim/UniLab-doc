@@ -275,7 +275,6 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/7-tooling/1-onnx_export.html">ONNX Export</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/7-tooling/2-wandb.html">W&amp;B and TensorBoard</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/7-tooling/3-nan_visualizer.html">NaN Visualizer</a></li>
-<li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/7-tooling/4-scene_export.html">Scene Export</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/7-tooling/5-robot_import.html">Robot Import</a></li>
 </ul>
 </li>
@@ -413,7 +412,6 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../../zh_CN/2-user_guide/7-tooling/1-onnx_export.html">ONNX 导出</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../zh_CN/2-user_guide/7-tooling/2-wandb.html">W&amp;B 与 TensorBoard</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../zh_CN/2-user_guide/7-tooling/3-nan_visualizer.html">NaN 可视化工具</a></li>
-<li class="toctree-l4"><a class="reference internal" href="../../../../zh_CN/2-user_guide/7-tooling/4-scene_export.html">场景导出</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../zh_CN/2-user_guide/7-tooling/5-robot_import.html">机器人导入</a></li>
 </ul>
 </li>
@@ -549,6 +547,7 @@
     <span class="n">DomainRandomizationCapabilities</span><span class="p">,</span>
     <span class="n">IntervalTermOp</span><span class="p">,</span>
     <span class="n">ResetRandomizationPayload</span><span class="p">,</span>
+    <span class="n">require_op_body_ids</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.scene</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneCfg</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.utils.rotation</span><span class="w"> </span><span class="kn">import</span> <span class="n">np_quat_apply_inverse_batched</span>
@@ -561,14 +560,20 @@
     <span class="n">MOTRIX_AVAILABLE</span> <span class="o">=</span> <span class="kc">True</span>
 <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
     <span class="n">MOTRIX_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
-    <span class="c1"># No motrixsim in this process: the ``except _MotrixRenderClosedError``</span>
-    <span class="c1"># clauses below never match, which is correct because the renderer cannot</span>
-    <span class="c1"># exist without the package.</span>
+    <span class="c1"># No motrixsim in this process: the placeholders stay None and every</span>
+    <span class="c1"># consumer is gated behind MOTRIX_AVAILABLE (the factory raises before</span>
+    <span class="c1"># construction), while the ``except _MotrixRenderClosedError`` clauses</span>
+    <span class="c1"># below never match, which is correct because the renderer cannot exist</span>
+    <span class="c1"># without the package.  The Any cast keeps the names bound for type</span>
+    <span class="c1"># checkers without changing runtime behavior.</span>
+    <span class="n">mtx</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Any</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">RenderApp</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Any</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">RenderSettings</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Any</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
     <span class="n">_MotrixRenderClosedError</span> <span class="o">=</span> <span class="p">()</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">..base</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">_NATIVE_RENDERER_PLAY_CAPABILITIES</span><span class="p">,</span>
     <span class="n">BackendHeightScanner</span><span class="p">,</span>
-    <span class="n">BackendPlayCapabilities</span><span class="p">,</span>
     <span class="n">BackendPlayRenderPlan</span><span class="p">,</span>
     <span class="n">BackendRootStateLayout</span><span class="p">,</span>
     <span class="n">BackendTerrainSpawnData</span><span class="p">,</span>
@@ -615,7 +620,7 @@
 
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">_MotrixSceneContext</span><span class="p">:</span>
-    <span class="n">model</span><span class="p">:</span> <span class="s2">&quot;mtx.SceneModel&quot;</span>
+    <span class="n">model</span><span class="p">:</span> <span class="n">Any</span>
     <span class="n">sensor_names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
     <span class="n">terrain_origins</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">terrain_surface_sampler</span><span class="p">:</span> <span class="nb">object</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
@@ -624,8 +629,8 @@
 
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">_MotrixTerrainScanner</span><span class="p">(</span><span class="n">BackendHeightScanner</span><span class="p">):</span>
-    <span class="n">scanner</span><span class="p">:</span> <span class="s2">&quot;mtx.TerrainScanner&quot;</span>
-    <span class="n">data</span><span class="p">:</span> <span class="s2">&quot;mtx.SceneData&quot;</span>
+    <span class="n">scanner</span><span class="p">:</span> <span class="n">Any</span>
+    <span class="n">data</span><span class="p">:</span> <span class="n">Any</span>
     <span class="n">out</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">scan</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
@@ -691,6 +696,8 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">MotrixBackend</span><span class="p">(</span><span class="n">SimBackend</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;MotrixSim backend implementation.&quot;&quot;&quot;</span>
 
+    <span class="n">_play_capabilities</span> <span class="o">=</span> <span class="n">_NATIVE_RENDERER_PLAY_CAPABILITIES</span>
+
 <div class="viewcode-block" id="MotrixBackend.__init__">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.backend.MotrixBackend.html#unisim.backend.motrix.backend.MotrixBackend.__init__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
@@ -746,24 +753,24 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span> <span class="o">=</span> <span class="kc">None</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_data</span> <span class="o">=</span> <span class="n">mtx</span><span class="o">.</span><span class="n">SceneData</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="p">,</span> <span class="n">batch</span><span class="o">=</span><span class="p">[</span><span class="n">num_envs</span><span class="p">])</span>  <span class="c1"># pyright: ignore[reportPossiblyUnbound]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_body</span><span class="p">:</span> <span class="s2">&quot;mtx.Body&quot;</span> <span class="o">=</span> <span class="n">_require_not_none</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_body</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="n">_require_not_none</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">get_body</span><span class="p">(</span><span class="n">base_name</span><span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Body &#39;</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">&#39; not found in Motrix model&quot;</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_body_link</span><span class="p">:</span> <span class="s2">&quot;mtx.Link&quot;</span> <span class="o">=</span> <span class="n">_require_not_none</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_body_link</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="n">_require_not_none</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">get_link</span><span class="p">(</span><span class="n">base_name</span><span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Link &#39;</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">&#39; not found in Motrix model&quot;</span>
         <span class="p">)</span>
         <span class="n">push_body</span> <span class="o">=</span> <span class="n">push_body_name</span> <span class="k">if</span> <span class="n">push_body_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">base_name</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_link</span><span class="p">:</span> <span class="s2">&quot;mtx.Link&quot;</span> <span class="o">=</span> <span class="n">_require_not_none</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_link</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="n">_require_not_none</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">get_link</span><span class="p">(</span><span class="n">push_body</span><span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Push link &#39;</span><span class="si">{</span><span class="n">push_body</span><span class="si">}</span><span class="s2">&#39; not found in Motrix model&quot;</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_body_floatingbase</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body</span><span class="o">.</span><span class="n">floatingbase</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_joint_dof_pos_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">joint_dof_pos_indices</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_joint_dof_vel_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">joint_dof_vel_indices</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_joint_dof_pos_slice</span> <span class="o">=</span> <span class="n">_contiguous_slice</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_joint_dof_pos_indices</span><span class="p">)</span>
-        <span class="n">position_actuators</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="s2">&quot;mtx.PositionActuator&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">position_actuators</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">actuator</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">actuators</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">actuator</span><span class="o">.</span><span class="n">typ</span> <span class="o">==</span> <span class="s2">&quot;position&quot;</span><span class="p">:</span>
-                <span class="n">position_actuators</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cast</span><span class="p">(</span><span class="s2">&quot;mtx.PositionActuator&quot;</span><span class="p">,</span> <span class="n">actuator</span><span class="p">))</span>
+                <span class="n">position_actuators</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">actuator</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_position_actuators</span> <span class="o">=</span> <span class="n">position_actuators</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_supports_position_actuator_gains</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_position_actuators</span><span class="p">)</span> <span class="o">==</span> <span class="nb">int</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">num_actuators</span>
@@ -810,17 +817,13 @@
             <span class="k">for</span> <span class="n">floating_base</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="p">,</span> <span class="s2">&quot;floating_bases&quot;</span><span class="p">,</span> <span class="p">[])</span>
             <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">floating_base</span><span class="o">.</span><span class="n">dof_pos_indices</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">7</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_links_by_id</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="s2">&quot;mtx.Link&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="nb">int</span><span class="p">(</span><span class="n">link</span><span class="o">.</span><span class="n">index</span><span class="p">):</span> <span class="n">link</span> <span class="k">for</span> <span class="n">link</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">links</span>
-        <span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_links_by_id</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="nb">int</span><span class="p">(</span><span class="n">link</span><span class="o">.</span><span class="n">index</span><span class="p">):</span> <span class="n">link</span> <span class="k">for</span> <span class="n">link</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">links</span><span class="p">}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_supports_external_force</span> <span class="o">=</span> <span class="nb">all</span><span class="p">(</span>
             <span class="nb">callable</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">link</span><span class="p">,</span> <span class="s2">&quot;add_external_force&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
             <span class="k">for</span> <span class="n">link</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_links_by_id</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_applied_body_forces</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_geoms_by_id</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="s2">&quot;mtx.Geom&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="nb">int</span><span class="p">(</span><span class="n">geom</span><span class="o">.</span><span class="n">index</span><span class="p">):</span> <span class="n">geom</span> <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">geoms</span>
-        <span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_geoms_by_id</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="nb">int</span><span class="p">(</span><span class="n">geom</span><span class="o">.</span><span class="n">index</span><span class="p">):</span> <span class="n">geom</span> <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">geoms</span><span class="p">}</span>
         <span class="c1"># TODO(motrixsim): once pure visual geoms either stop exposing friction</span>
         <span class="c1"># override methods or safely no-op them, drop this collision-mask filter.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_geom_friction_override_ids</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
@@ -856,7 +859,7 @@
                     <span class="n">geom</span><span class="o">.</span><span class="n">get_friction_override</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">),</span>
                     <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
                 <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="mi">3</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_render_app</span><span class="p">:</span> <span class="s2">&quot;RenderApp | None&quot;</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_render_app</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_render_headless</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_render_capture_enabled</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_render_offsets_np</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
@@ -865,7 +868,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_link_velocity_cache</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
         <span class="c1"># Pre-cache link objects to avoid repeated get_link() lookups.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_link_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="s2">&quot;mtx.Link&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_link_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">link</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">links</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">link</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_link_cache</span><span class="p">[</span><span class="n">link</span><span class="o">.</span><span class="n">index</span><span class="p">]</span> <span class="o">=</span> <span class="n">link</span>
@@ -1555,18 +1558,11 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="o">=</span> <span class="p">{</span>
                 <span class="n">INTERVAL_TERM_PUSH</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_robots</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
-                <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
+                <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span>
+                    <span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">),</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span>
+                <span class="p">),</span>
             <span class="p">}</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span>
-
-<div class="viewcode-block" id="MotrixBackend.get_play_capabilities">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.backend.MotrixBackend.html#unisim.backend.motrix.backend.MotrixBackend.get_play_capabilities">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_play_capabilities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BackendPlayCapabilities</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">BackendPlayCapabilities</span><span class="p">(</span>
-            <span class="n">supports_native_interactive_renderer</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-            <span class="n">supports_native_video_capture</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-        <span class="p">)</span></div>
-
 
 <div class="viewcode-block" id="MotrixBackend.resolve_play_render_plan">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.backend.MotrixBackend.html#unisim.backend.motrix.backend.MotrixBackend.resolve_play_render_plan">[docs]</a>
@@ -2272,6 +2268,7 @@
         <span class="n">offsets_np</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_render_offsets_np</span> <span class="o">=</span> <span class="n">offsets_np</span>
         <span class="n">use_configured_camera</span> <span class="o">=</span> <span class="n">capture</span> <span class="ow">or</span> <span class="n">camera_kwargs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">camera_view</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="n">use_configured_camera</span><span class="p">:</span>
             <span class="n">base_positions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_base_pos</span><span class="p">()</span> <span class="k">if</span> <span class="n">camera</span><span class="o">.</span><span class="n">cam_tracking</span> <span class="k">else</span> <span class="kc">None</span>
             <span class="n">camera_view</span> <span class="o">=</span> <span class="n">resolve_system_camera_view</span><span class="p">(</span>
@@ -2297,7 +2294,7 @@
             <span class="c1"># Normalize the motrixsim-private window-closed error to the</span>
             <span class="c1"># interface-level signal declared on SimBackend.</span>
             <span class="k">raise</span> <span class="n">RenderClosedError</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span>
-        <span class="k">if</span> <span class="n">use_configured_camera</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">camera_view</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">render_app</span><span class="o">.</span><span class="n">system_camera</span><span class="o">.</span><span class="n">set_view</span><span class="p">(</span>
                 <span class="n">camera_view</span><span class="o">.</span><span class="n">lookat</span><span class="p">,</span>
                 <span class="n">camera_view</span><span class="o">.</span><span class="n">distance</span><span class="p">,</span>

@@ -275,7 +275,6 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/7-tooling/1-onnx_export.html">ONNX Export</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/7-tooling/2-wandb.html">W&amp;B and TensorBoard</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/7-tooling/3-nan_visualizer.html">NaN Visualizer</a></li>
-<li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/7-tooling/4-scene_export.html">Scene Export</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/7-tooling/5-robot_import.html">Robot Import</a></li>
 </ul>
 </li>
@@ -413,7 +412,6 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../../zh_CN/2-user_guide/7-tooling/1-onnx_export.html">ONNX 导出</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../zh_CN/2-user_guide/7-tooling/2-wandb.html">W&amp;B 与 TensorBoard</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../zh_CN/2-user_guide/7-tooling/3-nan_visualizer.html">NaN 可视化工具</a></li>
-<li class="toctree-l4"><a class="reference internal" href="../../../../zh_CN/2-user_guide/7-tooling/4-scene_export.html">场景导出</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../zh_CN/2-user_guide/7-tooling/5-robot_import.html">机器人导入</a></li>
 </ul>
 </li>
@@ -555,7 +553,6 @@
     <span class="n">BackendRootStateLayout</span><span class="p">,</span>
     <span class="n">CameraCfg</span><span class="p">,</span>
     <span class="n">DebugOverlayGetter</span><span class="p">,</span>
-    <span class="n">PreStepControlFn</span><span class="p">,</span>
     <span class="n">SimBackend</span><span class="p">,</span>
     <span class="n">normalize_play_render_mode</span><span class="p">,</span>
 <span class="p">)</span>
@@ -587,6 +584,7 @@
     <span class="n">IntervalTermOp</span><span class="p">,</span>
     <span class="n">ResetRandomizationPayload</span><span class="p">,</span>
     <span class="n">_validate_reset_term</span><span class="p">,</span>
+    <span class="n">require_op_body_ids</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.scene</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneCfg</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.utils.rotation</span><span class="w"> </span><span class="kn">import</span> <span class="n">np_quat_apply_inverse_batched</span>
@@ -687,6 +685,16 @@
 
     <span class="n">_fixed_variant_plan</span><span class="p">:</span> <span class="n">FixedVariantPlan</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">_fixed_variant_realization</span><span class="p">:</span> <span class="n">FixedVariantRealization</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="c1"># Host DR mirrors bound by ``_bind_dr_host_mirrors`` on the cold path</span>
+    <span class="c1"># (declared here because that helper assigns them by name in a loop).</span>
+    <span class="n">_dr_geom_size</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">_dr_geom_rbound</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">_dr_geom_aabb</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">_dr_geom_solref</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">_dr_geom_solimp</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">_dr_dof_damping</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">_dr_dof_frictionloss</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
 
 <div class="viewcode-block" id="MjwarpBackend.__init__">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.__init__">[docs]</a>
@@ -1862,24 +1870,6 @@
             <span class="s2">&quot;host_cache_refresh_ms&quot;</span><span class="p">:</span> <span class="n">host_cache_ms</span><span class="p">,</span>
         <span class="p">}</span>
 
-<div class="viewcode-block" id="MjwarpBackend.set_pre_step_control">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.set_pre_step_control">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">set_pre_step_control</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">PreStepControlFn</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register or clear the env-owned per-substep control converter.</span>
-
-<span class="sd">        Semantics match the MuJoCo backend: the callback runs once before</span>
-<span class="sd">        every physics substep with the host qpos/qvel and tracked-body sensor</span>
-<span class="sd">        caches refreshed to the substep-start state.  Its return value becomes</span>
-<span class="sd">        that substep&#39;s device ctrl, and a :class:`PreStepControlOutput` may</span>
-<span class="sd">        additionally carry a dynamic body wrench that composes with the staged</span>
-<span class="sd">        interval wrench for that substep only.  Each invocation costs explicit</span>
-<span class="sd">        device round trips, so the callback path intentionally uses eager</span>
-<span class="sd">        kernel launches instead of replaying the captured step graph.  Passing</span>
-<span class="sd">        ``None`` restores the direct control path.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span> <span class="o">=</span> <span class="n">fn</span></div>
-
-
     <span class="k">def</span><span class="w"> </span><span class="nf">_execute_host_step_with_pre_step_control</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">ctrl</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
@@ -1976,10 +1966,11 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Recompute tracked-body world state from the current qpos/qvel caches.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span><span class="p">:</span>
             <span class="k">return</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kinematics_scratch_data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_kinematics_scratch_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco</span><span class="o">.</span><span class="n">MjData</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_object_velocity_buffer</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
         <span class="n">scratch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kinematics_scratch_data</span>
+        <span class="k">if</span> <span class="n">scratch</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">scratch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco</span><span class="o">.</span><span class="n">MjData</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_kinematics_scratch_data</span> <span class="o">=</span> <span class="n">scratch</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_object_velocity_buffer</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
         <span class="n">velocity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_object_velocity_buffer</span>
         <span class="n">tracked_ids</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span><span class="p">]</span>
         <span class="n">pos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_pos_w_all</span>
@@ -2455,23 +2446,19 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="o">=</span> <span class="p">{</span>
                 <span class="n">INTERVAL_TERM_PUSH</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_robots</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
-                <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
+                <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span>
+                    <span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">),</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span>
+                <span class="p">),</span>
                 <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_torque</span><span class="p">(</span>
-                    <span class="n">op</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span>
+                    <span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">),</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span>
                 <span class="p">),</span>
                 <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">:</span> <span class="p">(</span>
-                    <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_linear_velocity_delta</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span>
+                    <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_linear_velocity_delta</span><span class="p">(</span>
+                        <span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">),</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span>
+                    <span class="p">)</span>
                 <span class="p">),</span>
             <span class="p">}</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_reject_wrench_write_inside_pre_step_control</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">operation</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_active</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">operation</span><span class="si">}</span><span class="s2"> must not be called from inside a pre-step control callback; &quot;</span>
-                <span class="s2">&quot;return a PreStepControlOutput wrench instead so it applies to the current &quot;</span>
-                <span class="s2">&quot;substep&quot;</span>
-            <span class="p">)</span>
 
 <div class="viewcode-block" id="MjwarpBackend.push_robots">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.push_robots">[docs]</a>
