@@ -534,6 +534,8 @@
 <span class="sd">- sensor declarations mapped to quantities computable from the shm tensor</span>
 <span class="sd">  caches (see the kind table below),</span>
 <span class="sd">- ``&lt;keyframe&gt;`` qpos snapshots (MuJoCo ``wxyz`` convention, returned as-is),</span>
+<span class="sd">- the kinematic tree (body parents, local frames, joint axes) sent to workers</span>
+<span class="sd">  for post-reset forward kinematics (``scan_scene_kinematics``), and</span>
 <span class="sd">- ``&lt;position&gt;`` actuator parameters (kp/kv/forcerange/ctrlrange) that the</span>
 <span class="sd">  worker needs to reproduce MuJoCo&#39;s position-actuator PD semantics, and</span>
 <span class="sd">- per-joint dynamics (``range``/``armature``/``frictionloss``), resolved</span>
@@ -705,28 +707,28 @@
 
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_iter_scene_files</span><span class="p">(</span><span class="n">model_file</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Path</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the scene file plus transitively included MJCF files.&quot;&quot;&quot;</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_load_scene_files</span><span class="p">(</span><span class="n">model_file</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">Path</span><span class="p">,</span> <span class="n">ET</span><span class="o">.</span><span class="n">Element</span><span class="p">,</span> <span class="nb">dict</span><span class="p">],</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Parse the scene and its includes once for all cold-path scans.&quot;&quot;&quot;</span>
     <span class="n">seen</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="n">Path</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
-    <span class="n">ordered</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Path</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">ordered</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">Path</span><span class="p">,</span> <span class="n">ET</span><span class="o">.</span><span class="n">Element</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">visit</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">resolved</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">resolved</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
             <span class="k">return</span>
         <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">resolved</span><span class="p">)</span>
-        <span class="n">ordered</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">resolved</span><span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">root</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">resolved</span><span class="p">)</span><span class="o">.</span><span class="n">getroot</span><span class="p">()</span>
         <span class="k">except</span> <span class="n">ET</span><span class="o">.</span><span class="n">ParseError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;failed to parse MJCF scene file </span><span class="si">{</span><span class="n">resolved</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+        <span class="n">ordered</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">resolved</span><span class="p">,</span> <span class="n">root</span><span class="p">,</span> <span class="n">_collect_default_classes</span><span class="p">(</span><span class="n">root</span><span class="p">)))</span>
         <span class="k">for</span> <span class="n">include</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="s2">&quot;include&quot;</span><span class="p">):</span>
             <span class="n">include_file</span> <span class="o">=</span> <span class="n">include</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;file&quot;</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">include_file</span><span class="p">:</span>
                 <span class="n">visit</span><span class="p">(</span><span class="n">resolved</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="n">include_file</span><span class="p">)</span>
 
     <span class="n">visit</span><span class="p">(</span><span class="n">model_file</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">ordered</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">ordered</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_parse_floats</span><span class="p">(</span><span class="n">raw</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">count</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">what</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
@@ -782,9 +784,7 @@
     <span class="k">return</span> <span class="n">resolved</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_scan_one_file</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-    <span class="n">root</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">getroot</span><span class="p">()</span>
-    <span class="n">classes</span> <span class="o">=</span> <span class="n">_collect_default_classes</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_scan_one_file</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">root</span><span class="p">:</span> <span class="n">ET</span><span class="o">.</span><span class="n">Element</span><span class="p">,</span> <span class="n">classes</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">collision</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;source_collision&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;exclusions&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;geom_filters&quot;</span><span class="p">:</span> <span class="p">[]})</span>
     <span class="n">collision</span><span class="p">[</span><span class="s2">&quot;exclusions&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">attrib</span><span class="p">)</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="s2">&quot;contact/exclude&quot;</span><span class="p">))</span>
     <span class="n">collision</span><span class="p">[</span><span class="s2">&quot;geom_filters&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
@@ -1091,6 +1091,146 @@
     <span class="k">return</span> <span class="n">unsupported</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> uses unsupported MJCF sensor type </span><span class="si">{</span><span class="n">tag</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_new_kinematics_scan</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;body_names&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;joint_names&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;body_parent&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;body_pos&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;body_quat&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;body_joint_kind&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;body_joint_axis&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;body_joint_column&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;free_root&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span>
+    <span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_scan_kinematics_root</span><span class="p">(</span>
+    <span class="n">root</span><span class="p">:</span> <span class="n">ET</span><span class="o">.</span><span class="n">Element</span><span class="p">,</span>
+    <span class="n">classes</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">kinematics</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">backend_label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.kinematics</span><span class="w"> </span><span class="kn">import</span> <span class="n">JOINT_HINGE</span><span class="p">,</span> <span class="n">JOINT_NONE</span><span class="p">,</span> <span class="n">JOINT_SLIDE</span><span class="p">,</span> <span class="n">SCHEMA_VERSION</span>
+
+    <span class="n">body_names</span> <span class="o">=</span> <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_names&quot;</span><span class="p">]</span>
+    <span class="n">joint_names</span> <span class="o">=</span> <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;joint_names&quot;</span><span class="p">]</span>
+    <span class="n">free_root</span> <span class="o">=</span> <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;free_root&quot;</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">scan_body</span><span class="p">(</span><span class="n">body</span><span class="p">:</span> <span class="n">ET</span><span class="o">.</span><span class="n">Element</span><span class="p">,</span> <span class="n">parent_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">active_class</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">nonlocal</span> <span class="n">free_root</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">body</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">name</span> <span class="ow">or</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">body_names</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend_label</span><span class="si">}</span><span class="s2"> kinematics scan requires unique named bodies; got </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">attrs</span> <span class="o">=</span> <span class="n">_resolved_attrs</span><span class="p">(</span>
+            <span class="n">classes</span><span class="p">,</span>
+            <span class="n">body</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;class&quot;</span><span class="p">,</span> <span class="n">active_class</span><span class="p">),</span>
+            <span class="s2">&quot;body&quot;</span><span class="p">,</span>
+            <span class="nb">dict</span><span class="p">(</span><span class="n">body</span><span class="o">.</span><span class="n">attrib</span><span class="p">),</span>
+            <span class="n">what</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;body </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">bad_orientation</span> <span class="o">=</span> <span class="p">[</span><span class="n">key</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">_UNSUPPORTED_SITE_ORIENTATION_ATTRS</span> <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">attrs</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">bad_orientation</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;body </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> orientation uses </span><span class="si">{</span><span class="n">bad_orientation</span><span class="si">}</span><span class="s2">; the kinematics scan only &quot;</span>
+                <span class="s2">&quot;parses the quat attribute&quot;</span>
+            <span class="p">)</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="n">_parse_floats</span><span class="p">(</span><span class="n">attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pos&quot;</span><span class="p">),</span> <span class="mi">3</span><span class="p">,</span> <span class="n">what</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;body </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> pos&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">_ZERO_POS</span>
+        <span class="n">quat</span> <span class="o">=</span> <span class="n">_parse_floats</span><span class="p">(</span><span class="n">attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;quat&quot;</span><span class="p">),</span> <span class="mi">4</span><span class="p">,</span> <span class="n">what</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;body </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> quat&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">_IDENTITY_QUAT</span>
+        <span class="n">quat_norm</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">quat</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">quat_norm</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;body </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> quat must be nonzero&quot;</span><span class="p">)</span>
+        <span class="n">quat</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">value</span> <span class="o">/</span> <span class="n">quat_norm</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">quat</span><span class="p">)</span>
+        <span class="n">joints</span> <span class="o">=</span> <span class="p">[</span><span class="n">child</span> <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">body</span> <span class="k">if</span> <span class="n">child</span><span class="o">.</span><span class="n">tag</span> <span class="o">==</span> <span class="s2">&quot;joint&quot;</span><span class="p">]</span>
+        <span class="n">freejoints</span> <span class="o">=</span> <span class="p">[</span><span class="n">child</span> <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">body</span> <span class="k">if</span> <span class="n">child</span><span class="o">.</span><span class="n">tag</span> <span class="o">==</span> <span class="s2">&quot;freejoint&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">freejoints</span> <span class="ow">and</span> <span class="n">joints</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;body </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> mixes a freejoint with scalar joints; unsupported&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">joints</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;body </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> has </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">joints</span><span class="p">)</span><span class="si">}</span><span class="s2"> joints; the kinematics scan supports &quot;</span>
+                <span class="s2">&quot;one single-DoF joint per body&quot;</span>
+            <span class="p">)</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">body_names</span><span class="p">)</span>
+        <span class="n">body_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_parent&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">parent_index</span><span class="p">)</span>
+        <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_pos&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">pos</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">pos</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">pos</span><span class="p">[</span><span class="mi">2</span><span class="p">]])</span>
+        <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_quat&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">quat</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">quat</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">quat</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">quat</span><span class="p">[</span><span class="mi">3</span><span class="p">]])</span>
+        <span class="k">if</span> <span class="n">freejoints</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">parent_index</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;freejoint body </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> is not a direct worldbody child; unsupported&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">free_root</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend_label</span><span class="si">}</span><span class="s2"> kinematics scan supports one freejoint body; &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;found </span><span class="si">{</span><span class="n">body_names</span><span class="p">[</span><span class="n">free_root</span><span class="p">]</span><span class="si">!r}</span><span class="s2"> and </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="n">free_root</span> <span class="o">=</span> <span class="n">index</span>
+            <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_joint_kind&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">JOINT_NONE</span><span class="p">)</span>
+            <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_joint_axis&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">_ZERO_POS</span><span class="p">))</span>
+            <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_joint_column&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">joints</span><span class="p">:</span>
+            <span class="n">joint</span> <span class="o">=</span> <span class="n">joints</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">joint_name</span> <span class="o">=</span> <span class="n">joint</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">joint_name</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;body </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> has an unnamed joint; the kinematics scan requires &quot;</span>
+                    <span class="s2">&quot;named single-DoF joints&quot;</span>
+                <span class="p">)</span>
+            <span class="n">body_class</span> <span class="o">=</span> <span class="n">body</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;childclass&quot;</span><span class="p">,</span> <span class="n">active_class</span><span class="p">)</span>
+            <span class="n">joint_attrs</span> <span class="o">=</span> <span class="n">_resolved_attrs</span><span class="p">(</span>
+                <span class="n">classes</span><span class="p">,</span>
+                <span class="n">joint</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;class&quot;</span><span class="p">,</span> <span class="n">body_class</span><span class="p">),</span>
+                <span class="s2">&quot;joint&quot;</span><span class="p">,</span>
+                <span class="nb">dict</span><span class="p">(</span><span class="n">joint</span><span class="o">.</span><span class="n">attrib</span><span class="p">),</span>
+                <span class="n">what</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;joint </span><span class="si">{</span><span class="n">joint_name</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">kind_raw</span> <span class="o">=</span> <span class="n">joint_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">,</span> <span class="s2">&quot;hinge&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">kind_raw</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;hinge&quot;</span><span class="p">,</span> <span class="s2">&quot;slide&quot;</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;joint </span><span class="si">{</span><span class="n">joint_name</span><span class="si">!r}</span><span class="s2"> type </span><span class="si">{</span><span class="n">kind_raw</span><span class="si">!r}</span><span class="s2"> is unsupported; &quot;</span>
+                    <span class="s2">&quot;only hinge and slide joints map to the kinematics kernel&quot;</span>
+                <span class="p">)</span>
+            <span class="n">axis</span> <span class="o">=</span> <span class="n">_parse_floats</span><span class="p">(</span><span class="n">joint_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;axis&quot;</span><span class="p">),</span> <span class="mi">3</span><span class="p">,</span> <span class="n">what</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;joint </span><span class="si">{</span><span class="n">joint_name</span><span class="si">!r}</span><span class="s2"> axis&quot;</span><span class="p">)</span>
+            <span class="n">axis_values</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span> <span class="k">if</span> <span class="n">axis</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">axis</span>
+            <span class="n">norm</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">axis_values</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">norm</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;joint </span><span class="si">{</span><span class="n">joint_name</span><span class="si">!r}</span><span class="s2"> axis must be nonzero&quot;</span><span class="p">)</span>
+            <span class="n">ref</span> <span class="o">=</span> <span class="n">_parse_floats</span><span class="p">(</span><span class="n">joint_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ref&quot;</span><span class="p">),</span> <span class="mi">1</span><span class="p">,</span> <span class="n">what</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;joint </span><span class="si">{</span><span class="n">joint_name</span><span class="si">!r}</span><span class="s2"> ref&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ref</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">value</span> <span class="o">!=</span> <span class="mf">0.0</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">ref</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;joint </span><span class="si">{</span><span class="n">joint_name</span><span class="si">!r}</span><span class="s2"> has a nonzero ref </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">ref</span><span class="p">)</span><span class="si">}</span><span class="s2">; the kinematics &quot;</span>
+                    <span class="s2">&quot;scan assumes the joint reference position is zero&quot;</span>
+                <span class="p">)</span>
+            <span class="n">joint_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">joint_name</span><span class="p">)</span>
+            <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_joint_kind&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">JOINT_HINGE</span> <span class="k">if</span> <span class="n">kind_raw</span> <span class="o">==</span> <span class="s2">&quot;hinge&quot;</span> <span class="k">else</span> <span class="n">JOINT_SLIDE</span>
+            <span class="p">)</span>
+            <span class="n">normalized_axis</span> <span class="o">=</span> <span class="p">(</span><span class="n">axis_values</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="n">norm</span><span class="p">,</span> <span class="n">axis_values</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">norm</span><span class="p">,</span> <span class="n">axis_values</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">/</span> <span class="n">norm</span><span class="p">)</span>
+            <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_joint_axis&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">normalized_axis</span><span class="p">))</span>
+            <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_joint_column&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">7</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">joint_names</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_joint_kind&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">JOINT_NONE</span><span class="p">)</span>
+            <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_joint_axis&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">_ZERO_POS</span><span class="p">))</span>
+            <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_joint_column&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">child_class</span> <span class="o">=</span> <span class="n">body</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;childclass&quot;</span><span class="p">,</span> <span class="n">active_class</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">body</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">child</span><span class="o">.</span><span class="n">tag</span> <span class="o">==</span> <span class="s2">&quot;body&quot;</span><span class="p">:</span>
+                <span class="n">scan_body</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">child_class</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">worldbody</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="s2">&quot;worldbody&quot;</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">body</span> <span class="ow">in</span> <span class="n">worldbody</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">body</span><span class="o">.</span><span class="n">tag</span> <span class="o">==</span> <span class="s2">&quot;body&quot;</span><span class="p">:</span>
+                <span class="n">scan_body</span><span class="p">(</span><span class="n">body</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;free_root&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">free_root</span>
+    <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;schema_version&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">SCHEMA_VERSION</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">scan_scene_metadata</span><span class="p">(</span>
     <span class="n">model_file</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">backend_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;subprocess&quot;</span><span class="p">,</span> <span class="n">resolve_actuators</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SceneMetadata</span><span class="p">:</span>
@@ -1116,9 +1256,17 @@
         <span class="s2">&quot;body_names&quot;</span><span class="p">:</span> <span class="p">[],</span>
         <span class="s2">&quot;actuators&quot;</span><span class="p">:</span> <span class="p">[],</span>
     <span class="p">}</span>
-    <span class="k">for</span> <span class="n">scene_file</span> <span class="ow">in</span> <span class="n">_iter_scene_files</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
-        <span class="n">_scan_one_file</span><span class="p">(</span><span class="n">scene_file</span><span class="p">,</span> <span class="n">raw</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">scene_file</span><span class="p">,</span> <span class="n">root</span><span class="p">,</span> <span class="n">classes</span> <span class="ow">in</span> <span class="n">_load_scene_files</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+        <span class="n">_scan_one_file</span><span class="p">(</span><span class="n">scene_file</span><span class="p">,</span> <span class="n">root</span><span class="p">,</span> <span class="n">classes</span><span class="p">,</span> <span class="n">raw</span><span class="p">)</span>
 
+    <span class="k">return</span> <span class="n">_build_scene_metadata</span><span class="p">(</span>
+        <span class="n">path</span><span class="p">,</span> <span class="n">raw</span><span class="p">,</span> <span class="n">resolve_actuators</span><span class="o">=</span><span class="n">resolve_actuators</span><span class="p">,</span> <span class="n">backend_label</span><span class="o">=</span><span class="n">backend_label</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_scene_metadata</span><span class="p">(</span>
+    <span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">raw</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">resolve_actuators</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">backend_label</span><span class="p">:</span> <span class="nb">str</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SceneMetadata</span><span class="p">:</span>
     <span class="n">sensors</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">SceneSensorSpec</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">unsupported</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">UnsupportedSensorSpec</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">for</span> <span class="n">source_file</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">attrib</span> <span class="ow">in</span> <span class="n">raw</span><span class="p">[</span><span class="s2">&quot;sensors&quot;</span><span class="p">]:</span>
@@ -1171,6 +1319,60 @@
     <span class="p">)</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">scan_scene_metadata_with_kinematics</span><span class="p">(</span>
+    <span class="n">model_file</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">backend_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;subprocess&quot;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneMetadata</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Scan metadata and the FK tree while parsing each MJCF source once.&quot;&quot;&quot;</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">model_file</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend_label</span><span class="si">}</span><span class="s2"> scene model file does not exist: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">raw</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;site_frames&quot;</span><span class="p">:</span> <span class="p">{},</span>
+        <span class="s2">&quot;site_attrs&quot;</span><span class="p">:</span> <span class="p">{},</span>
+        <span class="s2">&quot;geom_body&quot;</span><span class="p">:</span> <span class="p">{},</span>
+        <span class="s2">&quot;sensors&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;keyframes&quot;</span><span class="p">:</span> <span class="p">{},</span>
+        <span class="s2">&quot;joint_names&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;joint_ranges&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;joint_armature&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;joint_frictionloss&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;body_names&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;actuators&quot;</span><span class="p">:</span> <span class="p">[],</span>
+    <span class="p">}</span>
+    <span class="n">kinematics</span> <span class="o">=</span> <span class="n">_new_kinematics_scan</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">scene_file</span><span class="p">,</span> <span class="n">root</span><span class="p">,</span> <span class="n">classes</span> <span class="ow">in</span> <span class="n">_load_scene_files</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+        <span class="n">_scan_one_file</span><span class="p">(</span><span class="n">scene_file</span><span class="p">,</span> <span class="n">root</span><span class="p">,</span> <span class="n">classes</span><span class="p">,</span> <span class="n">raw</span><span class="p">)</span>
+        <span class="n">_scan_kinematics_root</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">classes</span><span class="p">,</span> <span class="n">kinematics</span><span class="p">,</span> <span class="n">backend_label</span><span class="o">=</span><span class="n">backend_label</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">_build_scene_metadata</span><span class="p">(</span>
+            <span class="n">path</span><span class="p">,</span> <span class="n">raw</span><span class="p">,</span> <span class="n">resolve_actuators</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">backend_label</span><span class="o">=</span><span class="n">backend_label</span>
+        <span class="p">),</span>
+        <span class="n">kinematics</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">scan_scene_kinematics</span><span class="p">(</span><span class="n">model_file</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">backend_label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;subprocess&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Scan one MJCF scene into the worker FK kinematic-tree payload.</span>
+
+<span class="sd">    Cold path only.  The traversal order matches :func:`scan_scene_metadata`&#39;s</span>
+<span class="sd">    ``body_names``/``joint_names`` exactly (per file in include-visit order,</span>
+<span class="sd">    depth-first pre-order under each ``worldbody``), so the returned tables</span>
+<span class="sd">    share the public column contract.  The layout is the pickle-safe wire</span>
+<span class="sd">    format consumed by ``kinematics.forward_kinematics`` inside workers; the</span>
+<span class="sd">    scan fails closed on constructs the kernel does not implement (ball</span>
+<span class="sd">    joints, compound joints, non-``quat`` body orientations, multiple free</span>
+<span class="sd">    joints, non-root free joints).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">model_file</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend_label</span><span class="si">}</span><span class="s2"> scene model file does not exist: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">kinematics</span> <span class="o">=</span> <span class="n">_new_kinematics_scan</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">_scene_file</span><span class="p">,</span> <span class="n">root</span><span class="p">,</span> <span class="n">classes</span> <span class="ow">in</span> <span class="n">_load_scene_files</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+        <span class="n">_scan_kinematics_root</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">classes</span><span class="p">,</span> <span class="n">kinematics</span><span class="p">,</span> <span class="n">backend_label</span><span class="o">=</span><span class="n">backend_label</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">kinematics</span>
+
+
+
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">&quot;KIND_CONTACT_FOUND&quot;</span><span class="p">,</span>
     <span class="s2">&quot;KIND_FRAMEPOS&quot;</span><span class="p">,</span>
@@ -1184,6 +1386,8 @@
     <span class="s2">&quot;SceneSensorSpec&quot;</span><span class="p">,</span>
     <span class="s2">&quot;SiteFrame&quot;</span><span class="p">,</span>
     <span class="s2">&quot;UnsupportedSensorSpec&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;scan_scene_metadata_with_kinematics&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;scan_scene_kinematics&quot;</span><span class="p">,</span>
     <span class="s2">&quot;scan_scene_metadata&quot;</span><span class="p">,</span>
 <span class="p">]</span>
 </pre></div>

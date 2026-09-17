@@ -603,7 +603,9 @@
     <span class="n">SceneMetadata</span><span class="p">,</span>
     <span class="n">SceneSensorSpec</span><span class="p">,</span>
     <span class="n">UnsupportedSensorSpec</span><span class="p">,</span>
+    <span class="n">scan_scene_kinematics</span><span class="p">,</span>
     <span class="n">scan_scene_metadata</span><span class="p">,</span>
+    <span class="n">scan_scene_metadata_with_kinematics</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
@@ -896,10 +898,12 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_worker_dead_error</span><span class="p">:</span> <span class="n">SubprocessWorkerError</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_model_info</span><span class="p">:</span> <span class="n">SubprocessModelInfo</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_scene_metadata</span><span class="p">:</span> <span class="n">SceneMetadata</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_kinematics</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_initial_qpos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_initial_qpos_resolved</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_plan</span> <span class="o">=</span> <span class="n">scene</span><span class="o">.</span><span class="n">fixed_variant_plan</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_metadata</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneMetadata</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_kinematics</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_variant_initial_qpos</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_variant_initial_qpos_resolved</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_sensor_map</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneSensorSpec</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
@@ -1350,10 +1354,12 @@
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="si">}</span><span class="s2"> backend is closed and cannot be materialized again&quot;</span>
             <span class="p">)</span>
-        <span class="c1"># Parent-side MJCF metadata (sensors, keyframes, joint document order)</span>
-        <span class="c1"># is resolved lazily on first access and reused here so the INIT</span>
-        <span class="c1"># payload can carry the keyframe pose.</span>
+        <span class="c1"># Parent-side MJCF metadata and the #141 FK tree share one parse here.</span>
+        <span class="c1"># Metadata-only access before materialization remains permissive.</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_get_scene_metadata_with_kinematics</span><span class="p">()</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_get_fixed_variant_metadata_with_kinematics</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_initial_qpos</span><span class="p">()</span>
         <span class="n">runtime</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_command</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -1412,6 +1418,10 @@
                             <span class="c1"># can remap native link indices before publishing state.</span>
                             <span class="s2">&quot;mjcf_body_names&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_scene_metadata</span><span class="p">()</span><span class="o">.</span><span class="n">body_names</span><span class="p">),</span>
                             <span class="s2">&quot;mjcf_joint_names&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_scene_metadata</span><span class="p">()</span><span class="o">.</span><span class="n">joint_names</span><span class="p">),</span>
+                            <span class="c1"># Kinematic tree for worker-side FK: PhysX cannot</span>
+                            <span class="c1"># refresh link poses without stepping, so post-reset</span>
+                            <span class="c1"># body state is overlaid with exact FK (#141).</span>
+                            <span class="s2">&quot;mjcf_kinematics&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_scene_kinematics</span><span class="p">(),</span>
                             <span class="c1"># Fixed variants carry their own per-source actuation and</span>
                             <span class="c1"># keyframe tables; the legacy single-model fields are omitted</span>
                             <span class="c1"># rather than duplicated (or allowed to conflict).</span>
@@ -1637,6 +1647,27 @@
             <span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_metadata</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_scene_metadata_with_kinematics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneMetadata</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Parse the legacy source once for both public metadata and FK tables.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_metadata</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_kinematics</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_metadata</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_kinematics</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">metadata</span><span class="p">,</span> <span class="n">kinematics</span> <span class="o">=</span> <span class="n">scan_scene_metadata_with_kinematics</span><span class="p">(</span>
+                    <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_scene</span><span class="o">.</span><span class="n">model_file</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()),</span>
+                    <span class="n">backend_label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">metadata</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_scene_metadata</span><span class="p">()</span>
+                <span class="n">kinematics</span> <span class="o">=</span> <span class="n">scan_scene_kinematics</span><span class="p">(</span>
+                    <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_scene</span><span class="o">.</span><span class="n">model_file</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()),</span>
+                    <span class="n">backend_label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_kinematics</span><span class="p">(</span><span class="n">kinematics</span><span class="p">,</span> <span class="n">metadata</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_scene_metadata</span> <span class="o">=</span> <span class="n">metadata</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_scene_kinematics</span> <span class="o">=</span> <span class="n">kinematics</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_metadata</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_kinematics</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_metadata</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_kinematics</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_fixed_variant_metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneMetadata</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the per-variant MJCF scans required by the public layout.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_plan</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -1647,11 +1678,43 @@
                 <span class="n">scan_scene_metadata</span><span class="p">(</span>
                     <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">variant</span><span class="o">.</span><span class="n">model_file</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()),</span>
                     <span class="n">backend_label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="p">,</span>
+                    <span class="n">resolve_actuators</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">,</span>
                 <span class="p">)</span>
                 <span class="k">for</span> <span class="n">variant</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_plan</span><span class="o">.</span><span class="n">variants</span>
             <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_validate_fixed_variant_metadata</span><span class="p">(</span><span class="n">metadata</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_metadata</span> <span class="o">=</span> <span class="n">metadata</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_metadata</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_fixed_variant_metadata_with_kinematics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneMetadata</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Parse every legacy variant once for metadata and FK tables.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_metadata</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_kinematics</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_metadata</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_kinematics</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">pairs</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+                    <span class="n">scan_scene_metadata_with_kinematics</span><span class="p">(</span>
+                        <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">variant</span><span class="o">.</span><span class="n">model_file</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()),</span>
+                        <span class="n">backend_label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="k">for</span> <span class="n">variant</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_plan</span><span class="o">.</span><span class="n">variants</span>
+                <span class="p">)</span>
+                <span class="n">metadata</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">pairs</span><span class="p">)</span>
+                <span class="n">kinematics</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">pairs</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">metadata</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_fixed_variant_metadata</span><span class="p">()</span>
+                <span class="n">kinematics</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+                    <span class="n">scan_scene_kinematics</span><span class="p">(</span>
+                        <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">variant</span><span class="o">.</span><span class="n">model_file</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()),</span>
+                        <span class="n">backend_label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="k">for</span> <span class="n">variant</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_plan</span><span class="o">.</span><span class="n">variants</span>
+                <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_fixed_variant_metadata</span><span class="p">(</span><span class="n">metadata</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">item</span><span class="p">,</span> <span class="n">tables</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">metadata</span><span class="p">,</span> <span class="n">kinematics</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_validate_kinematics</span><span class="p">(</span><span class="n">tables</span><span class="p">,</span> <span class="n">item</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_metadata</span> <span class="o">=</span> <span class="n">metadata</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_kinematics</span> <span class="o">=</span> <span class="n">kinematics</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_metadata</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_metadata</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_fixed_variant_metadata</span><span class="p">(</span>
@@ -1684,6 +1747,33 @@
                         <span class="sa">f</span><span class="s2">&quot;canonical=</span><span class="si">{</span><span class="n">expected</span><span class="si">}</span><span class="s2">, variant=</span><span class="si">{</span><span class="n">actual</span><span class="si">}</span><span class="s2">; IsaacGym requires &quot;</span>
                         <span class="s2">&quot;one actor slot with identical dof/body name order per environment&quot;</span>
                     <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_scene_kinematics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the parent-side kinematic-tree scan, scanned lazily once.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_kinematics</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_get_scene_metadata_with_kinematics</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_kinematics</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_kinematics</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_fixed_variant_kinematics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return per-variant kinematic trees aligned with the variant plan.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_plan</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_kinematics</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_get_fixed_variant_metadata_with_kinematics</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_kinematics</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_kinematics</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_kinematics</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">kinematics</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">metadata</span><span class="p">:</span> <span class="n">SceneMetadata</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Pin the FK payload to the same public column contract as the metadata scan.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">kinematics</span><span class="p">[</span><span class="s2">&quot;body_names&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="nb">list</span><span class="p">(</span><span class="n">metadata</span><span class="o">.</span><span class="n">body_names</span><span class="p">)</span> <span class="ow">or</span> <span class="n">kinematics</span><span class="p">[</span>
+            <span class="s2">&quot;joint_names&quot;</span>
+        <span class="p">]</span> <span class="o">!=</span> <span class="nb">list</span><span class="p">(</span><span class="n">metadata</span><span class="o">.</span><span class="n">joint_names</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="si">}</span><span class="s2"> kinematics scan disagrees with the metadata scan:</span><span class="se">\n</span><span class="s2">&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;  metadata bodies: </span><span class="si">{</span><span class="n">metadata</span><span class="o">.</span><span class="n">body_names</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;  kinematics bodies: </span><span class="si">{</span><span class="n">kinematics</span><span class="p">[</span><span class="s1">&#39;body_names&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_initial_qpos</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Lazily select the scene keyframe used as the backend default state.&quot;&quot;&quot;</span>
@@ -1853,6 +1943,15 @@
             <span class="s2">&quot;variant_dof_fields&quot;</span><span class="p">:</span> <span class="p">[</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_position_actuation_payload_for</span><span class="p">(</span><span class="n">variant</span><span class="p">)</span> <span class="k">for</span> <span class="n">variant</span> <span class="ow">in</span> <span class="n">metadata</span>
             <span class="p">],</span>
+            <span class="c1"># Only the legacy raw-MJCF worker consumes the FK kinematic tree</span>
+            <span class="c1"># (#141); the mapped scene path keeps its own host-side contract.</span>
+            <span class="o">**</span><span class="p">(</span>
+                <span class="p">{}</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="k">else</span> <span class="p">{</span>
+                    <span class="s2">&quot;variant_mjcf_kinematics&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_fixed_variant_kinematics</span><span class="p">())</span>
+                <span class="p">}</span>
+            <span class="p">),</span>
             <span class="s2">&quot;variant_keyframe_qpos&quot;</span><span class="p">:</span> <span class="p">[</span>
                 <span class="kc">None</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">value</span><span class="p">]</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">initial_qpos</span>
             <span class="p">],</span>

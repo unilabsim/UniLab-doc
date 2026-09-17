@@ -599,6 +599,10 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">camera_elevation_deg</span> <span class="o">=</span> <span class="mf">20.0</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">camera_azimuth_deg</span> <span class="o">=</span> <span class="mf">90.0</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">scene_worker</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># Keyframe rows in canonical MJCF layout, stashed by</span>
+        <span class="c1"># ``_apply_initial_rows`` so the adopted scene worker can publish FK</span>
+        <span class="c1"># body state before the first physics step (#141).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initial_qpos_rows</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="c1"># ------------------------------------------------------------------ #</span>
     <span class="c1"># INIT</span>
@@ -863,6 +867,12 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">scene_worker</span> <span class="o">=</span> <span class="n">module</span><span class="o">.</span><span class="n">SceneWorker</span><span class="o">.</span><span class="n">adopt_initialized_context</span><span class="p">(</span>
             <span class="bp">self</span><span class="p">,</span> <span class="n">metadata</span><span class="p">,</span> <span class="n">payload</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">load_legacy_projection</span><span class="p">()</span>
         <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_initial_qpos_rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">scene_worker</span><span class="o">.</span><span class="n">stage_fk_overlay_rows</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_initial_qpos_rows</span><span class="p">,</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="mi">6</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_dof</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
+            <span class="p">)</span>
         <span class="k">return</span> <span class="n">metadata</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_load_mjcf_asset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_file</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">asset_options</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
@@ -990,6 +1000,7 @@
                     <span class="o">%</span> <span class="p">(</span><span class="n">qpos</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">expected</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_dof</span><span class="p">)</span>
                 <span class="p">)</span>
             <span class="n">qpos_rows_matrix</span><span class="p">[</span><span class="n">env_index</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">qpos</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initial_qpos_rows</span> <span class="o">=</span> <span class="n">qpos_rows_matrix</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
 
         <span class="n">root</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="mi">13</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         <span class="n">root</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">qpos_rows_matrix</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span>
