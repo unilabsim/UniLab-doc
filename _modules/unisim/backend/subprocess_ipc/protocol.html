@@ -533,9 +533,12 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">importlib.util</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pickle</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">struct</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">traceback</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Tuple</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
@@ -544,6 +547,7 @@
 <span class="n">CMD_ATTACH</span> <span class="o">=</span> <span class="s2">&quot;ATTACH_SLOTS&quot;</span>
 <span class="n">CMD_STEP</span> <span class="o">=</span> <span class="s2">&quot;STEP&quot;</span>
 <span class="n">CMD_SET_STATE</span> <span class="o">=</span> <span class="s2">&quot;SET_STATE&quot;</span>
+<span class="n">CMD_RESET_ENTITIES</span> <span class="o">=</span> <span class="s2">&quot;RESET_ENTITIES&quot;</span>
 <span class="n">CMD_REFRESH</span> <span class="o">=</span> <span class="s2">&quot;REFRESH&quot;</span>
 <span class="n">CMD_GET_META</span> <span class="o">=</span> <span class="s2">&quot;GET_META&quot;</span>
 <span class="n">CMD_INIT_RENDERER</span> <span class="o">=</span> <span class="s2">&quot;INIT_RENDERER&quot;</span>
@@ -637,6 +641,104 @@
 
 <span class="n">SLOT_NAMES</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">_SLOT_DTYPES</span><span class="p">)</span>
 
+<span class="c1"># Shared scene schema is separate from the M1 configuration-report schema.</span>
+<span class="n">SCENE_SCHEMA_VERSION</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="n">_SCENE_SLOT_DTYPES</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;qpos&quot;</span><span class="p">:</span> <span class="s2">&quot;float32&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;qvel&quot;</span><span class="p">:</span> <span class="s2">&quot;float32&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;entity_root_state&quot;</span><span class="p">:</span> <span class="s2">&quot;float32&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;reset_entity_root_state&quot;</span><span class="p">:</span> <span class="s2">&quot;float32&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;reset_qpos_mask&quot;</span><span class="p">:</span> <span class="s2">&quot;uint8&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;reset_qvel_mask&quot;</span><span class="p">:</span> <span class="s2">&quot;uint8&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;reset_root_mask&quot;</span><span class="p">:</span> <span class="s2">&quot;uint8&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">load_scene_layout</span><span class="p">(</span><span class="n">payload</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Use the same strict layout validator in isolated Python 3.8 workers.</span>
+
+<span class="sd">    Loading by path avoids importing the host package or an optional engine.</span>
+<span class="sd">    The dataclass module must be registered before execution for Python 3.8.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">module_name</span> <span class="o">=</span> <span class="s2">&quot;unisim_worker_scene_layout&quot;</span>
+    <span class="n">module</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">module_name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">module</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parents</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">/</span> <span class="s2">&quot;scene_layout.py&quot;</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">spec_from_file_location</span><span class="p">(</span><span class="n">module_name</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">spec</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">spec</span><span class="o">.</span><span class="n">loader</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;cannot load shared scene layout validator&quot;</span><span class="p">)</span>
+        <span class="n">module</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">module_from_spec</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">[</span><span class="n">module_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">module</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">spec</span><span class="o">.</span><span class="n">loader</span><span class="o">.</span><span class="n">exec_module</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">[</span><span class="n">module_name</span><span class="p">]</span>
+            <span class="k">raise</span>
+    <span class="k">return</span> <span class="n">module</span><span class="o">.</span><span class="n">CompiledSceneLayout</span><span class="o">.</span><span class="n">from_dict</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">load_legacy_projection</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load the old-wire projection without importing the host package.&quot;&quot;&quot;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;unisim_worker_legacy_projection&quot;</span>
+    <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">with_name</span><span class="p">(</span><span class="s2">&quot;legacy_projection.py&quot;</span><span class="p">)</span>
+    <span class="n">spec</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">spec_from_file_location</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">spec</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">spec</span><span class="o">.</span><span class="n">loader</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;cannot load worker compatibility projection&quot;</span><span class="p">)</span>
+    <span class="n">module</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">module_from_spec</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">module</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">spec</span><span class="o">.</span><span class="n">loader</span><span class="o">.</span><span class="n">exec_module</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+        <span class="k">del</span> <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+        <span class="k">raise</span>
+    <span class="k">return</span> <span class="n">module</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">scene_slot_shapes</span><span class="p">(</span><span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">layout</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Explicit state/action/root widths for the mapped scene protocol.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">num_envs</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;num_envs must be a positive integer&quot;</span><span class="p">)</span>
+    <span class="n">num_entities</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">layout</span><span class="o">.</span><span class="n">entities</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;ctrl&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">layout</span><span class="o">.</span><span class="n">nu</span><span class="p">),</span>
+        <span class="s2">&quot;qpos&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">layout</span><span class="o">.</span><span class="n">nq</span><span class="p">),</span>
+        <span class="s2">&quot;qvel&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">layout</span><span class="o">.</span><span class="n">nv</span><span class="p">),</span>
+        <span class="s2">&quot;entity_root_state&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">num_entities</span><span class="p">,</span> <span class="mi">13</span><span class="p">),</span>
+        <span class="s2">&quot;body_state&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">layout</span><span class="o">.</span><span class="n">nbody</span><span class="p">,</span> <span class="mi">13</span><span class="p">),</span>
+        <span class="s2">&quot;contact_force&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">layout</span><span class="o">.</span><span class="n">nbody</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+        <span class="s2">&quot;reset_env_ids&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,),</span>
+        <span class="s2">&quot;reset_qpos&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">layout</span><span class="o">.</span><span class="n">nq</span><span class="p">),</span>
+        <span class="s2">&quot;reset_qvel&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">layout</span><span class="o">.</span><span class="n">nv</span><span class="p">),</span>
+        <span class="s2">&quot;reset_entity_root_state&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">num_entities</span><span class="p">,</span> <span class="mi">13</span><span class="p">),</span>
+        <span class="s2">&quot;reset_qpos_mask&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">layout</span><span class="o">.</span><span class="n">nq</span><span class="p">,),</span>
+        <span class="s2">&quot;reset_qvel_mask&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">layout</span><span class="o">.</span><span class="n">nv</span><span class="p">,),</span>
+        <span class="c1"># Position and velocity channels are independently optional.</span>
+        <span class="s2">&quot;reset_root_mask&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">num_entities</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+    <span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_slot_specs</span><span class="p">(</span><span class="n">specs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">expected</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Validate all wire descriptors before attaching any shared memory.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">specs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">(</span><span class="n">specs</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">set</span><span class="p">(</span><span class="n">expected</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;shared-memory slot names do not match the negotiated layout&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">shape</span> <span class="ow">in</span> <span class="n">expected</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="n">specs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span> <span class="o">!=</span> <span class="p">{</span><span class="s2">&quot;shm&quot;</span><span class="p">,</span> <span class="s2">&quot;shape&quot;</span><span class="p">,</span> <span class="s2">&quot;dtype&quot;</span><span class="p">}:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;malformed shared-memory descriptor for &quot;</span> <span class="o">+</span> <span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">spec</span><span class="p">[</span><span class="s2">&quot;shm&quot;</span><span class="p">],</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">spec</span><span class="p">[</span><span class="s2">&quot;shm&quot;</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;invalid shared-memory name for &quot;</span> <span class="o">+</span> <span class="n">name</span><span class="p">)</span>
+        <span class="n">actual</span> <span class="o">=</span> <span class="n">spec</span><span class="p">[</span><span class="s2">&quot;shape&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">actual</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">))</span>
+            <span class="ow">or</span> <span class="nb">any</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">x</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">actual</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">actual</span><span class="p">)</span> <span class="o">!=</span> <span class="n">shape</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;shared-memory shape mismatch for &quot;</span> <span class="o">+</span> <span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">(</span><span class="n">spec</span><span class="p">[</span><span class="s2">&quot;dtype&quot;</span><span class="p">])</span> <span class="o">!=</span> <span class="n">slot_dtype</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;shared-memory dtype mismatch for &quot;</span> <span class="o">+</span> <span class="n">name</span><span class="p">)</span>
+
 
 <div class="viewcode-block" id="slot_shapes">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacgym.protocol.html#unisim.backend.isaacgym.protocol.slot_shapes">[docs]</a>
@@ -663,7 +765,7 @@
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacgym.protocol.html#unisim.backend.isaacgym.protocol.slot_dtype">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">slot_dtype</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">:</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">(</span><span class="n">_SLOT_DTYPES</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">(</span><span class="n">_SLOT_DTYPES</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">_SLOT_DTYPES</span> <span class="k">else</span> <span class="n">_SCENE_SLOT_DTYPES</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
     <span class="k">except</span> <span class="ne">KeyError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unknown shm slot </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">; known: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">_SLOT_DTYPES</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span></div>
 
@@ -674,6 +776,11 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">slot_nbytes</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
     <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">prod</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">))</span> <span class="o">*</span> <span class="nb">int</span><span class="p">(</span><span class="n">slot_dtype</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">itemsize</span><span class="p">)</span></div>
 
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">slot_allocation_nbytes</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;SharedMemory needs nonzero storage even when nu or a state width is zero.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">slot_nbytes</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">shape</span><span class="p">))</span>
 
 
 <div class="viewcode-block" id="serialize_exception">

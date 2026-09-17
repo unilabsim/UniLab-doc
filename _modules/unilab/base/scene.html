@@ -531,6 +531,9 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">FixedVariantLayout</span><span class="p">,</span> <span class="n">FixedVariantPlan</span><span class="p">,</span> <span class="n">ModelSourceDescriptor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">EntityInitialState</span><span class="p">,</span> <span class="n">EntityVariantBinding</span><span class="p">,</span> <span class="n">SceneEntitySpec</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.scene</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">SceneCfg</span> <span class="k">as</span> <span class="n">_UniSimSceneCfg</span><span class="p">,</span>
 <span class="p">)</span>
@@ -544,7 +547,7 @@
 
 
 <div class="viewcode-block" id="SceneCfg">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.scene.html#unilab.base.scene.SceneCfg">[docs]</a>
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.scene.SceneCfg.html#unilab.base.scene.SceneCfg">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">SceneCfg</span><span class="p">(</span><span class="n">_UniSimSceneCfg</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Task-owned scene declaration with UniLab entity materialization.</span>
@@ -554,12 +557,61 @@
 <span class="sd">    manager facade&#39;s :class:`EntityCfg` records on the cold configuration path.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">model_file</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">model_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
     <span class="n">fragment_files</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
     <span class="n">terrain</span><span class="p">:</span> <span class="n">TerrainSceneCfg</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">entities</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">entity_assets</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneEntitySpec</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="n">entity_variant</span><span class="p">:</span> <span class="n">EntityVariantBinding</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">primary_entity</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="SceneCfg.materialize_entities">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.scene.SceneCfg.html#unilab.base.scene.SceneCfg.materialize_entities">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">materialize_entities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert task/Hydra physical records without importing a physics SDK.&quot;&quot;&quot;</span>
+        <span class="n">physical</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">raw</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_assets</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="n">SceneEntitySpec</span><span class="p">):</span>
+                <span class="n">physical</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;entity_assets entries must be SceneEntitySpec or mappings&quot;</span><span class="p">)</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+            <span class="n">source</span> <span class="o">=</span> <span class="n">values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;source&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
+                <span class="n">values</span><span class="p">[</span><span class="s2">&quot;source&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ModelSourceDescriptor</span><span class="p">(</span><span class="o">**</span><span class="n">source</span><span class="p">)</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="n">values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;initial_state&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
+                <span class="n">values</span><span class="p">[</span><span class="s2">&quot;initial_state&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">EntityInitialState</span><span class="p">(</span>
+                    <span class="o">**</span><span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+                <span class="p">)</span>
+            <span class="n">physical</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">SceneEntitySpec</span><span class="p">(</span><span class="o">**</span><span class="n">values</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">entity_assets</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">physical</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">entity_variant</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
+            <span class="n">binding</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">entity_variant</span><span class="p">)</span>
+            <span class="n">plan</span> <span class="o">=</span> <span class="n">binding</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;plan&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">plan</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span>
+                <span class="n">data</span><span class="p">[</span><span class="s2">&quot;assignment&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;assignment&quot;</span><span class="p">])</span>
+                <span class="n">data</span><span class="p">[</span><span class="s2">&quot;variants&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+                    <span class="n">ModelSourceDescriptor</span><span class="p">(</span><span class="o">**</span><span class="n">source</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">)</span> <span class="k">else</span> <span class="n">source</span>
+                    <span class="k">for</span> <span class="n">source</span> <span class="ow">in</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;variants&quot;</span><span class="p">]</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="s2">&quot;layout&quot;</span> <span class="ow">in</span> <span class="n">data</span><span class="p">:</span>
+                    <span class="n">data</span><span class="p">[</span><span class="s2">&quot;layout&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">FixedVariantLayout</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;layout&quot;</span><span class="p">])</span>
+                <span class="n">binding</span><span class="p">[</span><span class="s2">&quot;plan&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">FixedVariantPlan</span><span class="p">(</span><span class="o">**</span><span class="n">data</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">entity_variant</span> <span class="o">=</span> <span class="n">EntityVariantBinding</span><span class="p">(</span><span class="o">**</span><span class="n">binding</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">entity_assets</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">primary_entity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">primary_entity</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_assets</span><span class="p">}</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;primary_entity must name a declared physical entity&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">validate_composition</span><span class="p">()</span></div>
+
 
     <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">materialize_entities</span><span class="p">()</span>
         <span class="n">materialized</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">entities</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">EntityCfg</span><span class="p">):</span>
@@ -568,7 +620,8 @@
                 <span class="n">materialized</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">EntityCfg</span><span class="p">(</span><span class="o">**</span><span class="n">value</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">materialized</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">entities</span> <span class="o">=</span> <span class="n">materialized</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">entities</span> <span class="o">=</span> <span class="n">materialized</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__post_init__</span><span class="p">()</span></div>
 
 
 
