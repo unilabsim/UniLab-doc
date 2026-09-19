@@ -43,6 +43,15 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
 ### Changed / 变更
 
 - Raised the base and optional SuperDex UniSim requirements to
+  `unisim-core>=1.7.2`. The released package adds the SuperDex portable-scene
+  physical-root integration, including physical kinematic roots, portable
+  collision-disabled mirrors and scoped selected-control reset restoration
+  (UniSim #154).
+  将基础与可选 SuperDex 的 UniSim 依赖提升到 `unisim-core>=1.7.2`。已发布
+  包新增 SuperDex portable scene 的物理 root 集成，包括物理 kinematic root、
+  portable collision-disabled mirror 和限定范围的 selected-control reset
+  恢复（UniSim #154）。
+- Raised the base and optional SuperDex UniSim requirements to
   `unisim-core>=1.7.1`. The released packages contain portable MJCF profile
   v1 and the IsaacSim worker dependency-isolation fix, so consumer acceptance
   no longer uses the provisional local-checkout skip and validates the
