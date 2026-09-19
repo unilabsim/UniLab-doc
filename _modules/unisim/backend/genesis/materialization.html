@@ -540,8 +540,10 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">contextlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">contextmanager</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">replace</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Iterator</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
@@ -578,15 +580,25 @@
 
 <span class="sd">    ``body_name`` is the owning link for site sensors and the robot-side geom</span>
 <span class="sd">    body for contact sensors.  ``site_pos``/``site_quat`` (wxyz) are the local</span>
-<span class="sd">    site frame in the body frame; both are ``None`` for contact sensors.</span>
+<span class="sd">    site frame in the body frame; both are ``None`` for contact and portable</span>
+<span class="sd">    body frame fragment sensors. Contact sensors additionally retain both final</span>
+<span class="sd">    geom names and whether the common fragment form is exact pair netforce, so</span>
+<span class="sd">    portable validation can bind them without source-model array indices.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">body_name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">object_name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">reference_type</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">reference_id</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">site_pos</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span>
-    <span class="n">site_quat</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span></div>
+    <span class="n">site_quat</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">contact_geom1_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">contact_geom2_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">contact_netforce</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">object_kind</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;site&quot;</span></div>
 
 
 
@@ -607,6 +619,10 @@
     <span class="n">joint_qpos_adrs</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
     <span class="n">joint_dof_adrs</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
     <span class="n">body_names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">geom_names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">geom_body_names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">geom_types</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">geom_sizes</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="n">actuator_names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
     <span class="n">actuator_joint_names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
     <span class="n">actuator_ctrl_range</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
@@ -614,12 +630,505 @@
     <span class="n">actuator_kv</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="n">keyframe_qpos</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span>
     <span class="n">default_qpos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">default_qvel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">default_ctrl</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="n">joint_range</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span>
     <span class="n">dof_armature</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="n">gravity</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="n">body_mass</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="n">body_ipos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">body_inertia</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">body_iquat</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">body_pos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">body_quat</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="n">sensor_plans</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">GenesisSensorPlan</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="GenesisPortableEntitySource">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.genesis.materialization.GenesisPortableEntitySource.html#unisim.backend.genesis.materialization.GenesisPortableEntitySource">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GenesisPortableEntitySource</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Independent normalized MJCF sources for one public entity.&quot;&quot;&quot;</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">model_files</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">metadata</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">GenesisModelMetadata</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="GenesisPortableSources">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.genesis.materialization.GenesisPortableSources.html#unisim.backend.genesis.materialization.GenesisPortableSources">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GenesisPortableSources</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Cold-path Genesis inputs derived from the common portable compiler.&quot;&quot;&quot;</span>
+
+    <span class="n">entities</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">GenesisPortableEntitySource</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">cleanup_handle</span><span class="p">:</span> <span class="n">Any</span></div>
+
+
+
+<div class="viewcode-block" id="genesis_balanced_variant_mapping">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.genesis.materialization.genesis_balanced_variant_mapping.html#unisim.backend.genesis.materialization.genesis_balanced_variant_mapping">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">genesis_balanced_variant_mapping</span><span class="p">(</span><span class="n">num_variants</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return Genesis 1.3.3&#39;s documented heterogeneous env/variant mapping.</span>
+
+<span class="sd">    Genesis dispatches variants in contiguous balanced blocks (the first</span>
+<span class="sd">    remainder-sized block gets one extra environment). This local owner-side</span>
+<span class="sd">    implementation deliberately does not call Genesis&#39; private solver helper;</span>
+<span class="sd">    construction accepts an assignment only when it is exactly this mapping.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">num_variants</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;genesis heterogeneous variants require at least one source&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">num_envs</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;genesis heterogeneous variants require at least one environment&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">num_envs</span> <span class="o">&gt;=</span> <span class="n">num_variants</span><span class="p">:</span>
+        <span class="n">base</span><span class="p">,</span> <span class="n">extra</span> <span class="o">=</span> <span class="nb">divmod</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">num_variants</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">num_variants</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">r_</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">extra</span><span class="p">,</span> <span class="n">base</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">num_variants</span> <span class="o">-</span> <span class="n">extra</span><span class="p">,</span> <span class="n">base</span><span class="p">)],</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="validate_genesis_variant_assignment">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.genesis.materialization.validate_genesis_variant_assignment.html#unisim.backend.genesis.materialization.validate_genesis_variant_assignment">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_genesis_variant_assignment</span><span class="p">(</span><span class="n">assignment</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">num_variants</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Require the exact mapping Genesis will materialize natively.&quot;&quot;&quot;</span>
+
+    <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">assignment</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">values</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;genesis variant assignment must be one-dimensional&quot;</span><span class="p">)</span>
+    <span class="n">expected</span> <span class="o">=</span> <span class="n">genesis_balanced_variant_mapping</span><span class="p">(</span><span class="n">num_variants</span><span class="p">,</span> <span class="n">values</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">array_equal</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;genesis heterogeneous variant assignment must exactly equal the native &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;balanced mapping </span><span class="si">{</span><span class="n">expected</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">; got </span><span class="si">{</span><span class="n">values</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">. Reorder the &quot;</span>
+            <span class="s2">&quot;assignment until Genesis exposes a public owner-controlled mapping.&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">values</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="prepare_genesis_portable_sources">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.genesis.materialization.prepare_genesis_portable_sources.html#unisim.backend.genesis.materialization.prepare_genesis_portable_sources">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">prepare_genesis_portable_sources</span><span class="p">(</span>
+    <span class="n">mujoco</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">scene</span><span class="p">:</span> <span class="n">SceneCfg</span><span class="p">,</span> <span class="n">layout</span><span class="p">:</span> <span class="n">Any</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GenesisPortableSources</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Normalize common portable sources into independent Genesis MJCF files.</span>
+
+<span class="sd">    The common compiler remains the sole layout, identity, and source</span>
+<span class="sd">    relationship authority. This owner adapter only serializes each already</span>
+<span class="sd">    normalized ``MjSpec`` and scans the resulting source for native binding.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.mjcf_compiler</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_entity_source</span>
+
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span>
+        <span class="n">entity</span><span class="o">.</span><span class="n">root_mode</span> <span class="o">==</span> <span class="s2">&quot;kinematic&quot;</span> <span class="ow">and</span> <span class="n">entity</span><span class="o">.</span><span class="n">mirror_of</span> <span class="ow">is</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="n">scene</span><span class="o">.</span><span class="n">entity_assets</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;genesis portable kinematic entities are not yet supported&quot;</span><span class="p">)</span>
+
+    <span class="n">entity_specs</span> <span class="o">=</span> <span class="p">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="n">entity</span> <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="n">scene</span><span class="o">.</span><span class="n">entity_assets</span><span class="p">}</span>
+    <span class="n">binding</span> <span class="o">=</span> <span class="n">scene</span><span class="o">.</span><span class="n">entity_variant</span>
+    <span class="n">directory</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">TemporaryDirectory</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;unisim-genesis-entities-&quot;</span><span class="p">)</span>
+    <span class="n">entities</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">GenesisPortableEntitySource</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">entity_spec</span> <span class="ow">in</span> <span class="n">scene</span><span class="o">.</span><span class="n">entity_assets</span><span class="p">:</span>
+            <span class="n">owner</span> <span class="o">=</span> <span class="n">layout</span><span class="o">.</span><span class="n">get_entity</span><span class="p">(</span><span class="n">entity_spec</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="n">source_spec</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">entity_specs</span><span class="p">[</span><span class="n">entity_spec</span><span class="o">.</span><span class="n">mirror_of</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">entity_spec</span><span class="o">.</span><span class="n">mirror_of</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="k">else</span> <span class="n">entity_spec</span>
+            <span class="p">)</span>
+            <span class="n">paths</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">binding</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">source_spec</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="n">binding</span><span class="o">.</span><span class="n">target_entity</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">owner</span><span class="o">.</span><span class="n">kind</span> <span class="o">!=</span> <span class="s2">&quot;rigid&quot;</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">owner</span><span class="o">.</span><span class="n">body_names</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                        <span class="s2">&quot;genesis heterogeneous variants are native only for single-link &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;rigid entities; entity </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> is </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">kind</span><span class="si">}</span><span class="s2"> with &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">owner</span><span class="o">.</span><span class="n">body_names</span><span class="p">)</span><span class="si">}</span><span class="s2"> bodies&quot;</span>
+                    <span class="p">)</span>
+                <span class="n">paths</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">model_file</span><span class="p">)</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">binding</span><span class="o">.</span><span class="n">plan</span><span class="o">.</span><span class="n">variants</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">assert</span> <span class="n">source_spec</span><span class="o">.</span><span class="n">source</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="n">paths</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">source_spec</span><span class="o">.</span><span class="n">source</span><span class="o">.</span><span class="n">model_file</span><span class="p">)]</span>
+
+            <span class="n">files</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">metadata</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">GenesisModelMetadata</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">variant</span><span class="p">,</span> <span class="n">source_path</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">paths</span><span class="p">):</span>
+                <span class="n">spec</span><span class="p">,</span> <span class="n">original_model</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">load_entity_source</span><span class="p">(</span>
+                    <span class="n">entity_spec</span><span class="p">,</span>
+                    <span class="n">source_path</span><span class="p">,</span>
+                    <span class="n">mirror</span><span class="o">=</span><span class="n">entity_spec</span><span class="o">.</span><span class="n">mirror_of</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">model_file</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">directory</span><span class="o">.</span><span class="n">name</span><span class="p">)</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entity_spec</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">variant</span><span class="si">}</span><span class="s2">.xml&quot;</span><span class="p">)</span>
+                <span class="n">spec</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="n">model_file</span><span class="p">)</span>
+                <span class="n">item</span> <span class="o">=</span> <span class="n">scan_genesis_model_metadata</span><span class="p">(</span><span class="n">mujoco</span><span class="p">,</span> <span class="n">SceneCfg</span><span class="p">(</span><span class="n">model_file</span><span class="o">=</span><span class="n">model_file</span><span class="p">))</span>
+                <span class="n">item</span> <span class="o">=</span> <span class="n">_genesis_portable_source_defaults</span><span class="p">(</span>
+                    <span class="n">mujoco</span><span class="p">,</span>
+                    <span class="n">owner</span><span class="p">,</span>
+                    <span class="n">original_model</span><span class="p">,</span>
+                    <span class="n">item</span><span class="p">,</span>
+                    <span class="n">scene</span><span class="o">.</span><span class="n">default_keyframe_name</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">_validate_portable_source</span><span class="p">(</span><span class="n">owner</span><span class="p">,</span> <span class="n">item</span><span class="p">)</span>
+                <span class="n">files</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">model_file</span><span class="p">)</span>
+                <span class="n">metadata</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+            <span class="n">entities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">GenesisPortableEntitySource</span><span class="p">(</span><span class="n">entity_spec</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">files</span><span class="p">),</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">metadata</span><span class="p">))</span>
+            <span class="p">)</span>
+    <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+        <span class="n">directory</span><span class="o">.</span><span class="n">cleanup</span><span class="p">()</span>
+        <span class="k">raise</span>
+    <span class="k">return</span> <span class="n">GenesisPortableSources</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">entities</span><span class="p">),</span> <span class="n">directory</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_genesis_portable_source_defaults</span><span class="p">(</span>
+    <span class="n">mujoco</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">owner</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">source_model</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">normalized_metadata</span><span class="p">:</span> <span class="n">GenesisModelMetadata</span><span class="p">,</span>
+    <span class="n">keyframe_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GenesisModelMetadata</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Freeze common portable default-keyframe semantics for one source.</span>
+
+<span class="sd">    The original source model is the only place where MuJoCo-resolved key</span>
+<span class="sd">    qvel/ctrl values remain available. As in the common compiler, only scalar</span>
+<span class="sd">    joint state and actuator controls are overlaid; source root pose/velocity</span>
+<span class="sd">    never replace the portable declaration.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">qpos</span> <span class="o">=</span> <span class="n">normalized_metadata</span><span class="o">.</span><span class="n">default_qpos</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">qvel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">normalized_metadata</span><span class="o">.</span><span class="n">nv</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+    <span class="n">ctrl</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">normalized_metadata</span><span class="o">.</span><span class="n">actuator_names</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">keyframe_name</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">replace</span><span class="p">(</span><span class="n">normalized_metadata</span><span class="p">,</span> <span class="n">default_qvel</span><span class="o">=</span><span class="n">qvel</span><span class="p">,</span> <span class="n">default_ctrl</span><span class="o">=</span><span class="n">ctrl</span><span class="p">)</span>
+
+    <span class="n">key_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">mujoco</span><span class="o">.</span><span class="n">mj_name2id</span><span class="p">(</span><span class="n">source_model</span><span class="p">,</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_KEY</span><span class="p">,</span> <span class="n">keyframe_name</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">key_id</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">replace</span><span class="p">(</span><span class="n">normalized_metadata</span><span class="p">,</span> <span class="n">default_qvel</span><span class="o">=</span><span class="n">qvel</span><span class="p">,</span> <span class="n">default_ctrl</span><span class="o">=</span><span class="n">ctrl</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="p">(</span><span class="n">source_model</span><span class="o">.</span><span class="n">key_qpos</span><span class="p">,</span> <span class="n">source_model</span><span class="o">.</span><span class="n">key_qvel</span><span class="p">,</span> <span class="n">source_model</span><span class="o">.</span><span class="n">key_ctrl</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">field</span><span class="p">[</span><span class="n">key_id</span><span class="p">]))</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis entity </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2">: keyframe </span><span class="si">{</span><span class="n">keyframe_name</span><span class="si">!r}</span><span class="s2"> must be finite&quot;</span>
+            <span class="p">)</span>
+
+    <span class="n">normalized_qpos_addresses</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+        <span class="nb">zip</span><span class="p">(</span>
+            <span class="n">normalized_metadata</span><span class="o">.</span><span class="n">joint_names</span><span class="p">,</span>
+            <span class="n">normalized_metadata</span><span class="o">.</span><span class="n">joint_qpos_adrs</span><span class="p">,</span>
+            <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">normalized_qvel_addresses</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+        <span class="nb">zip</span><span class="p">(</span>
+            <span class="n">normalized_metadata</span><span class="o">.</span><span class="n">joint_names</span><span class="p">,</span>
+            <span class="n">normalized_metadata</span><span class="o">.</span><span class="n">joint_dof_adrs</span><span class="p">,</span>
+            <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">for</span> <span class="n">joint</span> <span class="ow">in</span> <span class="n">owner</span><span class="o">.</span><span class="n">joints</span><span class="p">:</span>
+        <span class="n">source_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">mujoco</span><span class="o">.</span><span class="n">mj_name2id</span><span class="p">(</span><span class="n">source_model</span><span class="p">,</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_JOINT</span><span class="p">,</span> <span class="n">joint</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">source_id</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis entity </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2">: keyframe source lost joint </span><span class="si">{</span><span class="n">joint</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">source_qpos</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">source_model</span><span class="o">.</span><span class="n">jnt_qposadr</span><span class="p">[</span><span class="n">source_id</span><span class="p">])</span>
+        <span class="n">source_qvel</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">source_model</span><span class="o">.</span><span class="n">jnt_dofadr</span><span class="p">[</span><span class="n">source_id</span><span class="p">])</span>
+        <span class="n">qpos</span><span class="p">[</span><span class="n">normalized_qpos_addresses</span><span class="p">[</span><span class="n">joint</span><span class="o">.</span><span class="n">name</span><span class="p">]]</span> <span class="o">=</span> <span class="n">source_model</span><span class="o">.</span><span class="n">key_qpos</span><span class="p">[</span><span class="n">key_id</span><span class="p">,</span> <span class="n">source_qpos</span><span class="p">]</span>
+        <span class="n">qvel</span><span class="p">[</span><span class="n">normalized_qvel_addresses</span><span class="p">[</span><span class="n">joint</span><span class="o">.</span><span class="n">name</span><span class="p">]]</span> <span class="o">=</span> <span class="n">source_model</span><span class="o">.</span><span class="n">key_qvel</span><span class="p">[</span><span class="n">key_id</span><span class="p">,</span> <span class="n">source_qvel</span><span class="p">]</span>
+
+    <span class="k">for</span> <span class="n">actuator_name</span><span class="p">,</span> <span class="n">target_id</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">owner</span><span class="o">.</span><span class="n">actuator_names</span><span class="p">,</span> <span class="n">owner</span><span class="o">.</span><span class="n">actuator_indices</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="n">source_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
+            <span class="n">mujoco</span><span class="o">.</span><span class="n">mj_name2id</span><span class="p">(</span><span class="n">source_model</span><span class="p">,</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_ACTUATOR</span><span class="p">,</span> <span class="n">actuator_name</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">source_id</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis entity </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2">: keyframe source lost actuator </span><span class="si">{</span><span class="n">actuator_name</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">ctrl</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">target_id</span><span class="p">)]</span> <span class="o">=</span> <span class="n">source_model</span><span class="o">.</span><span class="n">key_ctrl</span><span class="p">[</span><span class="n">key_id</span><span class="p">,</span> <span class="n">source_id</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">qpos</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">qvel</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;genesis entity </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2">: normalized default keyframe is nonfinite&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">replace</span><span class="p">(</span>
+        <span class="n">normalized_metadata</span><span class="p">,</span>
+        <span class="n">default_qpos</span><span class="o">=</span><span class="n">qpos</span><span class="p">,</span>
+        <span class="n">default_qvel</span><span class="o">=</span><span class="n">qvel</span><span class="p">,</span>
+        <span class="n">default_ctrl</span><span class="o">=</span><span class="n">ctrl</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_validate_portable_source</span><span class="p">(</span><span class="n">owner</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">metadata</span><span class="p">:</span> <span class="n">GenesisModelMetadata</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compare one normalized source with the frozen public entity layout.&quot;&quot;&quot;</span>
+
+    <span class="n">expected_joints</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">joint</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">joint</span> <span class="ow">in</span> <span class="n">owner</span><span class="o">.</span><span class="n">joints</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">metadata</span><span class="o">.</span><span class="n">joint_names</span> <span class="o">!=</span> <span class="n">expected_joints</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;genesis entity </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> joint names/order </span><span class="si">{</span><span class="n">metadata</span><span class="o">.</span><span class="n">joint_names</span><span class="si">}</span><span class="s2"> &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;differ from the public layout </span><span class="si">{</span><span class="n">expected_joints</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">metadata</span><span class="o">.</span><span class="n">nq</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">owner</span><span class="o">.</span><span class="n">qpos_indices</span><span class="p">)</span> <span class="ow">or</span> <span class="n">metadata</span><span class="o">.</span><span class="n">nv</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">owner</span><span class="o">.</span><span class="n">qvel_indices</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;genesis entity </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> state dimensions &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">metadata</span><span class="o">.</span><span class="n">nq</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">metadata</span><span class="o">.</span><span class="n">nv</span><span class="si">}</span><span class="s2"> differ from the public layout &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">owner</span><span class="o">.</span><span class="n">qpos_indices</span><span class="p">)</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">owner</span><span class="o">.</span><span class="n">qvel_indices</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">expected_root</span> <span class="o">=</span> <span class="p">(</span><span class="mi">7</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span> <span class="k">if</span> <span class="n">owner</span><span class="o">.</span><span class="n">root_mode</span> <span class="o">==</span> <span class="s2">&quot;floating&quot;</span> <span class="k">else</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">metadata</span><span class="o">.</span><span class="n">root_qpos_dim</span><span class="p">,</span> <span class="n">metadata</span><span class="o">.</span><span class="n">root_qvel_dim</span><span class="p">)</span> <span class="o">!=</span> <span class="n">expected_root</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;genesis entity </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> root dimensions differ from the public layout&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">metadata</span><span class="o">.</span><span class="n">actuator_names</span> <span class="o">!=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">owner</span><span class="o">.</span><span class="n">actuator_names</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;genesis entity </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> actuator names/order differ from the public layout&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">metadata</span><span class="o">.</span><span class="n">actuator_joint_names</span> <span class="o">!=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">owner</span><span class="o">.</span><span class="n">actuator_joint_names</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;genesis entity </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> actuator targets differ from the public layout&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">metadata</span><span class="o">.</span><span class="n">geom_names</span> <span class="o">!=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">geom</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">owner</span><span class="o">.</span><span class="n">geoms</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+        <span class="n">metadata</span><span class="o">.</span><span class="n">geom_body_names</span> <span class="o">!=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">geom</span><span class="o">.</span><span class="n">body_name</span> <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">owner</span><span class="o">.</span><span class="n">geoms</span><span class="p">)</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;genesis entity </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> geom names/ownership differ from the public layout&quot;</span>
+        <span class="p">)</span>
+
+
+<div class="viewcode-block" id="validate_genesis_portable_sensor_plans">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.genesis.materialization.validate_genesis_portable_sensor_plans.html#unisim.backend.genesis.materialization.validate_genesis_portable_sensor_plans">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_genesis_portable_sensor_plans</span><span class="p">(</span>
+    <span class="n">mujoco</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">sources</span><span class="p">:</span> <span class="n">GenesisPortableSources</span><span class="p">,</span>
+    <span class="n">layout</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">composed_plans</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">GenesisSensorPlan</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">GenesisSensorPlan</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Bind the bounded portable source and fragment sensor subsets.</span>
+
+<span class="sd">    Genesis does not import MJCF sensors. Portable support is deliberately</span>
+<span class="sd">    limited to entity-owned site ``FramePos``, ``FrameQuat``, ``Gyro``,</span>
+<span class="sd">    ``Velocimeter`` and identity-orientation ``Accelerometer`` declarations</span>
+<span class="sd">    whose complete semantic identity is identical in every source variant. The</span>
+<span class="sd">    returned plans use qualified public sensor/body names; the backend computes</span>
+<span class="sd">    pose/motion values from audited native link state and accelerometer values</span>
+<span class="sd">    from a clean public native IMU.</span>
+
+<span class="sd">    Scene-level fragments are limited further to world-referenced qualified-site</span>
+<span class="sd">    and qualified-body ``FramePos``/``FrameQuat`` declarations, world-referenced</span>
+<span class="sd">    qualified-site/body ``FrameLinVel``/``FrameAngVel`` declarations, and exact</span>
+<span class="sd">    cross-entity geom-pair ``found``/``netforce`` contact declarations.  The</span>
+<span class="sd">    common compiler appends them after all entity-owned source sensors, so the</span>
+<span class="sd">    composed prefix must match the independently audited source plans exactly.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">source_by_entity</span> <span class="o">=</span> <span class="p">{</span><span class="n">source</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="n">source</span> <span class="k">for</span> <span class="n">source</span> <span class="ow">in</span> <span class="n">sources</span><span class="o">.</span><span class="n">entities</span><span class="p">}</span>
+    <span class="n">public_plans</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">GenesisSensorPlan</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">public_names</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">owner</span> <span class="ow">in</span> <span class="n">layout</span><span class="o">.</span><span class="n">entities</span><span class="p">:</span>
+        <span class="n">source</span> <span class="o">=</span> <span class="n">source_by_entity</span><span class="p">[</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>
+        <span class="n">reference</span> <span class="o">=</span> <span class="n">source</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">sensor_plans</span>
+        <span class="k">for</span> <span class="n">variant</span><span class="p">,</span> <span class="n">metadata</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">source</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">metadata</span><span class="o">.</span><span class="n">sensor_plans</span> <span class="o">!=</span> <span class="n">reference</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;genesis entity </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> portable sensor identity differs &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;between variants 0 and </span><span class="si">{</span><span class="n">variant</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+        <span class="k">for</span> <span class="n">plan</span> <span class="ow">in</span> <span class="n">reference</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">object_kind</span> <span class="o">!=</span> <span class="s2">&quot;site&quot;</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="s2">&quot;genesis portable entity source sensors support site objects only&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">kind</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span>
+                <span class="s2">&quot;framepos&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;framequat&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;gyro&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;velocimeter&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;accelerometer&quot;</span><span class="p">,</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="s2">&quot;genesis portable entity source sensors support only site &quot;</span>
+                    <span class="s2">&quot;FramePos/FrameQuat/Gyro/Velocimeter/Accelerometer sensors&quot;</span>
+                <span class="p">)</span>
+            <span class="n">expected_dim</span> <span class="o">=</span> <span class="mi">4</span> <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;framequat&quot;</span> <span class="k">else</span> <span class="mi">3</span>
+            <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">dim</span> <span class="o">!=</span> <span class="n">expected_dim</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;genesis portable site sensor dimension disagrees with its type&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">reference_type</span> <span class="o">!=</span> <span class="nb">int</span><span class="p">(</span><span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_UNKNOWN</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">reference_id</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="s2">&quot;genesis portable entity source sensors support only &quot;</span>
+                    <span class="s2">&quot;unreferenced site FramePos/FrameQuat/Gyro/Velocimeter/&quot;</span>
+                    <span class="s2">&quot;Accelerometer sensors&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">owner</span><span class="o">.</span><span class="n">body_names</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">plan</span><span class="o">.</span><span class="n">object_name</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;genesis portable site sensor </span><span class="si">{</span><span class="n">plan</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> must reference a named &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;site owned by entity </span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">site_pos</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">site_quat</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;genesis portable site sensor has malformed site identity&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;accelerometer&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span>
+                <span class="n">plan</span><span class="o">.</span><span class="n">site_quat</span><span class="p">,</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;genesis portable site accelerometer </span><span class="si">{</span><span class="n">plan</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> requires &quot;</span>
+                    <span class="s2">&quot;an identity site orientation; Genesis&#39; rotated IMU offset lane &quot;</span>
+                    <span class="s2">&quot;is not validated&quot;</span>
+                <span class="p">)</span>
+            <span class="n">public_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">plan</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">if</span> <span class="n">public_name</span> <span class="ow">in</span> <span class="n">public_names</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;genesis portable site sensor name </span><span class="si">{</span><span class="n">public_name</span><span class="si">!r}</span><span class="s2"> is not unique&quot;</span>
+                <span class="p">)</span>
+            <span class="n">public_names</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">public_name</span><span class="p">)</span>
+            <span class="n">public_plans</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">replace</span><span class="p">(</span>
+                    <span class="n">plan</span><span class="p">,</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">public_name</span><span class="p">,</span>
+                    <span class="n">body_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">plan</span><span class="o">.</span><span class="n">body_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                    <span class="n">object_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">plan</span><span class="o">.</span><span class="n">object_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+    <span class="n">source_plans</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">public_plans</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">composed_plans</span><span class="p">[:</span> <span class="nb">len</span><span class="p">(</span><span class="n">source_plans</span><span class="p">)]</span> <span class="o">!=</span> <span class="n">source_plans</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="s2">&quot;genesis portable composed source sensors differ from independent entity sources&quot;</span>
+        <span class="p">)</span>
+    <span class="n">fragment_plans</span> <span class="o">=</span> <span class="n">composed_plans</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">source_plans</span><span class="p">)</span> <span class="p">:]</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">({</span><span class="n">plan</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">plan</span> <span class="ow">in</span> <span class="n">composed_plans</span><span class="p">})</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">composed_plans</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;genesis portable scene sensor names are not unique&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">plan</span> <span class="ow">in</span> <span class="n">fragment_plans</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;contact&quot;</span><span class="p">:</span>
+            <span class="n">expected_dim</span> <span class="o">=</span> <span class="mi">3</span> <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">contact_netforce</span> <span class="k">else</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="s2">&quot;/&quot;</span> <span class="ow">in</span> <span class="n">plan</span><span class="o">.</span><span class="n">name</span> <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">dim</span> <span class="o">!=</span> <span class="n">expected_dim</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="s2">&quot;genesis portable contact fragments support only unprefixed &quot;</span>
+                    <span class="s2">&quot;found/netforce sensors with their authored dimension&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">plan</span><span class="o">.</span><span class="n">contact_geom1_name</span> <span class="ow">is</span> <span class="kc">None</span>
+                <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">contact_geom2_name</span> <span class="ow">is</span> <span class="kc">None</span>
+                <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">contact_geom1_name</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span>
+                <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">contact_geom2_name</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span>
+                <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">contact_geom1_name</span> <span class="o">==</span> <span class="n">plan</span><span class="o">.</span><span class="n">contact_geom2_name</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;genesis portable contact fragment sensor </span><span class="si">{</span><span class="n">plan</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> must &quot;</span>
+                    <span class="s2">&quot;reference two distinct qualified public geoms&quot;</span>
+                <span class="p">)</span>
+            <span class="n">public_geoms</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">geom</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">geom</span><span class="o">.</span><span class="n">body_name</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="n">layout</span><span class="o">.</span><span class="n">entities</span>
+                <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">geoms</span>
+            <span class="p">}</span>
+            <span class="n">geom1</span> <span class="o">=</span> <span class="n">public_geoms</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">contact_geom1_name</span><span class="p">)</span>
+            <span class="n">geom2</span> <span class="o">=</span> <span class="n">public_geoms</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">contact_geom2_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">geom1</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">geom2</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">geom1</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">geom2</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;genesis portable contact fragment sensor </span><span class="si">{</span><span class="n">plan</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> must &quot;</span>
+                    <span class="s2">&quot;reference two distinct public entities&quot;</span>
+                <span class="p">)</span>
+            <span class="n">expected_body</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">geom1</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">geom1</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_name</span> <span class="o">!=</span> <span class="n">expected_body</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;genesis portable contact fragment sensor </span><span class="si">{</span><span class="n">plan</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> has &quot;</span>
+                    <span class="s2">&quot;malformed geom/body ownership&quot;</span>
+                <span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">kind</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;framepos&quot;</span><span class="p">,</span> <span class="s2">&quot;framequat&quot;</span><span class="p">,</span> <span class="s2">&quot;framelinvel&quot;</span><span class="p">,</span> <span class="s2">&quot;frameangvel&quot;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;genesis portable sensor fragments support only world-referenced &quot;</span>
+                <span class="s2">&quot;qualified-site FramePos/FrameQuat sensors, qualified-body &quot;</span>
+                <span class="s2">&quot;FramePos/FrameQuat/FrameLinVel/FrameAngVel sensors, qualified-site &quot;</span>
+                <span class="s2">&quot;FrameLinVel/FrameAngVel sensors or &quot;</span>
+                <span class="s2">&quot;exact geom-pair found/netforce contact sensors&quot;</span>
+            <span class="p">)</span>
+        <span class="n">expected_dim</span> <span class="o">=</span> <span class="mi">4</span> <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;framequat&quot;</span> <span class="k">else</span> <span class="mi">3</span>
+        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">dim</span> <span class="o">!=</span> <span class="n">expected_dim</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;genesis portable frame fragment sensor dimension is malformed&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">reference_type</span> <span class="o">!=</span> <span class="nb">int</span><span class="p">(</span><span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_UNKNOWN</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">reference_id</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;genesis portable sensor fragments support only world-referenced sensors&quot;</span>
+            <span class="p">)</span>
+        <span class="n">entity_name</span><span class="p">,</span> <span class="n">separator</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_name</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
+        <span class="n">owner</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">item</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">layout</span><span class="o">.</span><span class="n">entities</span> <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="n">entity_name</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">public_body_names</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">()</span> <span class="k">if</span> <span class="n">owner</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">owner</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">owner</span><span class="o">.</span><span class="n">body_names</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">separator</span> <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">public_body_names</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis portable site fragment sensor </span><span class="si">{</span><span class="n">plan</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> must reference &quot;</span>
+                <span class="s2">&quot;a qualified public site owner/body&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">object_kind</span> <span class="o">==</span> <span class="s2">&quot;body&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;/&quot;</span> <span class="ow">in</span> <span class="n">plan</span><span class="o">.</span><span class="n">name</span> <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">body_name</span> <span class="o">!=</span> <span class="n">plan</span><span class="o">.</span><span class="n">object_name</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;genesis portable body fragment sensor </span><span class="si">{</span><span class="n">plan</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> must &quot;</span>
+                    <span class="s2">&quot;reference its exact qualified public body&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">site_pos</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">site_quat</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;genesis portable body fragment sensor has malformed identity&quot;</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">object_kind</span> <span class="o">!=</span> <span class="s2">&quot;site&quot;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis portable sensor fragment </span><span class="si">{</span><span class="n">plan</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> uses an unsupported object type&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">kind</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="s2">&quot;framepos&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;framequat&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;framelinvel&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;frameangvel&quot;</span><span class="p">,</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis portable site fragment sensor </span><span class="si">{</span><span class="n">plan</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> supports only &quot;</span>
+                <span class="s2">&quot;world-referenced FramePos/FrameQuat/FrameLinVel/FrameAngVel forms&quot;</span>
+            <span class="p">)</span>
+        <span class="n">site_entity</span><span class="p">,</span> <span class="n">site_separator</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">object_name</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="s2">&quot;/&quot;</span> <span class="ow">in</span> <span class="n">plan</span><span class="o">.</span><span class="n">name</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="n">site_separator</span>
+            <span class="ow">or</span> <span class="n">site_entity</span> <span class="o">!=</span> <span class="n">entity_name</span>
+            <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">object_name</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis portable site fragment sensor </span><span class="si">{</span><span class="n">plan</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> must reference &quot;</span>
+                <span class="s2">&quot;a uniquely qualified public site&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">site_pos</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">site_quat</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;genesis portable site fragment sensor has malformed identity&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">composed_plans</span></div>
+
+
+
+<div class="viewcode-block" id="scan_genesis_portable_composed_metadata">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.genesis.materialization.scan_genesis_portable_composed_metadata.html#unisim.backend.genesis.materialization.scan_genesis_portable_composed_metadata">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">scan_genesis_portable_composed_metadata</span><span class="p">(</span><span class="n">mujoco</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">composed</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GenesisModelMetadata</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Scan composed sensors and freeze their complete identity across variants.&quot;&quot;&quot;</span>
+
+    <span class="n">metadata</span> <span class="o">=</span> <span class="n">scan_genesis_model_metadata</span><span class="p">(</span>
+        <span class="n">mujoco</span><span class="p">,</span>
+        <span class="n">SceneCfg</span><span class="p">(</span><span class="n">model_file</span><span class="o">=</span><span class="n">composed</span><span class="o">.</span><span class="n">model_file</span><span class="p">),</span>
+        <span class="n">allow_cross_entity_contacts</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">composed</span><span class="o">.</span><span class="n">variant_plan</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">metadata</span>
+    <span class="k">for</span> <span class="n">variant</span><span class="p">,</span> <span class="n">descriptor</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">composed</span><span class="o">.</span><span class="n">variant_plan</span><span class="o">.</span><span class="n">variants</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="n">variant_metadata</span> <span class="o">=</span> <span class="n">scan_genesis_model_metadata</span><span class="p">(</span>
+            <span class="n">mujoco</span><span class="p">,</span>
+            <span class="n">SceneCfg</span><span class="p">(</span><span class="n">model_file</span><span class="o">=</span><span class="n">descriptor</span><span class="o">.</span><span class="n">model_file</span><span class="p">),</span>
+            <span class="n">allow_cross_entity_contacts</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">variant_metadata</span><span class="o">.</span><span class="n">sensor_plans</span> <span class="o">!=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">sensor_plans</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;genesis portable sensor identity differs between composed &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;variants 0 and </span><span class="si">{</span><span class="n">variant</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+    <span class="k">return</span> <span class="n">metadata</span></div>
 
 
 
@@ -870,14 +1379,18 @@
 
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_scan_sensor_plans</span><span class="p">(</span><span class="n">mujoco</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">GenesisSensorPlan</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_scan_sensor_plans</span><span class="p">(</span>
+    <span class="n">mujoco</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">allow_cross_entity_contacts</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">GenesisSensorPlan</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Map the MJCF sensor table onto Genesis equivalents (REPORT §5.3).</span>
 
 <span class="sd">    Genesis 1.3.3 does not import ``&lt;sensor&gt;`` at all.  Supported mappings:</span>
 <span class="sd">    gyro/accelerometer/velocimeter -&gt; IMU-class site sensors computed from</span>
 <span class="sd">    link state; framepos/framequat/framezaxis -&gt; link state plus site-frame</span>
 <span class="sd">    math; contact ``data=&quot;found&quot;`` -&gt; per-link net contact force threshold.</span>
-<span class="sd">    Anything else fails closed here, at the nearest cold path.</span>
+<span class="sd">    Portable fragment contact plans additionally accept the compiler&#39;s exact</span>
+<span class="sd">    geom-pair ``force/netforce`` identity. Anything else fails closed here, at</span>
+<span class="sd">    the nearest cold path.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">sensor_obj</span> <span class="o">=</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_SENSOR</span>
     <span class="n">plans</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">GenesisSensorPlan</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
@@ -890,7 +1403,16 @@
         <span class="n">sensor_type</span> <span class="o">=</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtSensor</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_type</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">]))</span>
         <span class="n">dim</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_dim</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span>
         <span class="k">if</span> <span class="n">sensor_type</span> <span class="o">==</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtSensor</span><span class="o">.</span><span class="n">mjSENS_CONTACT</span><span class="p">:</span>
-            <span class="n">plans</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_scan_contact_sensor</span><span class="p">(</span><span class="n">mujoco</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">sensor_id</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">),</span> <span class="n">dim</span><span class="p">))</span>
+            <span class="n">plans</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">_scan_contact_sensor</span><span class="p">(</span>
+                    <span class="n">mujoco</span><span class="p">,</span>
+                    <span class="n">model</span><span class="p">,</span>
+                    <span class="n">sensor_id</span><span class="p">,</span>
+                    <span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">),</span>
+                    <span class="n">dim</span><span class="p">,</span>
+                    <span class="n">allow_cross_entity_contacts</span><span class="o">=</span><span class="n">allow_cross_entity_contacts</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
             <span class="k">continue</span>
         <span class="n">site_kinds</span> <span class="o">=</span> <span class="p">{</span>
             <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtSensor</span><span class="o">.</span><span class="n">mjSENS_GYRO</span><span class="p">:</span> <span class="s2">&quot;gyro&quot;</span><span class="p">,</span>
@@ -898,6 +1420,8 @@
             <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtSensor</span><span class="o">.</span><span class="n">mjSENS_VELOCIMETER</span><span class="p">:</span> <span class="s2">&quot;velocimeter&quot;</span><span class="p">,</span>
             <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtSensor</span><span class="o">.</span><span class="n">mjSENS_FRAMEPOS</span><span class="p">:</span> <span class="s2">&quot;framepos&quot;</span><span class="p">,</span>
             <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtSensor</span><span class="o">.</span><span class="n">mjSENS_FRAMEQUAT</span><span class="p">:</span> <span class="s2">&quot;framequat&quot;</span><span class="p">,</span>
+            <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtSensor</span><span class="o">.</span><span class="n">mjSENS_FRAMELINVEL</span><span class="p">:</span> <span class="s2">&quot;framelinvel&quot;</span><span class="p">,</span>
+            <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtSensor</span><span class="o">.</span><span class="n">mjSENS_FRAMEANGVEL</span><span class="p">:</span> <span class="s2">&quot;frameangvel&quot;</span><span class="p">,</span>
             <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtSensor</span><span class="o">.</span><span class="n">mjSENS_FRAMEZAXIS</span><span class="p">:</span> <span class="s2">&quot;framezaxis&quot;</span><span class="p">,</span>
         <span class="p">}</span>
         <span class="n">kind</span> <span class="o">=</span> <span class="n">site_kinds</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">sensor_type</span><span class="p">)</span>
@@ -907,16 +1431,63 @@
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">sensor_type</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">; supported types: contact(found), gyro, accelerometer, &quot;</span>
                 <span class="s2">&quot;velocimeter, framepos, framequat, framezaxis (REPORT #1372 §3.4).&quot;</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_objtype</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span> <span class="o">!=</span> <span class="nb">int</span><span class="p">(</span><span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_SITE</span><span class="p">):</span>
+        <span class="n">sensor_objtype</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_objtype</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span>
+        <span class="n">composed_body</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">allow_cross_entity_contacts</span>
+            <span class="ow">and</span> <span class="n">kind</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;framepos&quot;</span><span class="p">,</span> <span class="s2">&quot;framequat&quot;</span><span class="p">,</span> <span class="s2">&quot;framelinvel&quot;</span><span class="p">,</span> <span class="s2">&quot;frameangvel&quot;</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">sensor_objtype</span> <span class="o">==</span> <span class="nb">int</span><span class="p">(</span><span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_BODY</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">composed_body</span><span class="p">:</span>
+            <span class="n">body_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_objid</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span>
+            <span class="n">body_name</span> <span class="o">=</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mj_id2name</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_BODY</span><span class="p">,</span> <span class="n">body_id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">body_name</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;genesis body sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> references unnamed body id </span><span class="si">{</span><span class="n">body_id</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="n">reference_type</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_reftype</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span>
+            <span class="n">reference_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_refid</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">reference_type</span> <span class="o">!=</span> <span class="nb">int</span><span class="p">(</span><span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_UNKNOWN</span><span class="p">)</span> <span class="ow">or</span> <span class="n">reference_id</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;genesis backend maps </span><span class="si">{</span><span class="n">kind</span><span class="si">}</span><span class="s2"> sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> only with a world reference&quot;</span>
+                <span class="p">)</span>
+            <span class="n">plans</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">GenesisSensorPlan</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">),</span>
+                    <span class="n">kind</span><span class="o">=</span><span class="n">kind</span><span class="p">,</span>
+                    <span class="n">dim</span><span class="o">=</span><span class="n">dim</span><span class="p">,</span>
+                    <span class="n">body_name</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">body_name</span><span class="p">),</span>
+                    <span class="n">object_name</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">body_name</span><span class="p">),</span>
+                    <span class="n">reference_type</span><span class="o">=</span><span class="n">reference_type</span><span class="p">,</span>
+                    <span class="n">reference_id</span><span class="o">=</span><span class="n">reference_id</span><span class="p">,</span>
+                    <span class="n">site_pos</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">site_quat</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">object_kind</span><span class="o">=</span><span class="s2">&quot;body&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">sensor_objtype</span> <span class="o">!=</span> <span class="nb">int</span><span class="p">(</span><span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_SITE</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;genesis backend maps </span><span class="si">{</span><span class="n">kind</span><span class="si">}</span><span class="s2"> sensors from MJCF sites only; sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;uses objtype </span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_objtype</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span><span class="si">}</span><span class="s2">.&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;uses objtype </span><span class="si">{</span><span class="n">sensor_objtype</span><span class="si">}</span><span class="s2">.&quot;</span>
             <span class="p">)</span>
         <span class="n">site_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_objid</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span>
         <span class="n">body_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">site_bodyid</span><span class="p">[</span><span class="n">site_id</span><span class="p">])</span>
+        <span class="n">site_name</span> <span class="o">=</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mj_id2name</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_SITE</span><span class="p">,</span> <span class="n">site_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">site_name</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis site sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> references unnamed site id </span><span class="si">{</span><span class="n">site_id</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
         <span class="n">body_name</span> <span class="o">=</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mj_id2name</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_BODY</span><span class="p">,</span> <span class="n">body_id</span><span class="p">)</span>
         <span class="n">site_pos</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">site_pos</span><span class="p">[</span><span class="n">site_id</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">))</span>
         <span class="n">site_quat</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">site_quat</span><span class="p">[</span><span class="n">site_id</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">))</span>
+        <span class="n">reference_type</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_reftype</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span>
+        <span class="n">reference_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_refid</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">kind</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;framepos&quot;</span><span class="p">,</span> <span class="s2">&quot;framequat&quot;</span><span class="p">,</span> <span class="s2">&quot;framezaxis&quot;</span><span class="p">,</span> <span class="s2">&quot;framelinvel&quot;</span><span class="p">,</span> <span class="s2">&quot;frameangvel&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span>
+            <span class="n">reference_type</span> <span class="o">!=</span> <span class="nb">int</span><span class="p">(</span><span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_UNKNOWN</span><span class="p">)</span> <span class="ow">or</span> <span class="n">reference_id</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;genesis backend maps </span><span class="si">{</span><span class="n">kind</span><span class="si">}</span><span class="s2"> sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> only with a world reference&quot;</span>
+            <span class="p">)</span>
         <span class="k">if</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;accelerometer&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">site_quat</span><span class="p">,</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)):</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;genesis backend maps accelerometer </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> onto an IMUSensor, whose &quot;</span>
@@ -929,6 +1500,9 @@
                 <span class="n">kind</span><span class="o">=</span><span class="n">kind</span><span class="p">,</span>
                 <span class="n">dim</span><span class="o">=</span><span class="n">dim</span><span class="p">,</span>
                 <span class="n">body_name</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">body_name</span><span class="p">),</span>
+                <span class="n">object_name</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">site_name</span><span class="p">),</span>
+                <span class="n">reference_type</span><span class="o">=</span><span class="n">reference_type</span><span class="p">,</span>
+                <span class="n">reference_id</span><span class="o">=</span><span class="n">reference_id</span><span class="p">,</span>
                 <span class="n">site_pos</span><span class="o">=</span><span class="n">site_pos</span><span class="p">,</span>
                 <span class="n">site_quat</span><span class="o">=</span><span class="n">site_quat</span><span class="p">,</span>
             <span class="p">)</span>
@@ -937,12 +1511,31 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_scan_contact_sensor</span><span class="p">(</span>
-    <span class="n">mujoco</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">sensor_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">mujoco</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">model</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">sensor_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">allow_cross_entity_contacts</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GenesisSensorPlan</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">dim</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+    <span class="n">intprm</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_intprm</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])[:</span><span class="mi">3</span><span class="p">])</span>
+    <span class="n">contact_netforce</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="n">intprm</span> <span class="o">==</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">expected_dim</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="k">elif</span> <span class="n">allow_cross_entity_contacts</span> <span class="ow">and</span> <span class="n">intprm</span> <span class="o">==</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">contact_netforce</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">expected_dim</span> <span class="o">=</span> <span class="mi">3</span>
+    <span class="k">else</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s1">&#39;genesis backend maps contact sensors with data=&quot;found&quot; only (dim 1); &#39;</span>
-            <span class="sa">f</span><span class="s2">&quot;sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> has dim </span><span class="si">{</span><span class="n">dim</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="s2">&quot;genesis backend maps only the compiled geom-pair found and portable &quot;</span>
+            <span class="s2">&quot;cross-entity netforce contact forms; &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> has compiled contact parameters </span><span class="si">{</span><span class="n">intprm</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">dim</span> <span class="o">!=</span> <span class="n">expected_dim</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;genesis contact sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> dimension </span><span class="si">{</span><span class="n">dim</span><span class="si">}</span><span class="s2"> disagrees with its &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;compiled form (expected </span><span class="si">{</span><span class="n">expected_dim</span><span class="si">}</span><span class="s2">).&quot;</span>
         <span class="p">)</span>
     <span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_objtype</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span> <span class="o">!=</span> <span class="nb">int</span><span class="p">(</span><span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_GEOM</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span>
         <span class="n">model</span><span class="o">.</span><span class="n">sensor_reftype</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">]</span>
@@ -955,7 +1548,7 @@
     <span class="n">geom2_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_refid</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span>
     <span class="n">body1_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">geom_bodyid</span><span class="p">[</span><span class="n">geom1_id</span><span class="p">])</span>
     <span class="n">body2_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">geom_bodyid</span><span class="p">[</span><span class="n">geom2_id</span><span class="p">])</span>
-    <span class="k">if</span> <span class="p">(</span><span class="n">body1_id</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">==</span> <span class="p">(</span><span class="n">body2_id</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">allow_cross_entity_contacts</span> <span class="ow">and</span> <span class="p">(</span><span class="n">body1_id</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">==</span> <span class="p">(</span><span class="n">body2_id</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;genesis backend maps contact sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> onto the robot-side link&#39;s net &quot;</span>
             <span class="s2">&quot;contact force; exactly one geom must belong to the world body &quot;</span>
@@ -963,19 +1556,37 @@
         <span class="p">)</span>
     <span class="n">body_id</span> <span class="o">=</span> <span class="n">body1_id</span> <span class="k">if</span> <span class="n">body1_id</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">body2_id</span>
     <span class="n">body_name</span> <span class="o">=</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mj_id2name</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_BODY</span><span class="p">,</span> <span class="n">body_id</span><span class="p">)</span>
+    <span class="n">geom1_name</span> <span class="o">=</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mj_id2name</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_GEOM</span><span class="p">,</span> <span class="n">geom1_id</span><span class="p">)</span>
+    <span class="n">geom2_name</span> <span class="o">=</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mj_id2name</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_GEOM</span><span class="p">,</span> <span class="n">geom2_id</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">geom1_name</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;genesis contact sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> references unnamed geom id </span><span class="si">{</span><span class="n">geom1_id</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">geom2_name</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;genesis contact sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> references unnamed geom id </span><span class="si">{</span><span class="n">geom2_id</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
     <span class="k">return</span> <span class="n">GenesisSensorPlan</span><span class="p">(</span>
         <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
         <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;contact&quot;</span><span class="p">,</span>
         <span class="n">dim</span><span class="o">=</span><span class="n">dim</span><span class="p">,</span>
         <span class="n">body_name</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">body_name</span><span class="p">),</span>
+        <span class="n">object_name</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">geom1_name</span><span class="p">),</span>
+        <span class="n">reference_type</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">sensor_reftype</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">]),</span>
+        <span class="n">reference_id</span><span class="o">=</span><span class="n">geom2_id</span><span class="p">,</span>
         <span class="n">site_pos</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
         <span class="n">site_quat</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">contact_geom1_name</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">geom1_name</span><span class="p">),</span>
+        <span class="n">contact_geom2_name</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">geom2_name</span><span class="p">),</span>
+        <span class="n">contact_netforce</span><span class="o">=</span><span class="n">contact_netforce</span><span class="p">,</span>
     <span class="p">)</span>
 
 
 <div class="viewcode-block" id="scan_genesis_model_metadata">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.genesis.materialization.scan_genesis_model_metadata.html#unisim.backend.genesis.materialization.scan_genesis_model_metadata">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">scan_genesis_model_metadata</span><span class="p">(</span><span class="n">mujoco</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">scene</span><span class="p">:</span> <span class="n">SceneCfg</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GenesisModelMetadata</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">scan_genesis_model_metadata</span><span class="p">(</span>
+    <span class="n">mujoco</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">scene</span><span class="p">:</span> <span class="n">SceneCfg</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">allow_cross_entity_contacts</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GenesisModelMetadata</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve the scene and scan MJCF metadata with the ``mujoco`` package.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">scene</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">scene</span><span class="o">.</span><span class="n">model_file</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;GenesisBackend requires SceneCfg.model_file&quot;</span><span class="p">)</span>
@@ -1058,6 +1669,17 @@
         <span class="nb">str</span><span class="p">(</span><span class="n">mujoco</span><span class="o">.</span><span class="n">mj_id2name</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_BODY</span><span class="p">,</span> <span class="n">body_id</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">body_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">nbody</span><span class="p">))</span>
     <span class="p">)</span>
+    <span class="n">geom_names</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+        <span class="nb">str</span><span class="p">(</span><span class="n">mujoco</span><span class="o">.</span><span class="n">mj_id2name</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_GEOM</span><span class="p">,</span> <span class="n">geom_id</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">geom_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">ngeom</span><span class="p">))</span>
+    <span class="p">)</span>
+    <span class="n">geom_body_names</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+        <span class="nb">str</span><span class="p">(</span>
+            <span class="n">mujoco</span><span class="o">.</span><span class="n">mj_id2name</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_BODY</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">geom_bodyid</span><span class="p">[</span><span class="n">geom_id</span><span class="p">]))</span>
+            <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">geom_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">ngeom</span><span class="p">))</span>
+    <span class="p">)</span>
 
     <span class="k">return</span> <span class="n">GenesisModelMetadata</span><span class="p">(</span>
         <span class="n">source_model_file</span><span class="o">=</span><span class="n">source_model_file</span><span class="p">,</span>
@@ -1071,6 +1693,10 @@
         <span class="n">joint_qpos_adrs</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">joint_qpos_adrs</span><span class="p">),</span>
         <span class="n">joint_dof_adrs</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">joint_dof_adrs</span><span class="p">),</span>
         <span class="n">body_names</span><span class="o">=</span><span class="n">body_names</span><span class="p">,</span>
+        <span class="n">geom_names</span><span class="o">=</span><span class="n">geom_names</span><span class="p">,</span>
+        <span class="n">geom_body_names</span><span class="o">=</span><span class="n">geom_body_names</span><span class="p">,</span>
+        <span class="n">geom_types</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">geom_type</span><span class="p">)),</span>
+        <span class="n">geom_sizes</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">geom_size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
         <span class="n">actuator_names</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">actuator_names</span><span class="p">),</span>
         <span class="n">actuator_joint_names</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">actuator_joint_names</span><span class="p">),</span>
         <span class="n">actuator_ctrl_range</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">actuator_ctrlrange</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
@@ -1078,12 +1704,20 @@
         <span class="n">actuator_kv</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="o">-</span><span class="n">model</span><span class="o">.</span><span class="n">actuator_biasprm</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
         <span class="n">keyframe_qpos</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">keyframes</span><span class="p">),</span>
         <span class="n">default_qpos</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">qpos0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
+        <span class="n">default_qvel</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">nv</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
+        <span class="n">default_ctrl</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">nu</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
         <span class="n">joint_range</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">joint_range</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">joint_range</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
         <span class="n">dof_armature</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">dof_armature</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
         <span class="n">gravity</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">opt</span><span class="o">.</span><span class="n">gravity</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
         <span class="n">body_mass</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">body_mass</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
         <span class="n">body_ipos</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">body_ipos</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
-        <span class="n">sensor_plans</span><span class="o">=</span><span class="n">_scan_sensor_plans</span><span class="p">(</span><span class="n">mujoco</span><span class="p">,</span> <span class="n">model</span><span class="p">),</span>
+        <span class="n">body_inertia</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">body_inertia</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
+        <span class="n">body_iquat</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">body_iquat</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
+        <span class="n">body_pos</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">body_pos</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
+        <span class="n">body_quat</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">body_quat</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
+        <span class="n">sensor_plans</span><span class="o">=</span><span class="n">_scan_sensor_plans</span><span class="p">(</span>
+            <span class="n">mujoco</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">allow_cross_entity_contacts</span><span class="o">=</span><span class="n">allow_cross_entity_contacts</span>
+        <span class="p">),</span>
     <span class="p">)</span></div>
 
 </pre></div>

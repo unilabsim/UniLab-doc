@@ -37,7 +37,7 @@ Issue #1599 的 M2 消费层将 UniSim 物理实体声明与 UniLab 逻辑 selec
 
 既有 `ResetStateTransaction` 为 mapped scene 暂存一次公共 `SceneResetRequest`。缺失字段、未选实体和环境保持不变。逐环境默认值来自 `get_entity_default_state`，`restore_default_controls` 在同次提交中恢复 keyframe control，控制值不必等于关节位置。Manager term 不接触引擎私有 tensor 或资产解析。当前消费边界为标量 hinge/slide 和一次事务共用选中环境集合；不支持的 DR/mocap 混写或行模式明确拒绝。
 
-`tests/envs/test_multi_entity_consumer.py` 为 MuJoCo 和 IsaacSim 注册同一个 primitive task，并使用同一个可 pickle 的 EnvFactory。测试检查观测/动作维度、被动关节、局部 reset、variants 和 kinematic mirror。原生 IsaacSim case 通过 `UNILAB_TEST_M2_ISAACSIM=1` 启用。消费层要求已发布的 `unisim-core>=1.5.0`；标准与 ROCm 锁文件均解析 PyPI 包，不使用 Git source 覆盖。`UNILAB_LOCAL_UNISIM` 仍是显式本地开发替代方案。实现和验证边界见 [UniSim roadmap #108](https://github.com/unilabsim/unisim/issues/108)。
+`tests/envs/test_multi_entity_consumer.py` 为 MuJoCo 和 IsaacSim 注册同一个 primitive task，并使用同一个可 pickle 的 EnvFactory。测试检查观测/动作维度、被动关节、局部 reset、variants 和 kinematic mirror。portable-profile fixture 还组合 robot、被动 object、table 与 collision-free mirror，并使用非 round-robin 的 N5/K2 assignment `[1,1,0,1,0]`。原生 IsaacSim case 通过 `UNILAB_TEST_M2_ISAACSIM=1` 启用。消费层要求已发布的 `unisim-core>=1.7.1`；标准与 ROCm 锁文件均解析 PyPI 包，不使用 Git source 覆盖。`UNILAB_LOCAL_UNISIM` 仍是显式本地开发替代方案。实现和验证边界见 [UniSim roadmap #154](https://github.com/unilabsim/unisim/issues/154) 与 [UniSim contract #155](https://github.com/unilabsim/unisim/issues/155)。
 
 ## 仓库中的证据
 

@@ -537,7 +537,8 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Sequence</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
@@ -552,16 +553,33 @@
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.isaacgym.backend</span><span class="w"> </span><span class="kn">import</span> <span class="n">IsaacGymWorkerError</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.playback_common</span><span class="w"> </span><span class="kn">import</span> <span class="n">display_available</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.subprocess_ipc</span><span class="w"> </span><span class="kn">import</span> <span class="n">protocol</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.subprocess_ipc.backend</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">MjcfSubprocessBackend</span><span class="p">,</span>
     <span class="n">SubprocessModelInfo</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.subprocess_ipc.scene_materialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">PreparedWorkerScene</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.subprocess_ipc.sensors</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">KIND_CONTACT_FORCE</span><span class="p">,</span>
     <span class="n">KIND_CONTACT_FOUND</span><span class="p">,</span>
+    <span class="n">SceneSensorSpec</span><span class="p">,</span>
     <span class="n">UnsupportedSensorSpec</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.interval</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span>
+    <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">,</span>
+    <span class="n">IntervalTermOp</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">,</span>
+    <span class="n">DomainRandomizationCapabilities</span><span class="p">,</span>
+    <span class="n">IntervalRandomizationPlan</span><span class="p">,</span>
+    <span class="n">ResetRandomizationPayload</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneResetRequest</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">.dependencies</span><span class="w"> </span><span class="kn">import</span> <span class="n">build_worker_env</span><span class="p">,</span> <span class="n">resolve_isaacsim_runtime</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.raw_usd_cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">resolve_raw_usd_cache_root</span><span class="p">,</span> <span class="n">resolve_role_usd_cache_root</span>
 
 <span class="n">_MODULE_DIR</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span>
 <span class="n">_WORKER_PATH</span> <span class="o">=</span> <span class="n">_MODULE_DIR</span> <span class="o">/</span> <span class="s2">&quot;worker.py&quot;</span>
@@ -636,7 +654,13 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_resolved_render_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">scene</span><span class="p">,</span> <span class="n">num_envs</span><span class="p">,</span> <span class="n">sim_dt</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_render_width</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">render_width</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_render_height</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">render_height</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_render_height</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">render_height</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="kc">None</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">nbody</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_body_wrench_pending</span> <span class="o">=</span> <span class="kc">False</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_render_mode</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
@@ -657,11 +681,351 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_worker_init_payload</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
         <span class="n">mode</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_render_mode</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_resolved_render_mode</span> <span class="o">=</span> <span class="n">mode</span>
+        <span class="n">raw_usd_cache_root</span> <span class="o">=</span> <span class="n">resolve_raw_usd_cache_root</span><span class="p">()</span>
+        <span class="n">role_usd_cache_root</span> <span class="o">=</span> <span class="n">resolve_role_usd_cache_root</span><span class="p">()</span>
         <span class="k">return</span> <span class="p">{</span>
             <span class="s2">&quot;render_mode&quot;</span><span class="p">:</span> <span class="n">mode</span><span class="p">,</span>
             <span class="s2">&quot;render_width&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_render_width</span><span class="p">,</span>
             <span class="s2">&quot;render_height&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_render_height</span><span class="p">,</span>
+            <span class="s2">&quot;contact_force_sensors&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_contact_force_sensor_payload</span><span class="p">(),</span>
+            <span class="s2">&quot;raw_usd_cache_dir&quot;</span><span class="p">:</span> <span class="p">(</span>
+                <span class="kc">None</span> <span class="k">if</span> <span class="n">raw_usd_cache_root</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">raw_usd_cache_root</span><span class="p">)</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;role_usd_cache_dir&quot;</span><span class="p">:</span> <span class="p">(</span>
+                <span class="kc">None</span> <span class="k">if</span> <span class="n">role_usd_cache_root</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">role_usd_cache_root</span><span class="p">)</span>
+            <span class="p">),</span>
         <span class="p">}</span>
+
+<div class="viewcode-block" id="IsaacSimBackend.get_dr_capabilities">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.get_dr_capabilities">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_dr_capabilities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DomainRandomizationCapabilities</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Advertise only reset and wrench terms implemented by mapped scenes.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span>
+        <span class="n">terms</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span> <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">DomainRandomizationCapabilities</span><span class="p">(</span>
+            <span class="n">supports_interval_body_force</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">supports_interval_body_torque</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">supported_interval_terms</span><span class="o">=</span><span class="n">terms</span><span class="p">,</span>
+            <span class="n">supported_reset_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">({</span><span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">}),</span>
+        <span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_coerce_mapped_reset_field</span><span class="p">(</span>
+        <span class="n">values</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">floating</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;isaacsim </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be a floating NumPy array&quot;</span><span class="p">)</span>
+        <span class="n">array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">array</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">shape</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;isaacsim </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must have shape </span><span class="si">{</span><span class="n">shape</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">array</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">array</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+            <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">array</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">))</span> <span class="o">&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">finfo</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;isaacsim </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must contain finite float32 values&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">array</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validated_mapped_reset_randomization</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">scene</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_mapped_entity_scene</span><span class="p">()</span>
+        <span class="n">unsupported</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span>
+            <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
+            <span class="n">requested</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">))</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;isaacsim does not support reset domain randomization terms: </span><span class="si">{</span><span class="n">requested</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">geom_friction</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">geom_friction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">geom_friction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_mapped_reset_field</span><span class="p">(</span>
+                <span class="n">randomization</span><span class="o">.</span><span class="n">geom_friction</span><span class="p">,</span>
+                <span class="s2">&quot;geom_friction&quot;</span><span class="p">,</span>
+                <span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">ngeom</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">geom_friction</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;isaacsim geom_friction values must be nonnegative&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">geom_friction</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">geom_friction</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+                <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">geom_friction</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;isaacsim geom_friction requires static == dynamic and a zero third column&quot;</span>
+                <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">ResetRandomizationPayload</span><span class="p">(</span><span class="n">geom_friction</span><span class="o">=</span><span class="n">geom_friction</span><span class="p">)</span>
+
+<div class="viewcode-block" id="IsaacSimBackend.apply_interval_randomization">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.apply_interval_randomization">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply_interval_randomization</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">plan</span><span class="p">:</span> <span class="n">IntervalRandomizationPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_reject_wrench_write_inside_pre_step_control</span><span class="p">(</span><span class="s2">&quot;apply_interval_randomization&quot;</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_body_wrench_pending</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">apply_interval_randomization</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_interval_term_handlers</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">IntervalTermOp</span><span class="p">],</span> <span class="kc">None</span><span class="p">]]:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_interval_term_handlers</span><span class="p">()</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_interval_body_force</span><span class="p">,</span>
+            <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_interval_body_torque</span><span class="p">,</span>
+        <span class="p">}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_interval_body_force</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">IntervalTermOp</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">op</span><span class="o">.</span><span class="n">body_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;interval body force requires body_ids&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_interval_body_torque</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">IntervalTermOp</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">op</span><span class="o">.</span><span class="n">body_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;interval body torque requires body_ids&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_torque</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_body_torque</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">torque</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">zero_force</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">body_ids</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">zero_force</span><span class="p">,</span> <span class="n">torque</span><span class="o">=</span><span class="n">torque</span><span class="p">)</span>
+
+<div class="viewcode-block" id="IsaacSimBackend.apply_body_force">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.apply_body_force">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply_body_force</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">force</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">torque</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage a world-frame wrench for the next mapped-scene step.</span>
+
+<span class="sd">        The force acts at each target body&#39;s center of mass and the optional</span>
+<span class="sd">        torque is about that center. Repeated submissions accumulate until the</span>
+<span class="sd">        next successful step consumes them.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">force</span><span class="p">,</span> <span class="n">torque</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reject_wrench_write_inside_pre_step_control</span><span class="p">(</span><span class="s2">&quot;apply_body_force&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_state</span><span class="p">(</span><span class="s2">&quot;interval body force perturbation&quot;</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">body_ids_np</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">body_ids</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">body_ids_np</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span>
+            <span class="ow">or</span> <span class="n">body_ids_np</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">kind</span> <span class="ow">not</span> <span class="ow">in</span> <span class="s2">&quot;iu&quot;</span>
+            <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="n">body_ids_np</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">bool_</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;body_ids must be a one-dimensional integer array&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">body_ids_np</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">body_ids_np</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;body ids must be in [0, </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">), &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;got range [</span><span class="si">{</span><span class="n">body_ids_np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">body_ids_np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="si">}</span><span class="s2">]&quot;</span>
+            <span class="p">)</span>
+        <span class="n">body_ids_np</span> <span class="o">=</span> <span class="n">body_ids_np</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">expected_shape</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">body_ids_np</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="n">force_np</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">force</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">force_np</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected_shape</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;body force must have shape </span><span class="si">{</span><span class="n">expected_shape</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">force_np</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">force_np</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;body force contains NaN or Inf&quot;</span><span class="p">)</span>
+        <span class="n">torque_np</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">torque_np</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">torque</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">torque_np</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected_shape</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;body torque must have shape </span><span class="si">{</span><span class="n">expected_shape</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">torque_np</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">torque_np</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;body torque contains NaN or Inf&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">body_offset</span><span class="p">,</span> <span class="n">body_id</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">body_ids_np</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="p">[:,</span> <span class="nb">int</span><span class="p">(</span><span class="n">body_id</span><span class="p">),</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">+=</span> <span class="n">force_np</span><span class="p">[:,</span> <span class="n">body_offset</span><span class="p">,</span> <span class="p">:]</span>
+            <span class="k">if</span> <span class="n">torque_np</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="p">[:,</span> <span class="nb">int</span><span class="p">(</span><span class="n">body_id</span><span class="p">),</span> <span class="mi">3</span><span class="p">:</span><span class="mi">6</span><span class="p">]</span> <span class="o">+=</span> <span class="n">torque_np</span><span class="p">[:,</span> <span class="n">body_offset</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_body_wrench_pending</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_wrench_pending</span>
+        <span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_step_payload</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">nsteps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">body_wrench</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_step_payload</span><span class="p">(</span><span class="n">nsteps</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">body_wrench</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">payload</span><span class="p">[</span><span class="s2">&quot;body_wrench&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">body_wrench</span><span class="o">.</span><span class="n">tobytes</span><span class="p">(</span><span class="n">order</span><span class="o">=</span><span class="s2">&quot;C&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_wrench_pending</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="c1"># NumPy pickle internals are not stable across the host and Isaac</span>
+            <span class="c1"># worker interpreter versions; raw C-order bytes are.</span>
+            <span class="n">payload</span><span class="p">[</span><span class="s2">&quot;body_wrench&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="o">.</span><span class="n">tobytes</span><span class="p">(</span><span class="n">order</span><span class="o">=</span><span class="s2">&quot;C&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">payload</span>
+
+<div class="viewcode-block" id="IsaacSimBackend.set_pre_step_control">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.set_pre_step_control">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_pre_step_control</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register a callback for mapped scenes; legacy callbacks stay rejected.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">fn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">set_pre_step_control</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span> <span class="o">=</span> <span class="n">fn</span></div>
+
+
+<div class="viewcode-block" id="IsaacSimBackend.step">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.step">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctrl</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">nsteps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="n">nsteps</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_state</span><span class="p">(</span><span class="s2">&quot;step&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">nsteps</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span><span class="n">nsteps</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;nsteps must be a positive integer, got </span><span class="si">{</span><span class="n">nsteps</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_materialized</span><span class="p">()</span>
+        <span class="n">ctrl_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="n">expected</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_actuators</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ctrl_array</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ctrl must have shape </span><span class="si">{</span><span class="n">expected</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">ctrl_array</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">ctrl_array</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;control must contain finite target values&quot;</span><span class="p">)</span>
+        <span class="n">ctrl_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span>
+            <span class="n">ctrl_array</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">control_lower</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">control_upper</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_with_pre_step_control</span><span class="p">(</span><span class="n">ctrl_array</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">nsteps</span><span class="p">))</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_step_with_pre_step_control</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">ctrl</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">nsteps</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run one mapped worker STEP per public physics substep.</span>
+
+<span class="sd">        The worker owns each native substep, while this host loop preserves the</span>
+<span class="sd">        backend-neutral callback boundary: shared state is refreshed after every</span>
+<span class="sd">        one-step command before the next callback invocation.  This is a</span>
+<span class="sd">        correctness path, not the device-resident controller investigated by</span>
+<span class="sd">        #152.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">fixed_wrench</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">composed_wrench</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">fixed_wrench</span><span class="p">)</span>
+        <span class="n">control_ms</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">physics_ms</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_active</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">substep</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nsteps</span><span class="p">):</span>
+                <span class="n">callback_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+                <span class="n">output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_convert_pre_step_control</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span>
+                <span class="n">converted_ctrl</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span>
+                    <span class="n">output</span><span class="o">.</span><span class="n">ctrl</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">control_lower</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">control_upper</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">converted_ctrl</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;pre-step control must contain finite target values&quot;</span><span class="p">)</span>
+                <span class="n">composed_wrench</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">fixed_wrench</span>
+                <span class="k">if</span> <span class="n">output</span><span class="o">.</span><span class="n">force</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">output</span><span class="o">.</span><span class="n">torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">body_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">output</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">body_ids</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">body_ids</span> <span class="o">&gt;=</span> <span class="n">composed_wrench</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
+                        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                            <span class="sa">f</span><span class="s2">&quot;pre-step control body ids must be in &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;[0, </span><span class="si">{</span><span class="n">composed_wrench</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">), got range &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">body_ids</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">body_ids</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="si">}</span><span class="s2">]&quot;</span>
+                        <span class="p">)</span>
+                    <span class="k">for</span> <span class="n">body_offset</span><span class="p">,</span> <span class="n">body_id</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">body_ids</span><span class="p">):</span>
+                        <span class="k">if</span> <span class="n">output</span><span class="o">.</span><span class="n">force</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                            <span class="n">composed_wrench</span><span class="p">[:,</span> <span class="nb">int</span><span class="p">(</span><span class="n">body_id</span><span class="p">),</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">+=</span> <span class="n">output</span><span class="o">.</span><span class="n">force</span><span class="p">[</span>
+                                <span class="p">:,</span> <span class="n">body_offset</span><span class="p">,</span> <span class="p">:</span>
+                            <span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">output</span><span class="o">.</span><span class="n">torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                            <span class="n">composed_wrench</span><span class="p">[:,</span> <span class="nb">int</span><span class="p">(</span><span class="n">body_id</span><span class="p">),</span> <span class="mi">3</span><span class="p">:</span><span class="mi">6</span><span class="p">]</span> <span class="o">+=</span> <span class="n">output</span><span class="o">.</span><span class="n">torque</span><span class="p">[</span>
+                                <span class="p">:,</span> <span class="n">body_offset</span><span class="p">,</span> <span class="p">:</span>
+                            <span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slots</span><span class="p">[</span><span class="s2">&quot;ctrl&quot;</span><span class="p">],</span> <span class="n">converted_ctrl</span><span class="p">)</span>
+                <span class="n">control_ms</span> <span class="o">+=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">callback_started</span>
+
+                <span class="n">step_payload</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_payload</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">body_wrench</span><span class="o">=</span><span class="n">composed_wrench</span><span class="p">)</span>
+                <span class="n">payload</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="p">(</span><span class="n">protocol</span><span class="o">.</span><span class="n">CMD_STEP</span><span class="p">,</span> <span class="n">step_payload</span><span class="p">,</span> <span class="n">expect</span><span class="o">=</span><span class="n">protocol</span><span class="o">.</span><span class="n">CMD_READY</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="n">physics_ms</span> <span class="o">+=</span> <span class="nb">float</span><span class="p">(</span><span class="n">payload</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;timing&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;physics_ms&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+                <span class="k">if</span> <span class="n">substep</span> <span class="o">==</span> <span class="n">nsteps</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_after_step</span><span class="p">(</span><span class="n">step_payload</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_stale_body_ids</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_active</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="c1"># A callback step consumes staged interval wrench even if a later</span>
+            <span class="c1"># callback or worker substep fails; completed native substeps cannot</span>
+            <span class="c1"># be rolled back and a partially applied wrench must not leak.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_body_wrench_pending</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;control_upload_ms&quot;</span><span class="p">:</span> <span class="n">control_ms</span> <span class="o">*</span> <span class="mf">1000.0</span><span class="p">,</span>
+                <span class="s2">&quot;physics_ms&quot;</span><span class="p">:</span> <span class="n">physics_ms</span><span class="p">,</span>
+                <span class="s2">&quot;worker_ipc_total_ms&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_after_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="s2">&quot;body_wrench&quot;</span> <span class="ow">in</span> <span class="n">payload</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_body_wrench_pending</span> <span class="o">=</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="IsaacSimBackend.reset">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">)</span> <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span> <span class="ow">or</span> <span class="n">rows</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">kind</span> <span class="ow">not</span> <span class="ow">in</span> <span class="s2">&quot;iu&quot;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;reset env_ids must be one-dimensional integers&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="n">rows</span><span class="p">):</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">rows</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">rows</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">tolist</span><span class="p">()))</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;reset env_ids must be distinct and in range&quot;</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="c1"># A full default-state reset covers every public body, including</span>
+        <span class="c1"># entities with no writable state patch and unowned world rows.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="p">[</span><span class="n">rows</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_body_wrench_pending</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="p">))</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_commit_entity_reset</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">request</span><span class="p">:</span> <span class="n">SceneResetRequest</span><span class="p">,</span>
+        <span class="n">control_values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_commit_entity_reset</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">control_values</span><span class="p">,</span> <span class="n">randomization</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
+        <span class="n">body_id_groups</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_scene_layout</span><span class="p">()</span><span class="o">.</span><span class="n">get_entity</span><span class="p">(</span><span class="n">patch</span><span class="o">.</span><span class="n">entity</span><span class="p">)</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">patch</span> <span class="ow">in</span> <span class="n">request</span><span class="o">.</span><span class="n">patches</span>
+        <span class="p">)</span>
+        <span class="n">body_ids</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">body_id_groups</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">body_id_groups</span>
+            <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ix_</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">)]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_body_wrench_pending</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span><span class="p">))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_worker_entrypoint</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">_WORKER_PATH</span>
@@ -682,28 +1046,87 @@
             <span class="p">),</span>
         <span class="p">}</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_mapped_contact_force_sensor_count</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_contact_force_sensor_payload</span><span class="p">())</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_contact_force_sensor_payload</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Translate canonical pair sensors into worker body declarations.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="n">metadata</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_scene_metadata</span><span class="p">()</span>
+        <span class="n">body_owners</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">entity</span><span class="o">.</span><span class="n">name</span> <span class="o">+</span> <span class="s2">&quot;/&quot;</span> <span class="o">+</span> <span class="n">body_name</span><span class="p">:</span> <span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">body_name</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">entities</span>
+            <span class="k">for</span> <span class="n">body_name</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">body_names</span>
+        <span class="p">}</span>
+        <span class="n">specs</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">spec</span> <span class="k">for</span> <span class="n">spec</span> <span class="ow">in</span> <span class="n">metadata</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">values</span><span class="p">()</span> <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">KIND_CONTACT_FORCE</span>
+        <span class="p">]</span>
+        <span class="n">records</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">spec</span> <span class="ow">in</span> <span class="n">specs</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">target_body_name</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">spec</span><span class="o">.</span><span class="n">sensor_index</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                    <span class="s2">&quot;malformed IsaacSim contact-force sensor declaration: &quot;</span> <span class="o">+</span> <span class="n">spec</span><span class="o">.</span><span class="n">name</span>
+                <span class="p">)</span>
+            <span class="n">source</span> <span class="o">=</span> <span class="n">body_owners</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">body_name</span><span class="p">)</span>
+            <span class="n">target</span> <span class="o">=</span> <span class="n">body_owners</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">target_body_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">source</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">target</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                    <span class="s2">&quot;IsaacSim collision-pair contact sensors require both bodies to belong &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;to materialized entities (sensor </span><span class="si">{</span><span class="n">spec</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2">)&quot;</span>
+                <span class="p">)</span>
+            <span class="n">records</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">spec</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                    <span class="s2">&quot;source_entity&quot;</span><span class="p">:</span> <span class="n">source</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="s2">&quot;source_body&quot;</span><span class="p">:</span> <span class="n">source</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="s2">&quot;target_entity&quot;</span><span class="p">:</span> <span class="n">target</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="s2">&quot;target_body&quot;</span><span class="p">:</span> <span class="n">target</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="p">[</span><span class="n">spec</span><span class="o">.</span><span class="n">sensor_index</span> <span class="k">for</span> <span class="n">spec</span> <span class="ow">in</span> <span class="n">specs</span><span class="p">]</span> <span class="o">!=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">specs</span><span class="p">))):</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span><span class="s2">&quot;IsaacSim contact-force sensor row indexes are malformed&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">records</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_sensor_map</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve only sensors backed by a real IsaacSim state quantity.</span>
 
-<span class="sd">        The current worker reserves a contact-force slot for protocol</span>
-<span class="sd">        compatibility but does not populate it from a PhysX contact reporter.</span>
-<span class="sd">        Contact declarations must therefore remain unsupported rather than</span>
-<span class="sd">        appearing to work while always returning zero.</span>
+<span class="sd">        Legacy workers reserve a body-net contact slot without a PhysX reporter,</span>
+<span class="sd">        while mapped workers do not implement MuJoCo&#39;s body-net ``found``</span>
+<span class="sd">        reduction. Both fail closed. Mapped collision-pair ``force`` sensors use</span>
+<span class="sd">        the dedicated PhysX reporter slot.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">resolved</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_resolve_sensor_map</span><span class="p">()</span>
         <span class="n">metadata</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_scene_metadata</span><span class="p">()</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="n">_body_id</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">resolved</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
-            <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">!=</span> <span class="n">KIND_CONTACT_FOUND</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">KIND_CONTACT_FORCE</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">kind</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="n">KIND_CONTACT_FOUND</span><span class="p">,</span> <span class="n">KIND_CONTACT_FORCE</span><span class="p">):</span>
                 <span class="k">continue</span>
             <span class="n">metadata</span><span class="o">.</span><span class="n">unsupported_sensors</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">UnsupportedSensorSpec</span><span class="p">(</span>
                 <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
                 <span class="n">reason</span><span class="o">=</span><span class="p">(</span>
-                    <span class="s2">&quot;IsaacSim contact-force reporting is not implemented in the headless &quot;</span>
-                    <span class="s2">&quot;worker; a reserved shared-memory slot is not a contact sensor&quot;</span>
+                    <span class="s2">&quot;IsaacSim serves this contact declaration only on mapped scenes &quot;</span>
+                    <span class="s2">&quot;with the dedicated PhysX collision-pair force reporter&quot;</span>
                 <span class="p">),</span>
             <span class="p">)</span>
             <span class="k">del</span> <span class="n">resolved</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
         <span class="k">return</span> <span class="n">resolved</span>
+
+<div class="viewcode-block" id="IsaacSimBackend.get_sensor_data">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.get_sensor_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_sensor_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="n">mapped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sensor_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">mapped</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">mapped</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">KIND_CONTACT_FORCE</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_require_state</span><span class="p">(</span><span class="s2">&quot;get_sensor_data&quot;</span><span class="p">)</span>
+            <span class="n">spec</span><span class="p">:</span> <span class="n">SceneSensorSpec</span> <span class="o">=</span> <span class="n">mapped</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">sensor_index</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span><span class="s2">&quot;IsaacSim contact-force sensor row is unresolved&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slots</span><span class="p">[</span><span class="s2">&quot;contact_sensor_force&quot;</span><span class="p">][:,</span> <span class="n">spec</span><span class="o">.</span><span class="n">sensor_index</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_sensor_data</span><span class="p">(</span><span class="n">name</span><span class="p">)</span></div>
+
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_bind_model_metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">meta</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate the worker&#39;s private clone, collision, and render contract.&quot;&quot;&quot;</span>
@@ -782,6 +1205,282 @@
                     <span class="s2">&quot;isaacsim worker did not apply PhysX collision filtering between environments&quot;</span>
                 <span class="p">)</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_bind_model_metadata</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_native_entity_table</span><span class="p">(</span><span class="s2">&quot;body_mass&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_native_entity_table</span><span class="p">(</span><span class="s2">&quot;body_com&quot;</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validated_native_geometry_records</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_require_mapped_entity_scene</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PreparedWorkerScene</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;IsaacSim body-property readback requires an explicit entity scene&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_consume_entity_reset_randomization</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Replace current native property records from the reset barrier.&quot;&quot;&quot;</span>
+        <span class="n">scene</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_mapped_entity_scene</span><span class="p">()</span>
+        <span class="n">raw_records</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;native_entity_records&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw_records</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                <span class="s2">&quot;isaacsim worker omitted native records after property mutation&quot;</span>
+            <span class="p">)</span>
+        <span class="n">records</span> <span class="o">=</span> <span class="p">{</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">):</span> <span class="n">record</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">raw_records</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)}</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">raw_records</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">(</span><span class="n">records</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_entity_names</span><span class="p">()):</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                <span class="s2">&quot;isaacsim worker property-mutation records do not match the frozen entity layout&quot;</span>
+            <span class="p">)</span>
+        <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="n">scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">entities</span><span class="p">:</span>
+            <span class="n">current</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_native_entity_records</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">current</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                    <span class="s2">&quot;worker omitted native entity properties: &quot;</span> <span class="o">+</span> <span class="n">entity</span><span class="o">.</span><span class="n">name</span>
+                <span class="p">)</span>
+            <span class="n">reported</span> <span class="o">=</span> <span class="n">records</span><span class="p">[</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;body_mass&quot;</span><span class="p">,</span> <span class="s2">&quot;geom_friction&quot;</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">field</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">reported</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;worker omitted native </span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2"> after property mutation: </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
+                <span class="n">current</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="n">reported</span><span class="p">[</span><span class="n">field</span><span class="p">]</span>
+        <span class="c1"># Validate the accepted records before returning from the reset barrier.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_native_entity_table</span><span class="p">(</span><span class="s2">&quot;body_mass&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validated_native_geometry_records</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_canonical_body_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="n">scene</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_mapped_entity_scene</span><span class="p">()</span>
+        <span class="n">vector</span> <span class="o">=</span> <span class="n">field</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;body_com&quot;</span><span class="p">,</span> <span class="s2">&quot;body_ipos&quot;</span><span class="p">)</span>
+        <span class="n">model_field</span> <span class="o">=</span> <span class="s2">&quot;body_ipos&quot;</span> <span class="k">if</span> <span class="n">field</span> <span class="o">==</span> <span class="s2">&quot;body_com&quot;</span> <span class="k">else</span> <span class="n">field</span>
+        <span class="n">expected</span> <span class="o">=</span> <span class="p">(</span><span class="n">scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">nbody</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="k">if</span> <span class="n">vector</span> <span class="k">else</span> <span class="p">(</span><span class="n">scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">nbody</span><span class="p">,)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">canonical</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+                <span class="nb">getattr</span><span class="p">(</span><span class="n">scene</span><span class="o">.</span><span class="n">owner</span><span class="o">.</span><span class="n">model</span><span class="p">,</span> <span class="n">model_field</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;compiled canonical </span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2"> is malformed: expected shape </span><span class="si">{</span><span class="n">expected</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+        <span class="k">if</span> <span class="n">canonical</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">canonical</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;compiled canonical </span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2"> is malformed: got shape </span><span class="si">{</span><span class="n">canonical</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">, &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;expected </span><span class="si">{</span><span class="n">expected</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">canonical</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_native_entity_table</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">width</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="n">scene</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_mapped_entity_scene</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_materialized</span><span class="p">()</span>
+        <span class="n">layout</span> <span class="o">=</span> <span class="n">scene</span><span class="o">.</span><span class="n">layout</span>
+        <span class="n">shape</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">layout</span><span class="o">.</span><span class="n">nbody</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">width</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">layout</span><span class="o">.</span><span class="n">nbody</span><span class="p">,</span> <span class="n">width</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">canonical</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_canonical_body_table</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">broadcast_to</span><span class="p">(</span><span class="n">canonical</span><span class="p">,</span> <span class="n">shape</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="n">layout</span><span class="o">.</span><span class="n">entities</span><span class="p">:</span>
+            <span class="n">record</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_native_entity_records</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">record</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                    <span class="s2">&quot;worker omitted native entity properties: &quot;</span> <span class="o">+</span> <span class="n">entity</span><span class="o">.</span><span class="n">name</span>
+                <span class="p">)</span>
+            <span class="n">entity_shape</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">body_ids</span><span class="p">))</span>
+                <span class="k">if</span> <span class="n">width</span> <span class="ow">is</span> <span class="kc">None</span>
+                <span class="k">else</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">body_ids</span><span class="p">),</span> <span class="n">width</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">raw</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;worker native </span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2"> is malformed for entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;expected shape </span><span class="si">{</span><span class="n">entity_shape</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+            <span class="k">if</span> <span class="n">raw</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">entity_shape</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;worker native </span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2"> is malformed for entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;got shape </span><span class="si">{</span><span class="n">raw</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">, expected </span><span class="si">{</span><span class="n">entity_shape</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">width</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">values</span><span class="p">[:,</span> <span class="n">entity</span><span class="o">.</span><span class="n">body_ids</span><span class="p">]</span> <span class="o">=</span> <span class="n">raw</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">values</span><span class="p">[:,</span> <span class="n">entity</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">raw</span>
+        <span class="k">return</span> <span class="n">values</span>
+
+<div class="viewcode-block" id="IsaacSimBackend.get_body_mass">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.get_body_mass">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_body_mass</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return native per-environment body masses in public body-id order.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_native_entity_table</span><span class="p">(</span><span class="s2">&quot;body_mass&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="IsaacSimBackend.get_body_ipos">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.get_body_ipos">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_body_ipos</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return canonical defaults or native selected materialization COM offsets.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_mapped_entity_scene</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_canonical_body_table</span><span class="p">(</span><span class="s2">&quot;body_ipos&quot;</span><span class="p">)</span>
+
+        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_env_ids</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_native_entity_table</span><span class="p">(</span><span class="s2">&quot;body_com&quot;</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">3</span><span class="p">)[</span><span class="n">ids</span><span class="p">]</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validated_native_geometry_records</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate and return native geometry records in public entity order.</span>
+
+<span class="sd">        The returned tuple contains ``(entity, public offset, masks, friction)``.</span>
+<span class="sd">        Identity is checked against the frozen layout while values remain native</span>
+<span class="sd">        worker readback; contact state is role-immutable and friction may vary by</span>
+<span class="sd">        immutable variant assignment.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">scene</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_mapped_entity_scene</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_materialized</span><span class="p">()</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">public_offset</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="n">scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">entities</span><span class="p">:</span>
+            <span class="n">record</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_native_entity_records</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">record</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                    <span class="s2">&quot;worker omitted native entity geometry: &quot;</span> <span class="o">+</span> <span class="n">entity</span><span class="o">.</span><span class="n">name</span>
+                <span class="p">)</span>
+            <span class="n">names</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_names&quot;</span><span class="p">)</span>
+            <span class="n">body_names</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_body_names&quot;</span><span class="p">)</span>
+            <span class="n">expected_names</span> <span class="o">=</span> <span class="p">[</span><span class="n">geom</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">]</span>
+            <span class="n">expected_bodies</span> <span class="o">=</span> <span class="p">[</span><span class="n">geom</span><span class="o">.</span><span class="n">body_name</span> <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">]</span>
+            <span class="n">name_rows</span> <span class="o">=</span> <span class="p">[</span><span class="n">expected_names</span><span class="p">]</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span>
+            <span class="n">body_rows</span> <span class="o">=</span> <span class="p">[</span><span class="n">expected_bodies</span><span class="p">]</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span>
+            <span class="k">if</span> <span class="n">names</span> <span class="o">!=</span> <span class="n">name_rows</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;worker native geom_names differ from the frozen layout for entity &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: expected </span><span class="si">{</span><span class="n">expected_names</span><span class="si">!r}</span><span class="s2">, got </span><span class="si">{</span><span class="n">names</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">body_names</span> <span class="o">!=</span> <span class="n">body_rows</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;worker native geom_body_names differ from the frozen layout for entity &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: expected </span><span class="si">{</span><span class="n">expected_bodies</span><span class="si">!r}</span><span class="s2">, got </span><span class="si">{</span><span class="n">body_names</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">:</span>
+                <span class="n">empty_rows</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">)]</span>
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_contact_masks&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="n">empty_rows</span>
+                    <span class="ow">or</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_friction&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="n">empty_rows</span>
+                <span class="p">):</span>
+                    <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                        <span class="s2">&quot;worker native geometry values are malformed for entity &quot;</span> <span class="o">+</span> <span class="n">entity</span><span class="o">.</span><span class="n">name</span>
+                    <span class="p">)</span>
+                <span class="n">masks</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+                <span class="n">friction</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">masks</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_contact_masks&quot;</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+                    <span class="n">friction</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_friction&quot;</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+                <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;worker native geom_contact_masks or geom_friction is malformed &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;for entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+                <span class="n">expected_mask_shape</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="n">expected_friction_shape</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">),</span> <span class="mi">3</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">masks</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected_mask_shape</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">masks</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                    <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;worker native geom_contact_masks are malformed for entity &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: got shape </span><span class="si">{</span><span class="n">masks</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">, expected &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">expected_mask_shape</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="n">friction</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected_friction_shape</span>
+                    <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">friction</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+                    <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">friction</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">)</span>
+                <span class="p">):</span>
+                    <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;worker native geom_friction is malformed for entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;got shape </span><span class="si">{</span><span class="n">friction</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">, expected </span><span class="si">{</span><span class="n">expected_friction_shape</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">masks</span> <span class="o">==</span> <span class="n">masks</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+                    <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                        <span class="s2">&quot;worker native geom_contact_masks vary across environments for entity &quot;</span>
+                        <span class="o">+</span> <span class="n">entity</span><span class="o">.</span><span class="n">name</span>
+                    <span class="p">)</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">entity</span><span class="p">,</span> <span class="n">public_offset</span><span class="p">,</span> <span class="n">masks</span><span class="p">,</span> <span class="n">friction</span><span class="p">))</span>
+            <span class="n">public_offset</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">public_offset</span> <span class="o">!=</span> <span class="n">scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">ngeom</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span><span class="s2">&quot;worker native geometry does not cover the frozen layout&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+
+<div class="viewcode-block" id="IsaacSimBackend.get_geom_names">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.get_geom_names">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return qualified geometry names in frozen public geometry order.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> does not expose geom names&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span>
+            <span class="n">entity</span><span class="o">.</span><span class="n">name</span> <span class="o">+</span> <span class="s2">&quot;/&quot;</span> <span class="o">+</span> <span class="n">geom</span><span class="o">.</span><span class="n">name</span>
+            <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">entities</span>
+            <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">geoms</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="IsaacSimBackend.get_geom_body_ids">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.get_geom_body_ids">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_body_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return owning public body IDs in frozen geometry order.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> does not expose geom body ids&quot;</span><span class="p">)</span>
+        <span class="n">body_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">ngeom</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">entities</span><span class="p">:</span>
+            <span class="n">owners</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">body_names</span><span class="p">,</span> <span class="n">entity</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">:</span>
+                <span class="n">body_ids</span><span class="p">[</span><span class="n">offset</span><span class="p">]</span> <span class="o">=</span> <span class="n">owners</span><span class="p">[</span><span class="n">geom</span><span class="o">.</span><span class="n">body_name</span><span class="p">]</span>
+                <span class="n">offset</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">return</span> <span class="n">body_ids</span></div>
+
+
+<div class="viewcode-block" id="IsaacSimBackend.get_geom_contact_masks">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.get_geom_contact_masks">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_contact_masks</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return normalized native collision state in public geometry order.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> does not expose geom contact masks&quot;</span>
+            <span class="p">)</span>
+        <span class="n">scene</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_mapped_entity_scene</span><span class="p">()</span>
+        <span class="n">records</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validated_native_geometry_records</span><span class="p">()</span>
+        <span class="n">contype</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">ngeom</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+        <span class="n">conaffinity</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">ngeom</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">entity</span><span class="p">,</span> <span class="n">offset</span><span class="p">,</span> <span class="n">masks</span><span class="p">,</span> <span class="n">_friction</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="n">masks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">)</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+            <span class="n">contype</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">)]</span> <span class="o">=</span> <span class="n">rows</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+            <span class="n">conaffinity</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">)]</span> <span class="o">=</span> <span class="n">rows</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">contype</span><span class="p">,</span> <span class="n">conaffinity</span></div>
+
+
+<div class="viewcode-block" id="IsaacSimBackend.get_geom_friction">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.get_geom_friction">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_friction</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return native effective per-environment friction in public order.</span>
+
+<span class="sd">        Columns are IsaacSim ``[static_friction, dynamic_friction, 0]``. PhysX</span>
+<span class="sd">        has no native equivalent for MuJoCo&#39;s torsional/rolling coefficients.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> does not expose geom friction&quot;</span><span class="p">)</span>
+        <span class="n">scene</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_mapped_entity_scene</span><span class="p">()</span>
+        <span class="n">records</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validated_native_geometry_records</span><span class="p">()</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">ngeom</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">entity</span><span class="p">,</span> <span class="n">offset</span><span class="p">,</span> <span class="n">_masks</span><span class="p">,</span> <span class="n">friction</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+            <span class="n">result</span><span class="p">[:,</span> <span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">),</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">friction</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
 
 <div class="viewcode-block" id="IsaacSimBackend.get_play_capabilities">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.backend.IsaacSimBackend.html#unisim.backend.isaacsim.backend.IsaacSimBackend.get_play_capabilities">[docs]</a>

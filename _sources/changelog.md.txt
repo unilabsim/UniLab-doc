@@ -42,6 +42,16 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
 
 ### Changed / 变更
 
+- Raised the base and optional SuperDex UniSim requirements to
+  `unisim-core>=1.7.1`. The released packages contain portable MJCF profile
+  v1 and the IsaacSim worker dependency-isolation fix, so consumer acceptance
+  no longer uses the provisional local-checkout skip and validates the
+  robot/object/table/mirror fixture from PyPI dependencies (#1609; UniSim
+  #154/#155).
+  将基础与可选 SuperDex 的 UniSim 依赖提升到 `unisim-core>=1.7.1`。已发布
+  包包含 portable MJCF profile v1 与 IsaacSim worker 依赖隔离修复，因此
+  消费验收不再使用临时本地 checkout skip，并基于 PyPI 依赖验证
+  robot/object/table/mirror fixture（#1609；UniSim #154/#155）。
 - Raised the base UniSim requirement to `unisim-core>=1.4.1` to consume the
   published IsaacGym fixed-variant adapter. The optional `superdex` extra's
   own `>=1.4.0` constraint is unchanged: the base requirement already forces

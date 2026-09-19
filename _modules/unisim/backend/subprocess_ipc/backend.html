@@ -567,8 +567,10 @@
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.subprocess_ipc.scene_materialization</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">PreparedWorkerScene</span><span class="p">,</span>
+    <span class="n">body_sphere_radii_close</span><span class="p">,</span>
     <span class="n">full_state_reset_patches</span><span class="p">,</span>
     <span class="n">prepare_worker_scene</span><span class="p">,</span>
+    <span class="n">validate_body_sphere_radii</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">DomainRandomizationCapabilities</span><span class="p">,</span>
@@ -789,6 +791,10 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return whether this adapter&#39;s worker realizes fixed variant plans.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="kc">False</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_mapped_contact_force_sensor_count</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return dedicated IsaacSim collision-pair force rows, if supported.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="mi">0</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_worker_init_payload</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return backend-owned cold-path INIT options.</span>
 
@@ -848,7 +854,7 @@
                 <span class="s2">&quot;worker_command must be a non-empty list of strings or None, &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">worker_command</span><span class="si">!r}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="n">scene</span><span class="o">.</span><span class="n">fragment_files</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">scene</span><span class="o">.</span><span class="n">fragment_files</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">scene</span><span class="o">.</span><span class="n">entity_assets</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="si">}</span><span class="s2"> backend does not compose MuJoCo scene fragments; provide a &quot;</span>
                 <span class="s2">&quot;self-contained MJCF scene through scene.model_file&quot;</span>
@@ -873,6 +879,7 @@
                 <span class="n">model_file</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">owner</span><span class="o">.</span><span class="n">model_file</span><span class="p">,</span>
                 <span class="n">entity_assets</span><span class="o">=</span><span class="p">(),</span>
                 <span class="n">entity_variant</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">fragment_files</span><span class="o">=</span><span class="p">[],</span>
             <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_stale_body_ids</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_scene</span> <span class="o">=</span> <span class="n">scene</span>
@@ -1076,7 +1083,10 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_commit_entity_reset</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">controls</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_commit_entity_reset</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">SceneResetRequest</span><span class="p">,</span> <span class="n">control_values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">request</span><span class="p">:</span> <span class="n">SceneResetRequest</span><span class="p">,</span>
+        <span class="n">control_values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">layout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_scene_layout</span><span class="p">()</span>
         <span class="c1"># Do not even materialize a native worker for a malformed request.</span>
@@ -1103,7 +1113,13 @@
             <span class="p">(</span><span class="s2">&quot;reset_root_mask&quot;</span><span class="p">,</span> <span class="n">prepared</span><span class="o">.</span><span class="n">root_mask</span><span class="p">),</span>
         <span class="p">):</span>
             <span class="n">np</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slots</span><span class="p">[</span><span class="n">slot</span><span class="p">],</span> <span class="n">values</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="p">(</span>
+        <span class="n">randomization_wire</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">body_mass</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">randomization_wire</span><span class="p">[</span><span class="s2">&quot;body_mass&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">body_mass</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">geom_friction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">randomization_wire</span><span class="p">[</span><span class="s2">&quot;geom_friction&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">geom_friction</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="p">(</span>
             <span class="n">protocol</span><span class="o">.</span><span class="n">CMD_RESET_ENTITIES</span><span class="p">,</span>
             <span class="p">{</span>
                 <span class="s2">&quot;count&quot;</span><span class="p">:</span> <span class="n">count</span><span class="p">,</span>
@@ -1113,9 +1129,16 @@
                     <span class="k">if</span> <span class="n">control_values</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                     <span class="k">else</span> <span class="p">{}</span>
                 <span class="p">),</span>
+                <span class="o">**</span><span class="p">(</span>
+                    <span class="p">{</span><span class="s2">&quot;randomization&quot;</span><span class="p">:</span> <span class="n">randomization_wire</span><span class="p">}</span>
+                    <span class="k">if</span> <span class="n">randomization_wire</span>
+                    <span class="k">else</span> <span class="p">{}</span>
+                <span class="p">),</span>
             <span class="p">},</span>
             <span class="n">expect</span><span class="o">=</span><span class="n">protocol</span><span class="o">.</span><span class="n">CMD_READY</span><span class="p">,</span>
         <span class="p">)</span>
+        <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_consume_entity_reset_randomization</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_TYPE</span> <span class="o">==</span> <span class="s2">&quot;isaacgym&quot;</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">patch</span> <span class="ow">in</span> <span class="n">request</span><span class="o">.</span><span class="n">patches</span><span class="p">:</span>
                 <span class="k">if</span> <span class="nb">any</span><span class="p">(</span>
@@ -1135,22 +1158,58 @@
                     <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_set_mapped_state</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">env_indices</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">qpos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">qvel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">env_indices</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">qpos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">qvel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
         <span class="n">layout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_scene_layout</span><span class="p">()</span>
         <span class="n">ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">env_indices</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">ids</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span> <span class="ow">or</span> <span class="n">ids</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">kind</span> <span class="ow">not</span> <span class="ow">in</span> <span class="s2">&quot;iu&quot;</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;env_indices must contain one-dimensional integer IDs&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">ids</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;i&quot;</span>
+            <span class="ow">and</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">ids</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">ids</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">))</span>
+        <span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+            <span class="n">ids</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;u&quot;</span>
+            <span class="ow">and</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">ids</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">))</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;env_indices must be in environment range&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span><span class="o">.</span><span class="n">size</span> <span class="o">!=</span> <span class="n">ids</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;env_indices must not contain duplicate rows&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">qpos</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span> <span class="n">layout</span><span class="o">.</span><span class="n">nq</span><span class="p">)</span> <span class="ow">or</span> <span class="n">qvel</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span> <span class="n">layout</span><span class="o">.</span><span class="n">nv</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;full state shape differs from scene layout&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">qpos</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">qvel</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;full state requires finite values&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;selected property mutation requires at least one environment&quot;</span><span class="p">)</span>
             <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="p">{}}</span>
+        <span class="n">validated_randomization</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validated_mapped_reset_randomization</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">ids</span><span class="p">)</span>
         <span class="n">patches</span> <span class="o">=</span> <span class="n">full_state_reset_patches</span><span class="p">(</span><span class="n">layout</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">patches</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">reset_entities</span><span class="p">(</span><span class="n">SceneResetRequest</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">),</span> <span class="n">patches</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">patches</span> <span class="ow">or</span> <span class="n">validated_randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_commit_entity_reset</span><span class="p">(</span>
+                <span class="n">SceneResetRequest</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">),</span> <span class="n">patches</span><span class="p">),</span>
+                <span class="n">randomization</span><span class="o">=</span><span class="n">validated_randomization</span><span class="p">,</span>
+            <span class="p">)</span>
         <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="p">{}}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validated_mapped_reset_randomization</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">requested</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()))</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="si">}</span><span class="s2"> does not support reset domain randomization terms: &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">requested</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_consume_entity_reset_randomization</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> does not support reset property mutation readback&quot;</span>
+        <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -1243,6 +1302,28 @@
             <span class="p">):</span>
                 <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
                     <span class="s2">&quot;native entity body masses differ from compiled source: &quot;</span> <span class="o">+</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+                <span class="p">)</span>
+            <span class="n">reported_radii</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;body_sphere_radii&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reported_radii</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">reported_radii</span><span class="p">)</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                    <span class="s2">&quot;worker entity sphere radii are malformed: &quot;</span> <span class="o">+</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+                <span class="p">)</span>
+            <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">reported_radii</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">validate_body_sphere_radii</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">entry</span><span class="p">[</span><span class="s2">&quot;variants&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">&quot;body_names&quot;</span><span class="p">]))</span>
+                <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                        <span class="s2">&quot;worker entity sphere radii are malformed: &quot;</span> <span class="o">+</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+                    <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+            <span class="n">expected_radii</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;variants&quot;</span><span class="p">][</span><span class="n">i</span><span class="p">][</span><span class="s2">&quot;body_sphere_radii&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;assignment&quot;</span><span class="p">]</span>
+            <span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span>
+                <span class="n">body_sphere_radii_close</span><span class="p">(</span><span class="n">actual</span><span class="p">,</span> <span class="n">expected</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">2e-6</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-8</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">actual</span><span class="p">,</span> <span class="n">expected</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">reported_radii</span><span class="p">,</span> <span class="n">expected_radii</span><span class="p">)</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_error</span><span class="p">(</span>
+                    <span class="s2">&quot;native entity sphere radii differ from compiled source: &quot;</span> <span class="o">+</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
                 <span class="p">)</span>
         <span class="n">body_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="n">layout</span><span class="o">.</span><span class="n">nbody</span>
         <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="n">layout</span><span class="o">.</span><span class="n">entities</span><span class="p">:</span>
@@ -1948,9 +2029,7 @@
             <span class="o">**</span><span class="p">(</span>
                 <span class="p">{}</span>
                 <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                <span class="k">else</span> <span class="p">{</span>
-                    <span class="s2">&quot;variant_mjcf_kinematics&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_fixed_variant_kinematics</span><span class="p">())</span>
-                <span class="p">}</span>
+                <span class="k">else</span> <span class="p">{</span><span class="s2">&quot;variant_mjcf_kinematics&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_fixed_variant_kinematics</span><span class="p">())}</span>
             <span class="p">),</span>
             <span class="s2">&quot;variant_keyframe_qpos&quot;</span><span class="p">:</span> <span class="p">[</span>
                 <span class="kc">None</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">value</span><span class="p">]</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">initial_qpos</span>
@@ -2039,7 +2118,11 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_info</span><span class="o">.</span><span class="n">num_dof</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_info</span><span class="o">.</span><span class="n">num_bodies</span>
             <span class="p">)</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span>
-            <span class="k">else</span> <span class="n">protocol</span><span class="o">.</span><span class="n">scene_slot_shapes</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">layout</span><span class="p">)</span>
+            <span class="k">else</span> <span class="n">protocol</span><span class="o">.</span><span class="n">scene_slot_shapes</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">layout</span><span class="p">,</span>
+                <span class="n">num_contact_force_sensors</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_mapped_contact_force_sensor_count</span><span class="p">(),</span>
+            <span class="p">)</span>
         <span class="p">)</span>
         <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">shapes</span><span class="p">:</span>
             <span class="n">shape</span> <span class="o">=</span> <span class="n">shapes</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
@@ -2067,6 +2150,14 @@
         <span class="n">resolved</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneSensorSpec</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">spec</span> <span class="ow">in</span> <span class="n">metadata</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="n">body_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_id_by_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">body_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">target_body_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_id_by_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">target_body_name</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">metadata</span><span class="o">.</span><span class="n">unsupported_sensors</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_unsupported_spec</span><span class="p">(</span>
+                        <span class="n">spec</span><span class="p">,</span>
+                        <span class="sa">f</span><span class="s2">&quot;sensor target body </span><span class="si">{</span><span class="n">spec</span><span class="o">.</span><span class="n">target_body_name</span><span class="si">!r}</span><span class="s2"> is not present in &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;the </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="si">}</span><span class="s2"> asset rigid-body list&quot;</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="k">continue</span>
             <span class="k">if</span> <span class="n">body_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="c1"># The MJCF importer may drop or rename bodies; record as</span>
                 <span class="c1"># unsupported so access fails closed with context.</span>
@@ -2550,14 +2641,26 @@
 
         <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">np</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slots</span><span class="p">[</span><span class="s2">&quot;ctrl&quot;</span><span class="p">],</span> <span class="n">ctrl_array</span><span class="p">)</span>
-        <span class="n">payload</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="p">(</span>
-            <span class="n">protocol</span><span class="o">.</span><span class="n">CMD_STEP</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;nsteps&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">nsteps</span><span class="p">)},</span> <span class="n">expect</span><span class="o">=</span><span class="n">protocol</span><span class="o">.</span><span class="n">CMD_READY</span>
-        <span class="p">)</span>
+        <span class="n">step_payload</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_payload</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">nsteps</span><span class="p">))</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="p">(</span><span class="n">protocol</span><span class="o">.</span><span class="n">CMD_STEP</span><span class="p">,</span> <span class="n">step_payload</span><span class="p">,</span> <span class="n">expect</span><span class="o">=</span><span class="n">protocol</span><span class="o">.</span><span class="n">CMD_READY</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_after_step</span><span class="p">(</span><span class="n">step_payload</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_stale_body_ids</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="n">ipc_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">timing</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">payload</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;timing&quot;</span><span class="p">,</span> <span class="p">{}))</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
         <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;worker_ipc_total_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ipc_ms</span>
         <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="n">timing</span><span class="p">}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_step_payload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nsteps</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build the engine-owned STEP command payload.</span>
+
+<span class="sd">        Adapter subclasses may extend this payload with validated command-only</span>
+<span class="sd">        data.  They must not use it to move a host callback across the worker</span>
+<span class="sd">        boundary.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;nsteps&quot;</span><span class="p">:</span> <span class="n">nsteps</span><span class="p">}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_after_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Consume adapter-owned data after a successful worker STEP.&quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">set_state</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -2567,14 +2670,14 @@
         <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_state</span><span class="p">(</span><span class="s2">&quot;set_state&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_set_mapped_state</span><span class="p">(</span><span class="n">env_indices</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span><span class="p">,</span> <span class="n">randomization</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
             <span class="n">requested</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()))</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="si">}</span><span class="s2"> does not support reset domain randomization terms: &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">requested</span><span class="si">}</span><span class="s2">.&quot;</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_set_mapped_state</span><span class="p">(</span><span class="n">env_indices</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span><span class="p">)</span>
         <span class="n">info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_materialized</span><span class="p">()</span>
         <span class="n">rows</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">env_indices</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>

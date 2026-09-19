@@ -561,6 +561,9 @@
 <span class="sd">``framezaxis``      ``framezaxis``        body/site frame z axis in world</span>
 <span class="sd">``contact``         ``contact_found``     1.0 when the body&#39;s net contact force</span>
 <span class="sd">(data=found)                              norm is positive, else 0.0</span>
+<span class="sd">``contact``         ``contact_force``     declared collision-pair net force; only</span>
+<span class="sd">(data=force,                              a backend with a pair reporter may serve it</span>
+<span class="sd">reduce=netforce)</span>
 <span class="sd">==================  ====================  ===================================</span>
 
 <span class="sd">Sites are rigidly attached to their owning body, so a site frame is exact:</span>
@@ -569,9 +572,9 @@
 <span class="sd">declared with ``euler``/``axisangle``/``xyaxes``/``zaxis`` orientation</span>
 <span class="sd">attributes fail closed — only ``quat`` (wxyz) is parsed.</span>
 
-<span class="sd">Anything else (force/torque sensors, accelerometers, rangefinders, contact</span>
-<span class="sd">sensors requesting ``force``/``dist`` data, ...) is recorded as unsupported</span>
-<span class="sd">and fails closed with an explanatory ``NotImplementedError`` on access.</span>
+<span class="sd">Anything else (force/torque sensors, accelerometers, rangefinders, other contact</span>
+<span class="sd">data/reduction modes, ...) is recorded as unsupported and fails closed with an</span>
+<span class="sd">explanatory ``NotImplementedError`` on access.</span>
 <span class="sd">Sensor ``noise``/``cutoff`` attributes are ignored: the tensor API has no</span>
 <span class="sd">equivalent, and UniLab applies observation noise at the env layer.</span>
 <span class="sd">&quot;&quot;&quot;</span>
@@ -579,7 +582,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">xml.etree.ElementTree</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ET</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">replace</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
@@ -590,6 +593,7 @@
 <span class="n">KIND_FRAMEPOS</span> <span class="o">=</span> <span class="s2">&quot;framepos&quot;</span>
 <span class="n">KIND_FRAMEZAXIS</span> <span class="o">=</span> <span class="s2">&quot;framezaxis&quot;</span>
 <span class="n">KIND_CONTACT_FOUND</span> <span class="o">=</span> <span class="s2">&quot;contact_found&quot;</span>
+<span class="n">KIND_CONTACT_FORCE</span> <span class="o">=</span> <span class="s2">&quot;contact_force&quot;</span>
 
 <span class="n">SUPPORTED_KINDS</span> <span class="o">=</span> <span class="p">(</span>
     <span class="n">KIND_GYRO</span><span class="p">,</span>
@@ -598,6 +602,7 @@
     <span class="n">KIND_FRAMEPOS</span><span class="p">,</span>
     <span class="n">KIND_FRAMEZAXIS</span><span class="p">,</span>
     <span class="n">KIND_CONTACT_FOUND</span><span class="p">,</span>
+    <span class="n">KIND_CONTACT_FORCE</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="n">_KIND_DIMS</span> <span class="o">=</span> <span class="p">{</span>
@@ -607,6 +612,7 @@
     <span class="n">KIND_FRAMEPOS</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
     <span class="n">KIND_FRAMEZAXIS</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
     <span class="n">KIND_CONTACT_FOUND</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">KIND_CONTACT_FORCE</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
 <span class="p">}</span>
 
 <span class="c1"># Orientation attributes on a &lt;site&gt; that this backend does not parse; their</span>
@@ -638,6 +644,8 @@
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">body_name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">target_body_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">sensor_index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">local_pos</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">_ZERO_POS</span>
     <span class="n">local_quat</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">_IDENTITY_QUAT</span>
 
@@ -794,6 +802,11 @@
     <span class="p">)</span>
     <span class="k">for</span> <span class="n">option</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="s2">&quot;option&quot;</span><span class="p">):</span>
         <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;source_options&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">option</span><span class="o">.</span><span class="n">attrib</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">worldbody</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="s2">&quot;worldbody&quot;</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">worldbody</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">geom</span><span class="o">.</span><span class="n">tag</span> <span class="o">==</span> <span class="s2">&quot;geom&quot;</span> <span class="ow">and</span> <span class="n">geom</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">):</span>
+                <span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;geom_body&quot;</span><span class="p">][</span><span class="n">geom</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">&quot;world&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">walk_body</span><span class="p">(</span><span class="n">body</span><span class="p">:</span> <span class="n">ET</span><span class="o">.</span><span class="n">Element</span><span class="p">,</span> <span class="n">active_class</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">body_name</span> <span class="o">=</span> <span class="n">body</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
@@ -1079,6 +1092,29 @@
         <span class="k">return</span> <span class="n">from_frame</span><span class="p">(</span><span class="n">kind</span><span class="p">,</span> <span class="n">frame</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">tag</span> <span class="o">==</span> <span class="s2">&quot;contact&quot;</span><span class="p">:</span>
         <span class="n">data</span> <span class="o">=</span> <span class="p">(</span><span class="n">attrib</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;found&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">data</span> <span class="o">==</span> <span class="p">[</span><span class="s2">&quot;force&quot;</span><span class="p">]:</span>
+            <span class="n">reduction</span> <span class="o">=</span> <span class="p">(</span><span class="n">attrib</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;reduce&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">reduction</span> <span class="o">!=</span> <span class="p">[</span><span class="s2">&quot;netforce&quot;</span><span class="p">]:</span>
+                <span class="k">return</span> <span class="n">unsupported</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;contact force sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> requests reduce=</span><span class="si">{</span><span class="n">reduction</span><span class="si">}</span><span class="s2">; &quot;</span>
+                    <span class="s2">&quot;only reduce=&#39;netforce&#39; maps to a collision-pair force reporter&quot;</span>
+                <span class="p">)</span>
+            <span class="n">geom1</span><span class="p">,</span> <span class="n">geom2</span> <span class="o">=</span> <span class="n">attrib</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom1&quot;</span><span class="p">),</span> <span class="n">attrib</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom2&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">geom1</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">geom2</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">unsupported</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;contact force sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> requires both geom1 and geom2&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">geom1</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">geom_body</span> <span class="ow">or</span> <span class="n">geom2</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">geom_body</span><span class="p">:</span>
+                <span class="n">missing</span> <span class="o">=</span> <span class="n">geom1</span> <span class="k">if</span> <span class="n">geom1</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">geom_body</span> <span class="k">else</span> <span class="n">geom2</span>
+                <span class="k">return</span> <span class="n">unsupported</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;contact force sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> references unknown geom </span><span class="si">{</span><span class="n">missing</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">return</span> <span class="n">SceneSensorSpec</span><span class="p">(</span>
+                <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+                <span class="n">kind</span><span class="o">=</span><span class="n">KIND_CONTACT_FORCE</span><span class="p">,</span>
+                <span class="n">body_name</span><span class="o">=</span><span class="n">geom_body</span><span class="p">[</span><span class="n">geom1</span><span class="p">],</span>
+                <span class="n">target_body_name</span><span class="o">=</span><span class="n">geom_body</span><span class="p">[</span><span class="n">geom2</span><span class="p">],</span>
+            <span class="p">)</span>
         <span class="k">if</span> <span class="n">data</span> <span class="o">!=</span> <span class="p">[</span><span class="s2">&quot;found&quot;</span><span class="p">]:</span>
             <span class="k">return</span> <span class="n">unsupported</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;contact sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> requests data=</span><span class="si">{</span><span class="n">data</span><span class="si">}</span><span class="s2">; only data=&#39;found&#39; maps &quot;</span>
@@ -1288,18 +1324,29 @@
                 <span class="p">)</span>
             <span class="n">unsupported</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">resolved</span>
 
+    <span class="c1"># Pair-force sensors receive a dedicated protocol row in declaration order.</span>
+    <span class="c1"># Other sensor kinds do not consume an index.</span>
+    <span class="n">force_index</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">sensor_spec</span> <span class="ow">in</span> <span class="n">sensors</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">sensor_spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">!=</span> <span class="n">KIND_CONTACT_FORCE</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">sensors</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">replace</span><span class="p">(</span><span class="n">sensor_spec</span><span class="p">,</span> <span class="n">sensor_index</span><span class="o">=</span><span class="n">force_index</span><span class="p">)</span>
+        <span class="n">force_index</span> <span class="o">+=</span> <span class="mi">1</span>
+
     <span class="n">known_joints</span> <span class="o">=</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">raw</span><span class="p">[</span><span class="s2">&quot;joint_names&quot;</span><span class="p">]}</span>
     <span class="n">actuators</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">ActuatorSpec</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">actuated_joints</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
     <span class="k">for</span> <span class="n">source_file</span><span class="p">,</span> <span class="n">classes</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">attrib</span> <span class="ow">in</span> <span class="n">raw</span><span class="p">[</span><span class="s2">&quot;actuators&quot;</span><span class="p">]</span> <span class="k">if</span> <span class="n">resolve_actuators</span> <span class="k">else</span> <span class="p">():</span>
-        <span class="n">spec</span> <span class="o">=</span> <span class="n">_resolve_actuator</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">attrib</span><span class="p">,</span> <span class="n">classes</span><span class="p">,</span> <span class="n">source_file</span><span class="p">,</span> <span class="n">known_joints</span><span class="p">,</span> <span class="n">backend_label</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">joint_name</span> <span class="ow">in</span> <span class="n">actuated_joints</span><span class="p">:</span>
+        <span class="n">actuator</span> <span class="o">=</span> <span class="n">_resolve_actuator</span><span class="p">(</span>
+            <span class="n">tag</span><span class="p">,</span> <span class="n">attrib</span><span class="p">,</span> <span class="n">classes</span><span class="p">,</span> <span class="n">source_file</span><span class="p">,</span> <span class="n">known_joints</span><span class="p">,</span> <span class="n">backend_label</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">actuator</span><span class="o">.</span><span class="n">joint_name</span> <span class="ow">in</span> <span class="n">actuated_joints</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;joint </span><span class="si">{</span><span class="n">spec</span><span class="o">.</span><span class="n">joint_name</span><span class="si">!r}</span><span class="s2"> has more than one &lt;position&gt; actuator &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;joint </span><span class="si">{</span><span class="n">actuator</span><span class="o">.</span><span class="n">joint_name</span><span class="si">!r}</span><span class="s2"> has more than one &lt;position&gt; actuator &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;(file: </span><span class="si">{</span><span class="n">source_file</span><span class="si">}</span><span class="s2">); the backend maps one actuator per dof&quot;</span>
             <span class="p">)</span>
-        <span class="n">actuated_joints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">joint_name</span><span class="p">)</span>
-        <span class="n">actuators</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>
+        <span class="n">actuated_joints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">actuator</span><span class="o">.</span><span class="n">joint_name</span><span class="p">)</span>
+        <span class="n">actuators</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">actuator</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">SceneMetadata</span><span class="p">(</span>
         <span class="n">model_file</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">),</span>
@@ -1375,6 +1422,7 @@
 
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">&quot;KIND_CONTACT_FOUND&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;KIND_CONTACT_FORCE&quot;</span><span class="p">,</span>
     <span class="s2">&quot;KIND_FRAMEPOS&quot;</span><span class="p">,</span>
     <span class="s2">&quot;KIND_FRAMEQUAT&quot;</span><span class="p">,</span>
     <span class="s2">&quot;KIND_FRAMEZAXIS&quot;</span><span class="p">,</span>
