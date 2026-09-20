@@ -13,7 +13,7 @@ UniLab 遵循[语义化版本](https://semver.org/)。本共享页面以中英�
 PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完整提交历史请参阅
 [UniLab 仓库](https://github.com/unilabsim/UniLab)。
 
-## Unreleased / 未发布
+## 1.3.1 (2026-09-20)
 
 ### Added / 新增
 
@@ -41,6 +41,28 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
   速率，并输出版本化 JSON artifact 供 #1579 support 决策使用。
 
 ### Changed / 变更
+
+- Moved the Motrix runtime pin into UniSim. The `motrix` extra now resolves
+  `unisim-core[motrix]>=1.7.3` instead of pinning `motrixsim-core==0.8.2`
+  directly, so the consumed Motrix runtime always matches the version the
+  `unisim.backend.motrix` adapter is tested against (currently
+  motrixsim-core 0.10.1).
+  将 Motrix runtime 的版本固定移入 UniSim。`motrix` extra 现在解析
+  `unisim-core[motrix]>=1.7.3`，不再直接固定 `motrixsim-core==0.8.2`，
+  使消费的 Motrix runtime 始终与 `unisim.backend.motrix` 适配层的测试
+  版本一致（当前为 motrixsim-core 0.10.1）。
+
+- Raised the base and optional SuperDex UniSim requirements to
+  `unisim-core>=1.7.3`. The released package adds IsaacSim mapped-scene
+  per-body net contact force/found sensors, bounded PhysX solver
+  configuration, per-entity self-collision and mapped reset domain
+  randomization, plus IsaacGym mapped-scene reset randomization and interval
+  body wrenches (UniSim #248/#249/#251/#255).
+  将基础与可选 SuperDex 的 UniSim 依赖提升到 `unisim-core>=1.7.3`。已发布
+  包新增 IsaacSim mapped scene 的逐 body 净接触力/found 传感器、有界
+  PhysX solver 配置、逐实体 self-collision 与 mapped reset 域随机化，以及
+  IsaacGym mapped scene 的 reset 域随机化和 interval body 力矩
+  （UniSim #248/#249/#251/#255）。
 
 - Raised the base and optional SuperDex UniSim requirements to
   `unisim-core>=1.7.2`. The released package adds the SuperDex portable-scene

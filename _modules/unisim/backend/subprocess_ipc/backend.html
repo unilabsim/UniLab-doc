@@ -6,7 +6,7 @@
         <link rel="canonical" href="https://unilabsim.github.io/UniLab-doc/_modules/unisim/backend/subprocess_ipc/backend.html">
 
     <!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>unisim.backend.subprocess_ipc.backend - UniLab 1.3.0 documentation</title>
+        <title>unisim.backend.subprocess_ipc.backend - UniLab 1.3.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=d111a655" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
@@ -173,7 +173,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../../../index.html"><div class="brand">UniLab 1.3.0 documentation</div></a>
+      <a href="../../../../index.html"><div class="brand">UniLab 1.3.1 documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -194,7 +194,7 @@
       
       <div class="sidebar-sticky"><a class="sidebar-brand" href="../../../../index.html">
   
-  <span class="sidebar-brand-text">UniLab 1.3.0 documentation</span>
+  <span class="sidebar-brand-text">UniLab 1.3.1 documentation</span>
   
 </a><div class="sidebar-lang-switcher">
   <select class="sidebar-lang-switcher__select" aria-label="Language">
@@ -547,8 +547,9 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Sequence</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Container</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Sequence</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">replace</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">fields</span> <span class="k">as</span> <span class="n">dataclass_fields</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">multiprocessing</span><span class="w"> </span><span class="kn">import</span> <span class="n">shared_memory</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">cast</span>
@@ -582,6 +583,7 @@
     <span class="n">ConfigurationField</span><span class="p">,</span>
     <span class="n">ConfigurationProvenance</span><span class="p">,</span>
     <span class="n">ConfigurationScope</span><span class="p">,</span>
+    <span class="n">Difference</span><span class="p">,</span>
     <span class="n">ImportReport</span><span class="p">,</span>
     <span class="n">compare_configuration</span><span class="p">,</span>
 <span class="p">)</span>
@@ -596,6 +598,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">protocol</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.playback</span><span class="w"> </span><span class="kn">import</span> <span class="n">run_subprocess_playback</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.sensors</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">KIND_CONTACT_FORCE</span><span class="p">,</span>
     <span class="n">KIND_CONTACT_FOUND</span><span class="p">,</span>
     <span class="n">KIND_FRAMEPOS</span><span class="p">,</span>
     <span class="n">KIND_FRAMEQUAT</span><span class="p">,</span>
@@ -631,6 +634,14 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_display_available</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Return whether a display is reachable for an interactive worker viewer.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;DISPLAY&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;WAYLAND_DISPLAY&quot;</span><span class="p">))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_single_precision_equal</span><span class="p">(</span><span class="n">reported</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">requested</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Match values that only differ by the engine&#39;s float32 storage rounding.&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">reported</span><span class="p">)))</span> <span class="o">==</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">requested</span><span class="p">)))</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_normalize_camera_kwargs</span><span class="p">(</span>
@@ -804,6 +815,60 @@
 <span class="sd">        startup contract; IsaacSim overrides it for eval rendering.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="p">{}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_worker_configuration_requested</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return backend-owned INIT settings surfaced in the import report.</span>
+
+<span class="sd">        The shared adapter has no extra worker settings; IsaacSim overrides</span>
+<span class="sd">        this hook to publish its bounded PhysX solver request.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_worker_configuration_fields</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">effective</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">readback_fields</span><span class="p">:</span> <span class="n">Container</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">ConfigurationField</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compare backend-owned INIT requests against the worker&#39;s report.&quot;&quot;&quot;</span>
+        <span class="n">fields</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">requested</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_worker_configuration_requested</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">effective</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+            <span class="n">difference</span><span class="p">:</span> <span class="n">Difference</span> <span class="o">=</span> <span class="s2">&quot;unknown&quot;</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;Requested value or engine adoption could not be verified.&quot;</span>
+            <span class="k">if</span> <span class="n">requested</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">value</span> <span class="o">==</span> <span class="n">requested</span><span class="p">:</span>
+                    <span class="n">difference</span><span class="p">,</span> <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;exact&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span>
+                <span class="k">elif</span> <span class="n">_single_precision_equal</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">requested</span><span class="p">):</span>
+                    <span class="n">difference</span> <span class="o">=</span> <span class="s2">&quot;approximate&quot;</span>
+                    <span class="n">reason</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="s2">&quot;The engine stores this setting in single precision; the &quot;</span>
+                        <span class="s2">&quot;readback matches the float32 rounding of the request.&quot;</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">difference</span> <span class="o">=</span> <span class="s2">&quot;overridden&quot;</span>
+                    <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;Engine readback differs from the host INIT request.&quot;</span>
+            <span class="n">verified</span> <span class="o">=</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">readback_fields</span> <span class="ow">and</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">fields</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">ConfigurationField</span><span class="p">(</span>
+                    <span class="n">key</span><span class="p">,</span>
+                    <span class="n">requested</span><span class="p">,</span>
+                    <span class="n">value</span><span class="p">,</span>
+                    <span class="n">difference</span><span class="p">,</span>
+                    <span class="p">(</span>
+                        <span class="n">ConfigurationProvenance</span><span class="p">(</span>
+                            <span class="s2">&quot;adapter_setting&quot;</span><span class="p">,</span> <span class="s2">&quot;Host INIT worker configuration request&quot;</span>
+                        <span class="p">),</span>
+                        <span class="n">ConfigurationProvenance</span><span class="p">(</span>
+                            <span class="s2">&quot;engine_readback&quot;</span> <span class="k">if</span> <span class="n">verified</span> <span class="k">else</span> <span class="s2">&quot;unverified&quot;</span><span class="p">,</span>
+                            <span class="p">(</span>
+                                <span class="s2">&quot;Worker native runtime readback&quot;</span>
+                                <span class="k">if</span> <span class="n">verified</span>
+                                <span class="k">else</span> <span class="s2">&quot;Worker omitted an engine readback&quot;</span>
+                            <span class="p">),</span>
+                        <span class="p">),</span>
+                    <span class="p">),</span>
+                    <span class="n">reason</span><span class="o">=</span><span class="n">reason</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">fields</span>
 
     <span class="c1"># Same column-stability contract as the other backends: non-applicable</span>
     <span class="c1"># sub-steps report 0.0.</span>
@@ -1115,10 +1180,12 @@
             <span class="n">np</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slots</span><span class="p">[</span><span class="n">slot</span><span class="p">],</span> <span class="n">values</span><span class="p">)</span>
         <span class="n">randomization_wire</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">body_mass</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">randomization_wire</span><span class="p">[</span><span class="s2">&quot;body_mass&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">body_mass</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">geom_friction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">randomization_wire</span><span class="p">[</span><span class="s2">&quot;geom_friction&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">geom_friction</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="c1"># The subclass validator already fail-closed every unsupported term;</span>
+            <span class="c1"># forward each present field verbatim under its contract name.</span>
+            <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">dataclass_fields</span><span class="p">(</span><span class="n">ResetRandomizationPayload</span><span class="p">):</span>
+                <span class="n">values</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">field</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">values</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">randomization_wire</span><span class="p">[</span><span class="n">field</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
         <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="p">(</span>
             <span class="n">protocol</span><span class="o">.</span><span class="n">CMD_RESET_ENTITIES</span><span class="p">,</span>
             <span class="p">{</span>
@@ -1406,7 +1473,11 @@
                     <span class="p">)</span>
                 <span class="p">)</span>
         <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;dt&quot;</span><span class="p">,</span> <span class="s2">&quot;gravity&quot;</span><span class="p">,</span> <span class="s2">&quot;solver&quot;</span><span class="p">,</span> <span class="s2">&quot;integrator&quot;</span><span class="p">,</span> <span class="s2">&quot;collision_filter&quot;</span><span class="p">):</span>
-            <span class="n">requested</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sim_dt</span> <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="s2">&quot;dt&quot;</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">payload</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+            <span class="n">requested</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_sim_dt</span>
+                <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="s2">&quot;dt&quot;</span>
+                <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">payload</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+            <span class="p">)</span>
             <span class="n">value</span> <span class="o">=</span> <span class="n">effective</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">))</span>
             <span class="n">fields</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                 <span class="n">ConfigurationField</span><span class="p">(</span>
@@ -1417,6 +1488,8 @@
                     <span class="p">(</span><span class="n">ConfigurationProvenance</span><span class="p">(</span><span class="s2">&quot;adapter_setting&quot;</span><span class="p">,</span> <span class="s2">&quot;Native worker scene profile&quot;</span><span class="p">),),</span>
                 <span class="p">)</span>
             <span class="p">)</span>
+        <span class="n">entity_readback</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">envelope</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;engine_readback&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">())</span>
+        <span class="n">fields</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_worker_configuration_fields</span><span class="p">(</span><span class="n">effective</span><span class="p">,</span> <span class="n">entity_readback</span><span class="p">))</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_import_report</span> <span class="o">=</span> <span class="n">ImportReport</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">backend_type</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">fields</span><span class="p">),</span> <span class="n">lifecycle</span><span class="o">=</span><span class="s2">&quot;materialization&quot;</span>
         <span class="p">)</span>
@@ -1709,6 +1782,7 @@
                     <span class="s2">&quot;representations; native drive adoption is recorded.&quot;</span><span class="p">,</span>
                 <span class="p">)</span>
             <span class="n">normalized</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">replace</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="o">**</span><span class="n">changes</span><span class="p">)</span> <span class="k">if</span> <span class="n">changes</span> <span class="k">else</span> <span class="n">item</span><span class="p">)</span>
+        <span class="n">normalized</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_worker_configuration_fields</span><span class="p">(</span><span class="n">effective</span><span class="p">,</span> <span class="n">readback</span><span class="p">))</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_import_report</span> <span class="o">=</span> <span class="n">ImportReport</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">backend_type</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">normalized</span><span class="p">),</span> <span class="n">lifecycle</span><span class="o">=</span><span class="s2">&quot;materialization&quot;</span>
         <span class="p">)</span>
@@ -3045,6 +3119,10 @@
         <span class="k">if</span> <span class="n">kind</span> <span class="o">==</span> <span class="n">KIND_CONTACT_FOUND</span><span class="p">:</span>
             <span class="n">force</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slots</span><span class="p">[</span><span class="s2">&quot;contact_force&quot;</span><span class="p">][:,</span> <span class="n">body_id</span><span class="p">,</span> <span class="p">:]</span>
             <span class="k">return</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">force</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">kind</span> <span class="o">==</span> <span class="n">KIND_CONTACT_FORCE</span> <span class="ow">and</span> <span class="n">spec</span><span class="o">.</span><span class="n">target_body_name</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Wildcard body-net form: total contact force on the body summed</span>
+            <span class="c1"># over every contact it participates in (any contact object).</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slots</span><span class="p">[</span><span class="s2">&quot;contact_force&quot;</span><span class="p">][:,</span> <span class="n">body_id</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="si">}</span><span class="s2"> sensor kind </span><span class="si">{</span><span class="n">kind</span><span class="si">!r}</span><span class="s2"> is not implemented&quot;</span><span class="p">)</span>
 
 
@@ -3093,7 +3171,7 @@
       
     </aside>
   </div>
-</div><script src="../../../../_static/documentation_options.js?v=e3eff1ea"></script>
+</div><script src="../../../../_static/documentation_options.js?v=4aaf858c"></script>
     <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
     <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../../_static/scripts/furo.js?v=46bd48cc"></script>

@@ -6,7 +6,7 @@
         <link rel="canonical" href="https://unilabsim.github.io/UniLab-doc/_modules/unisim/backend/motrix/backend.html">
 
     <!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>unisim.backend.motrix.backend - UniLab 1.3.0 documentation</title>
+        <title>unisim.backend.motrix.backend - UniLab 1.3.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=d111a655" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
@@ -173,7 +173,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../../../index.html"><div class="brand">UniLab 1.3.0 documentation</div></a>
+      <a href="../../../../index.html"><div class="brand">UniLab 1.3.1 documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -194,7 +194,7 @@
       
       <div class="sidebar-sticky"><a class="sidebar-brand" href="../../../../index.html">
   
-  <span class="sidebar-brand-text">UniLab 1.3.0 documentation</span>
+  <span class="sidebar-brand-text">UniLab 1.3.1 documentation</span>
   
 </a><div class="sidebar-lang-switcher">
   <select class="sidebar-lang-switcher__select" aria-label="Language">
@@ -527,11 +527,18 @@
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Sequence</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">TypeVar</span><span class="p">,</span> <span class="n">cast</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">TypeVar</span><span class="p">,</span> <span class="n">cast</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="c1"># Type-only: motrixsim ships pyi stubs since 0.10.1, so pyright checks the</span>
+    <span class="c1"># fused-read signature when the SDK is present while mypy resolves the</span>
+    <span class="c1"># optional dependency as Any; runtime never executes this import.</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">motrixsim</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneData</span><span class="p">,</span> <span class="n">SceneModel</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span>
@@ -617,6 +624,66 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_first_scalar</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
     <span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
     <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">arr</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_validate_motrix_cpu_ids</span><span class="p">(</span><span class="n">cpu_ids</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Validate an explicit Motrix worker CPU block on the cold path.</span>
+
+<span class="sd">    Mirrors the MuJoCo ``BatchEnvPool`` affinity contract: ``cpu_ids[i]``</span>
+<span class="sd">    pins MotrixSim worker thread ``i`` (modulo the worker count), so entries</span>
+<span class="sd">    must be non-empty, unique, non-negative integers, and available to this</span>
+<span class="sd">    process.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">cpu_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">()</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cpu_ids</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">)):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;cpu_ids must be a sequence of integer CPU ids&quot;</span><span class="p">)</span>
+    <span class="n">entries</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">cpu_ids</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">entries</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;cpu_ids must be non-empty&quot;</span><span class="p">)</span>
+    <span class="n">ids</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">cpu_id</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cpu_id</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cpu_id</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cpu_ids entries must be non-negative integers, got </span><span class="si">{</span><span class="n">cpu_id</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">cpu_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">cpu_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cpu_id</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cpu_ids entries must be non-negative integers, got </span><span class="si">{</span><span class="n">cpu_id</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpu_id</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">ids</span><span class="p">))</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cpu_ids entries must be unique, got </span><span class="si">{</span><span class="n">ids</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">available</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">os</span><span class="p">,</span> <span class="s2">&quot;sched_getaffinity&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">available</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">missing</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span> <span class="o">-</span> <span class="n">available</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;cpu_ids entries </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2"> are not available to this process &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;(sched_getaffinity=</span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">available</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span><span class="si">}</span><span class="s2">)&quot;</span>
+            <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_configure_motrix_worker_affinity</span><span class="p">(</span><span class="n">cpu_ids</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Initialize MotrixSim&#39;s shared worker pool with explicit core pinning.</span>
+
+<span class="sd">    Cold path only: must run before the first MotrixSim model load, because</span>
+<span class="sd">    the shared pool is created once per process (the first step otherwise</span>
+<span class="sd">    lazy-creates it with the default one-worker-per-CPU policy). ``None``</span>
+<span class="sd">    leaves the default policy untouched. A pool that another backend in this</span>
+<span class="sd">    process already initialized keeps its mapping; the conflict degrades to a</span>
+<span class="sd">    warning instead of failing env construction.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ids</span> <span class="o">=</span> <span class="n">_validate_motrix_cpu_ids</span><span class="p">(</span><span class="n">cpu_ids</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">ids</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">mtx</span><span class="o">.</span><span class="n">init_thread_pool</span><span class="p">(</span><span class="n">core_ids</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">ids</span><span class="p">))</span>
+    <span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;MotrixSim shared worker pool was already initialized in this process; &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;cpu_ids=</span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span><span class="si">}</span><span class="s2"> was not applied: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">ids</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_contiguous_slice</span><span class="p">(</span><span class="n">indices</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
@@ -829,6 +896,7 @@
     <span class="n">_supports_joint_armature_override</span><span class="p">:</span> <span class="nb">bool</span>
     <span class="n">_supports_joint_frictionloss_override</span><span class="p">:</span> <span class="nb">bool</span>
     <span class="n">_closed</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">_cpu_ids</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span>
 
 <div class="viewcode-block" id="MotrixBackend.__init__">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.backend.MotrixBackend.html#unisim.backend.motrix.backend.MotrixBackend.__init__">[docs]</a>
@@ -842,6 +910,7 @@
         <span class="n">add_body_sensors</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">max_iterations</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">DEFAULT_MOTRIX_MAX_ITERATIONS</span><span class="p">,</span>
         <span class="n">push_body_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">cpu_ids</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="n">portable_mode</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">scene</span><span class="o">.</span><span class="n">entity_assets</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">portable_mode</span><span class="p">:</span>
@@ -865,6 +934,10 @@
         <span class="n">require_scene_composition_support</span><span class="p">(</span><span class="n">scene</span><span class="p">,</span> <span class="s2">&quot;motrix&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">MOTRIX_AVAILABLE</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span><span class="s2">&quot;motrixsim not available&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Must precede every model load: MotrixSim&#39;s shared worker pool is</span>
+        <span class="c1"># created once per process and the first load/step lazy-creates it.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_ids</span> <span class="o">=</span> <span class="n">_configure_motrix_worker_affinity</span><span class="p">(</span><span class="n">cpu_ids</span><span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_portable_mode</span> <span class="o">=</span> <span class="n">portable_mode</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_composed_scene</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
@@ -1335,7 +1408,6 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_render_offsets_np</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_render_tracking_camera</span><span class="p">:</span> <span class="n">MotrixTrackingCamera</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">backend_type</span> <span class="o">=</span> <span class="s2">&quot;motrix&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_link_velocity_cache</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
         <span class="c1"># Pre-cache link objects to avoid repeated get_link() lookups.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_link_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
@@ -2225,6 +2297,17 @@
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">data</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cpu_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;CPU block requested for MotrixSim workers, or ``None`` for the default policy.</span>
+
+<span class="sd">        Worker ``i`` is pinned to ``cpu_ids[i % len(cpu_ids)]``. The value is</span>
+<span class="sd">        the validated construction request; a pool already initialized by an</span>
+<span class="sd">        earlier MotrixSim user in this process keeps its own mapping (a</span>
+<span class="sd">        construction-time warning reports that conflict).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_ids</span>
 
     <span class="c1"># ------------------------------------------------------------------ #</span>
     <span class="c1"># Model properties                                                   #</span>
@@ -3978,6 +4061,45 @@
         <span class="p">)</span></div>
 
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fused_body_state_into</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">model</span><span class="p">:</span> <span class="s2">&quot;SceneModel&quot;</span><span class="p">,</span>
+        <span class="n">data</span><span class="p">:</span> <span class="s2">&quot;SceneData&quot;</span><span class="p">,</span>
+        <span class="n">ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">out_pos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">out_quat</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">out_lin_vel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">out_ang_vel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;One native selected-body read writing caller-owned buffers.</span>
+
+<span class="sd">        Uses MotrixSim&#39;s fused ``get_link_states`` so only the selected links</span>
+<span class="sd">        are gathered and no full-link Python arrays are materialized. The</span>
+<span class="sd">        native out path requires float32 C-contiguous buffers; anything else</span>
+<span class="sd">        keeps the dtype-agnostic SimBackend contract through one packed read</span>
+<span class="sd">        plus a casting copy.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">buffers</span> <span class="o">=</span> <span class="p">(</span><span class="n">out_pos</span><span class="p">,</span> <span class="n">out_quat</span><span class="p">,</span> <span class="n">out_lin_vel</span><span class="p">,</span> <span class="n">out_ang_vel</span><span class="p">)</span>
+        <span class="n">indices</span> <span class="o">=</span> <span class="n">ids</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span> <span class="ow">and</span> <span class="n">b</span><span class="o">.</span><span class="n">flags</span><span class="o">.</span><span class="n">c_contiguous</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">buffers</span><span class="p">):</span>
+            <span class="n">model</span><span class="o">.</span><span class="n">get_link_states</span><span class="p">(</span>
+                <span class="n">data</span><span class="p">,</span>
+                <span class="n">indices</span><span class="o">=</span><span class="n">indices</span><span class="p">,</span>
+                <span class="n">quat_order</span><span class="o">=</span><span class="s2">&quot;wxyz&quot;</span><span class="p">,</span>
+                <span class="n">out_pos</span><span class="o">=</span><span class="n">out_pos</span><span class="p">,</span>
+                <span class="n">out_quat</span><span class="o">=</span><span class="n">out_quat</span><span class="p">,</span>
+                <span class="n">out_linvel</span><span class="o">=</span><span class="n">out_lin_vel</span><span class="p">,</span>
+                <span class="n">out_angvel</span><span class="o">=</span><span class="n">out_ang_vel</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span>
+        <span class="n">pos</span><span class="p">,</span> <span class="n">quat</span><span class="p">,</span> <span class="n">lin_vel</span><span class="p">,</span> <span class="n">ang_vel</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">get_link_states</span><span class="p">(</span>
+            <span class="n">data</span><span class="p">,</span> <span class="n">indices</span><span class="o">=</span><span class="n">indices</span><span class="p">,</span> <span class="n">quat_order</span><span class="o">=</span><span class="s2">&quot;wxyz&quot;</span>
+        <span class="p">)</span>
+        <span class="n">out_pos</span><span class="p">[</span><span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="n">pos</span>
+        <span class="n">out_quat</span><span class="p">[</span><span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="n">quat</span>
+        <span class="n">out_lin_vel</span><span class="p">[</span><span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="n">lin_vel</span>
+        <span class="n">out_ang_vel</span><span class="p">[</span><span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="n">ang_vel</span>
+
 <div class="viewcode-block" id="MotrixBackend.copy_body_state_w">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.backend.MotrixBackend.html#unisim.backend.motrix.backend.MotrixBackend.copy_body_state_w">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">copy_body_state_w</span><span class="p">(</span>
@@ -3989,31 +4111,35 @@
         <span class="n">out_ang_vel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
         <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_as_body_ids</span><span class="p">(</span><span class="n">body_ids</span><span class="p">)</span>
-        <span class="n">poses_w</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_link_poses_w</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
-        <span class="n">out_pos</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">poses_w</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
-        <span class="n">out_pos</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">poses_w</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span>
-        <span class="n">out_pos</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">poses_w</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span>
-        <span class="n">out_quat</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">poses_w</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">6</span><span class="p">]</span>
-        <span class="n">out_quat</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">poses_w</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
-        <span class="n">out_quat</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">poses_w</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">4</span><span class="p">]</span>
-        <span class="n">out_quat</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">poses_w</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span>
-
-        <span class="n">link_velocity_cache</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_link_velocity_cache</span><span class="p">()</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_link_velocity_cache</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_link_velocity_cache</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span>
-            <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span>
-            <span class="mi">6</span><span class="p">,</span>
-        <span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_link_velocity_cache</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
-                <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span> <span class="mi">6</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_mode</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_require_portable_healthy</span><span class="p">(</span><span class="s2">&quot;copy body state&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">runtime</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_runtimes</span><span class="p">:</span>
+                <span class="n">rows</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">rows</span>
+                <span class="n">span</span> <span class="o">=</span> <span class="n">_contiguous_slice</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">span</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="c1"># A contiguous row block lets the caller&#39;s sliced views</span>
+                    <span class="c1"># stay C-contiguous and serve as native outputs directly.</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_fused_body_state_into</span><span class="p">(</span>
+                        <span class="n">runtime</span><span class="o">.</span><span class="n">model</span><span class="p">,</span>
+                        <span class="n">runtime</span><span class="o">.</span><span class="n">data</span><span class="p">,</span>
+                        <span class="n">ids</span><span class="p">,</span>
+                        <span class="n">out_pos</span><span class="p">[</span><span class="n">span</span><span class="o">.</span><span class="n">start</span> <span class="p">:</span> <span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">],</span>
+                        <span class="n">out_quat</span><span class="p">[</span><span class="n">span</span><span class="o">.</span><span class="n">start</span> <span class="p">:</span> <span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">],</span>
+                        <span class="n">out_lin_vel</span><span class="p">[</span><span class="n">span</span><span class="o">.</span><span class="n">start</span> <span class="p">:</span> <span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">],</span>
+                        <span class="n">out_ang_vel</span><span class="p">[</span><span class="n">span</span><span class="o">.</span><span class="n">start</span> <span class="p">:</span> <span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">],</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">pos</span><span class="p">,</span> <span class="n">quat</span><span class="p">,</span> <span class="n">lin_vel</span><span class="p">,</span> <span class="n">ang_vel</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">get_link_states</span><span class="p">(</span>
+                        <span class="n">runtime</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">indices</span><span class="o">=</span><span class="n">ids</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span> <span class="n">quat_order</span><span class="o">=</span><span class="s2">&quot;wxyz&quot;</span>
+                    <span class="p">)</span>
+                    <span class="n">out_pos</span><span class="p">[</span><span class="n">rows</span><span class="p">]</span> <span class="o">=</span> <span class="n">pos</span>
+                    <span class="n">out_quat</span><span class="p">[</span><span class="n">rows</span><span class="p">]</span> <span class="o">=</span> <span class="n">quat</span>
+                    <span class="n">out_lin_vel</span><span class="p">[</span><span class="n">rows</span><span class="p">]</span> <span class="o">=</span> <span class="n">lin_vel</span>
+                    <span class="n">out_ang_vel</span><span class="p">[</span><span class="n">rows</span><span class="p">]</span> <span class="o">=</span> <span class="n">ang_vel</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_fused_body_state_into</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">out_pos</span><span class="p">,</span> <span class="n">out_quat</span><span class="p">,</span> <span class="n">out_lin_vel</span><span class="p">,</span> <span class="n">out_ang_vel</span>
             <span class="p">)</span>
-        <span class="n">np</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="n">link_velocity_cache</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_link_velocity_cache</span><span class="p">)</span>
-        <span class="n">out_lin_vel</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_link_velocity_cache</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
-        <span class="n">out_lin_vel</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_link_velocity_cache</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span>
-        <span class="n">out_lin_vel</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_link_velocity_cache</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span>
-        <span class="n">out_ang_vel</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_link_velocity_cache</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
-        <span class="n">out_ang_vel</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_link_velocity_cache</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">4</span><span class="p">]</span>
-        <span class="n">out_ang_vel</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_link_velocity_cache</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span>
         <span class="k">return</span> <span class="n">out_pos</span><span class="p">,</span> <span class="n">out_quat</span><span class="p">,</span> <span class="n">out_lin_vel</span><span class="p">,</span> <span class="n">out_ang_vel</span></div>
 
 
@@ -4915,7 +5041,7 @@
       
     </aside>
   </div>
-</div><script src="../../../../_static/documentation_options.js?v=e3eff1ea"></script>
+</div><script src="../../../../_static/documentation_options.js?v=4aaf858c"></script>
     <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
     <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../../_static/scripts/furo.js?v=46bd48cc"></script>

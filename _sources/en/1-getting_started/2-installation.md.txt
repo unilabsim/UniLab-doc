@@ -108,8 +108,9 @@ pip install -e .
 # Regular install (omit -e) for a wheel-style deployment:
 # pip install .
 
-# Motrix, when needed:
-pip install motrixsim-core==0.8.2
+# Motrix, when needed (resolves the motrixsim runtime pinned by the
+# unisim-core motrix extra):
+pip install "unisim-core[motrix]"
 
 # MuJoCo, when needed (resolves the pinned mjbatch integration fork, built
 # against mujoco==3.11.0):

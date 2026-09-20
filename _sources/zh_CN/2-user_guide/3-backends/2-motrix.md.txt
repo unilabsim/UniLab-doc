@@ -1,8 +1,8 @@
 # Motrix 后端
 
-Motrix 是一个可选后端，通过 `motrix` extra 安装。在 `pyproject.toml` 中固定的
-软件包是 `motrixsim-core==0.8.2`，适配层位于
-`unisim.backend.motrix` 下。
+Motrix 是一个可选后端，通过 `motrix` extra 安装。该 extra 委托给
+`unisim-core[motrix]`，runtime 版本固定在 UniSim 的 `pyproject.toml`
+中，适配层位于 `unisim.backend.motrix` 下。
 
 ## 安装
 

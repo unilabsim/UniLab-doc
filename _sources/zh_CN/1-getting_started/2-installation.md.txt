@@ -100,8 +100,8 @@ pip install -e .
 # wheel 风格的常规安装（去掉 -e）：
 # pip install .
 
-# 需要 Motrix 时：
-pip install motrixsim-core==0.8.2
+# 需要 Motrix 时（解析 unisim-core motrix extra 固定的 motrixsim runtime）：
+pip install "unisim-core[motrix]"
 
 # 需要 MuJoCo 时（解析钉住的 mjbatch 集成 fork，针对 mujoco==3.11.0 构建）：
 pip install "mujoco~=3.11.0" "mjbatch @ git+https://github.com/unilabsim/mjbatch.git@cf4a83d"
