@@ -1050,18 +1050,35 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">inject_mujoco_tracking_sensors</span><span class="p">(</span>
     <span class="n">model_file</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">baselink_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">tracked_body_names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">,</span> <span class="nb">list</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Inject tracking sensors for the MuJoCo backend.</span>
 
-<span class="sd">    The generated sensors track every body in the world frame (``_w``). When</span>
-<span class="sd">    ``baselink_name`` is provided, sensors in the baselink-relative frame</span>
-<span class="sd">    (``_b``) are added as well.</span>
+<span class="sd">    By default, the generated sensors track every named body in the world frame</span>
+<span class="sd">    (``_w``). ``tracked_body_names`` narrows that injection to an exact named-body</span>
+<span class="sd">    selection. When ``baselink_name`` is selected, sensors in the</span>
+<span class="sd">    baselink-relative frame (``_b``) are added as well.</span>
 
 <span class="sd">    Returns:</span>
 <span class="sd">        (tmp_xml_path, tracked_body_ids, valid_bnames)</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">mujoco</span> <span class="o">=</span> <span class="n">_mujoco_module</span><span class="p">()</span>
-    <span class="n">tracked_body_ids</span><span class="p">,</span> <span class="n">valid_bnames</span> <span class="o">=</span> <span class="n">get_named_bodies</span><span class="p">(</span><span class="n">model_file</span><span class="p">)</span>
+    <span class="n">tracked_body_ids</span><span class="p">,</span> <span class="n">all_bnames</span> <span class="o">=</span> <span class="n">get_named_bodies</span><span class="p">(</span><span class="n">model_file</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">tracked_body_names</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">valid_bnames</span> <span class="o">=</span> <span class="n">all_bnames</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">known_names</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">all_bnames</span><span class="p">)</span>
+        <span class="n">requested</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">tracked_body_names</span><span class="p">))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">requested</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tracked_body_names must contain at least one body name&quot;</span><span class="p">)</span>
+        <span class="n">missing</span> <span class="o">=</span> <span class="p">[</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">requested</span> <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">known_names</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;tracked_body_names reference bodies missing from the model: </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">valid_bnames</span> <span class="o">=</span> <span class="n">requested</span>
+        <span class="n">name_to_id</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">all_bnames</span><span class="p">,</span> <span class="n">tracked_body_ids</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+        <span class="n">tracked_body_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">name_to_id</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">valid_bnames</span><span class="p">]</span>
 
     <span class="n">spec</span> <span class="o">=</span> <span class="n">mujoco</span><span class="o">.</span><span class="n">MjSpec</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="n">model_file</span><span class="p">)</span>
     <span class="n">_add_w_sensors</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="n">valid_bnames</span><span class="p">)</span>

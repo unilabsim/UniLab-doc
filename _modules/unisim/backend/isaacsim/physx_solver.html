@@ -530,9 +530,10 @@
 <span class="sd">through the cold INIT payload, and strictly compares the worker&#39;s engine</span>
 <span class="sd">readback against the request.  The external worker re-validates the payload,</span>
 <span class="sd">maps the values onto IsaacLab&#39;s ``sim_utils.PhysxCfg`` plus per-collision-shape</span>
-<span class="sd">contact offsets, and reads the applied settings back from the USD stage for</span>
-<span class="sd">its configuration report.  No engine SDK is imported at module scope, so the</span>
-<span class="sd">host interpreter stays SDK-free; the ``stage`` helpers run worker-side only.</span>
+<span class="sd">contact/rest offsets and a per-rigid-body max depenetration velocity, and reads</span>
+<span class="sd">the applied settings back from the USD stage for its configuration report.  No</span>
+<span class="sd">engine SDK is imported at module scope, so the host interpreter stays</span>
+<span class="sd">SDK-free; the ``stage`` helpers run worker-side only.</span>
 
 <span class="sd">SimToolReal/MuJoCo-style substeps are intentionally not part of this set: the</span>
 <span class="sd">subprocess contract already expresses them as the ``step(ctrl, nsteps)``</span>
@@ -551,12 +552,19 @@
 <span class="n">SOLVER_VELOCITY_ITERATION_FIELD</span> <span class="o">=</span> <span class="s2">&quot;solver_velocity_iteration_count&quot;</span>
 <span class="n">BOUNCE_THRESHOLD_FIELD</span> <span class="o">=</span> <span class="s2">&quot;bounce_threshold_velocity&quot;</span>
 <span class="n">CONTACT_OFFSET_FIELD</span> <span class="o">=</span> <span class="s2">&quot;contact_offset&quot;</span>
+<span class="n">REST_OFFSET_FIELD</span> <span class="o">=</span> <span class="s2">&quot;rest_offset&quot;</span>
+<span class="n">MAX_DEPENETRATION_VELOCITY_FIELD</span> <span class="o">=</span> <span class="s2">&quot;max_depenetration_velocity&quot;</span>
 
 <span class="n">PHYSX_SOLVER_ITERATION_FIELDS</span> <span class="o">=</span> <span class="p">(</span>
     <span class="n">SOLVER_POSITION_ITERATION_FIELD</span><span class="p">,</span>
     <span class="n">SOLVER_VELOCITY_ITERATION_FIELD</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="n">PHYSX_SOLVER_FLOAT_FIELDS</span> <span class="o">=</span> <span class="p">(</span><span class="n">BOUNCE_THRESHOLD_FIELD</span><span class="p">,</span> <span class="n">CONTACT_OFFSET_FIELD</span><span class="p">)</span>
+<span class="n">PHYSX_SOLVER_FLOAT_FIELDS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="n">BOUNCE_THRESHOLD_FIELD</span><span class="p">,</span>
+    <span class="n">CONTACT_OFFSET_FIELD</span><span class="p">,</span>
+    <span class="n">REST_OFFSET_FIELD</span><span class="p">,</span>
+    <span class="n">MAX_DEPENETRATION_VELOCITY_FIELD</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="n">PHYSX_SOLVER_FIELDS</span> <span class="o">=</span> <span class="n">PHYSX_SOLVER_ITERATION_FIELDS</span> <span class="o">+</span> <span class="n">PHYSX_SOLVER_FLOAT_FIELDS</span>
 
 
@@ -596,6 +604,8 @@
     <span class="n">solver_velocity_iteration_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">bounce_threshold_velocity</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">contact_offset</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">rest_offset</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">max_depenetration_velocity</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">solver_position_iteration_count</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -635,6 +645,36 @@
                 <span class="bp">self</span><span class="p">,</span>
                 <span class="s2">&quot;contact_offset&quot;</span><span class="p">,</span>
                 <span class="n">_validated_float</span><span class="p">(</span><span class="n">CONTACT_OFFSET_FIELD</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">contact_offset</span><span class="p">,</span> <span class="n">allow_zero</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rest_offset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span>
+                <span class="bp">self</span><span class="p">,</span>
+                <span class="s2">&quot;rest_offset&quot;</span><span class="p">,</span>
+                <span class="n">_validated_float</span><span class="p">(</span><span class="n">REST_OFFSET_FIELD</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">rest_offset</span><span class="p">,</span> <span class="n">allow_zero</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">contact_offset</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># PhysX requires restOffset &lt;= contactOffset; without an</span>
+                <span class="c1"># explicit contact offset the engine picks a shape-dependent</span>
+                <span class="c1"># default, so the relationship cannot be verified.</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;rest_offset requires an explicit contact_offset because PhysX &quot;</span>
+                    <span class="s2">&quot;requires rest_offset &lt;= contact_offset&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rest_offset</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">contact_offset</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;rest_offset must not exceed contact_offset &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;(PhysX requires rest_offset &lt;= contact_offset), got &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;rest_offset=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">rest_offset</span><span class="si">!r}</span><span class="s2"> &gt; contact_offset=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">contact_offset</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_depenetration_velocity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span>
+                <span class="bp">self</span><span class="p">,</span>
+                <span class="s2">&quot;max_depenetration_velocity&quot;</span><span class="p">,</span>
+                <span class="n">_validated_float</span><span class="p">(</span>
+                    <span class="n">MAX_DEPENETRATION_VELOCITY_FIELD</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">max_depenetration_velocity</span><span class="p">,</span>
+                    <span class="n">allow_zero</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="p">),</span>
             <span class="p">)</span>
 
 <div class="viewcode-block" id="PhysxSolverConfig.configured_fields">
@@ -721,15 +761,24 @@
 
 
 
-<div class="viewcode-block" id="apply_contact_offset">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.physx_solver.apply_contact_offset.html#unisim.backend.isaacsim.physx_solver.apply_contact_offset">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">apply_contact_offset</span><span class="p">(</span><span class="n">stage</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">contact_offset</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Author one contact offset on every collision shape (worker-side only).</span>
+<div class="viewcode-block" id="apply_collision_offsets">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.physx_solver.apply_collision_offsets.html#unisim.backend.isaacsim.physx_solver.apply_collision_offsets">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">apply_collision_offsets</span><span class="p">(</span>
+    <span class="n">stage</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">contact_offset</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">rest_offset</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Author collision offsets on every collision shape (worker-side only).</span>
 
-<span class="sd">    The contact offset lives on ``PhysxSchema.PhysxCollisionAPI`` (plain</span>
-<span class="sd">    ``UsdPhysics.CollisionAPI`` has no such attribute), so the API is applied</span>
-<span class="sd">    to every collision prim before the value is authored.</span>
+<span class="sd">    The offsets live on ``PhysxSchema.PhysxCollisionAPI`` (plain</span>
+<span class="sd">    ``UsdPhysics.CollisionAPI`` has no such attributes), so the API is applied</span>
+<span class="sd">    to every collision prim before values are authored.  PhysX requires</span>
+<span class="sd">    ``restOffset &lt;= contactOffset``; ``PhysxSolverConfig`` validates the</span>
+<span class="sd">    relationship before the worker applies it here.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">contact_offset</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">rest_offset</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;apply_collision_offsets requires at least one offset&quot;</span><span class="p">)</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">pxr</span><span class="w"> </span><span class="kn">import</span> <span class="n">PhysxSchema</span><span class="p">,</span> <span class="n">UsdPhysics</span>  <span class="c1"># type: ignore[import-not-found]</span>
 
     <span class="n">applied</span> <span class="o">=</span> <span class="mi">0</span>
@@ -739,42 +788,99 @@
         <span class="n">physx_api</span> <span class="o">=</span> <span class="n">PhysxSchema</span><span class="o">.</span><span class="n">PhysxCollisionAPI</span><span class="p">(</span><span class="n">prim</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">physx_api</span><span class="p">:</span>
             <span class="n">physx_api</span> <span class="o">=</span> <span class="n">PhysxSchema</span><span class="o">.</span><span class="n">PhysxCollisionAPI</span><span class="o">.</span><span class="n">Apply</span><span class="p">(</span><span class="n">prim</span><span class="p">)</span>
-        <span class="n">physx_api</span><span class="o">.</span><span class="n">CreateContactOffsetAttr</span><span class="p">()</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">contact_offset</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">contact_offset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">physx_api</span><span class="o">.</span><span class="n">CreateContactOffsetAttr</span><span class="p">()</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">contact_offset</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">rest_offset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">physx_api</span><span class="o">.</span><span class="n">CreateRestOffsetAttr</span><span class="p">()</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">rest_offset</span><span class="p">))</span>
         <span class="n">applied</span> <span class="o">+=</span> <span class="mi">1</span>
     <span class="k">if</span> <span class="n">applied</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-            <span class="s2">&quot;isaacsim contact_offset was requested but the stage has no collision prims&quot;</span>
+            <span class="s2">&quot;isaacsim collision offsets were requested but the stage has no collision prims&quot;</span>
         <span class="p">)</span>
     <span class="k">return</span> <span class="n">applied</span></div>
 
 
 
+<div class="viewcode-block" id="apply_max_depenetration_velocity">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.physx_solver.apply_max_depenetration_velocity.html#unisim.backend.isaacsim.physx_solver.apply_max_depenetration_velocity">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">apply_max_depenetration_velocity</span><span class="p">(</span><span class="n">stage</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">max_depenetration_velocity</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Author one max depenetration velocity on every rigid body (worker-side only).</span>
+
+<span class="sd">    PhysX 5 expresses the depenetration velocity cap per rigid body</span>
+<span class="sd">    (``physxRigidBody:maxDepenetrationVelocity``); the bundled IsaacSim PhysX</span>
+<span class="sd">    schema has no scene-level attribute.  The value lives on</span>
+<span class="sd">    ``PhysxSchema.PhysxRigidBodyAPI``, so the API is applied to every rigid</span>
+<span class="sd">    body prim before the value is authored, mirroring the IsaacGym</span>
+<span class="sd">    ``sim_params.physx.max_depenetration_velocity`` semantics that apply the</span>
+<span class="sd">    cap to every actor.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">pxr</span><span class="w"> </span><span class="kn">import</span> <span class="n">PhysxSchema</span><span class="p">,</span> <span class="n">UsdPhysics</span>  <span class="c1"># type: ignore[import-not-found]</span>
+
+    <span class="n">applied</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">prim</span> <span class="ow">in</span> <span class="n">stage</span><span class="o">.</span><span class="n">Traverse</span><span class="p">():</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">prim</span><span class="o">.</span><span class="n">HasAPI</span><span class="p">(</span><span class="n">UsdPhysics</span><span class="o">.</span><span class="n">RigidBodyAPI</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">physx_api</span> <span class="o">=</span> <span class="n">PhysxSchema</span><span class="o">.</span><span class="n">PhysxRigidBodyAPI</span><span class="p">(</span><span class="n">prim</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">physx_api</span><span class="p">:</span>
+            <span class="n">physx_api</span> <span class="o">=</span> <span class="n">PhysxSchema</span><span class="o">.</span><span class="n">PhysxRigidBodyAPI</span><span class="o">.</span><span class="n">Apply</span><span class="p">(</span><span class="n">prim</span><span class="p">)</span>
+        <span class="n">physx_api</span><span class="o">.</span><span class="n">CreateMaxDepenetrationVelocityAttr</span><span class="p">()</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">max_depenetration_velocity</span><span class="p">))</span>
+        <span class="n">applied</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">applied</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="s2">&quot;isaacsim max_depenetration_velocity was requested but the stage has &quot;</span>
+            <span class="s2">&quot;no rigid body prims&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">applied</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_authored_offset_values</span><span class="p">(</span>
+    <span class="n">stage</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">offset_attr</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plural</span><span class="p">:</span> <span class="nb">str</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">set</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Collect authored per-collision-shape offsets, failing closed on gaps.&quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">pxr</span><span class="w"> </span><span class="kn">import</span> <span class="n">PhysxSchema</span><span class="p">,</span> <span class="n">UsdPhysics</span>  <span class="c1"># type: ignore[import-not-found]</span>
+
+    <span class="n">values</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">prim</span> <span class="ow">in</span> <span class="n">stage</span><span class="o">.</span><span class="n">Traverse</span><span class="p">():</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">prim</span><span class="o">.</span><span class="n">HasAPI</span><span class="p">(</span><span class="n">UsdPhysics</span><span class="o">.</span><span class="n">CollisionAPI</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">prim</span><span class="o">.</span><span class="n">HasAPI</span><span class="p">(</span><span class="n">PhysxSchema</span><span class="o">.</span><span class="n">PhysxCollisionAPI</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;isaacsim collision prim is missing its PhysxCollisionAPI; &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;the </span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2"> readback would silently use engine defaults&quot;</span>
+            <span class="p">)</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">PhysxSchema</span><span class="o">.</span><span class="n">PhysxCollisionAPI</span><span class="p">(</span><span class="n">prim</span><span class="p">),</span> <span class="n">offset_attr</span><span class="p">)()</span><span class="o">.</span><span class="n">Get</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;isaacsim collision prim has no authored </span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">; &quot;</span>
+                <span class="s2">&quot;the readback would silently use engine defaults&quot;</span>
+            <span class="p">)</span>
+        <span class="n">values</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">values</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;isaacsim stage has no authored collision </span><span class="si">{</span><span class="n">plural</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">values</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;isaacsim collision shapes report non-uniform </span><span class="si">{</span><span class="n">plural</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">values</span>
+
+
 <div class="viewcode-block" id="read_engine_solver_values">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacsim.physx_solver.read_engine_solver_values.html#unisim.backend.isaacsim.physx_solver.read_engine_solver_values">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">read_engine_solver_values</span><span class="p">(</span>
-    <span class="n">stage</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">include_contact_offset</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">stage</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">include_contact_offset</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">include_rest_offset</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">include_max_depenetration_velocity</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Read the applied solver settings back from the USD stage (worker-side only).&quot;&quot;&quot;</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">pxr</span><span class="w"> </span><span class="kn">import</span> <span class="n">PhysxSchema</span><span class="p">,</span> <span class="n">UsdPhysics</span>  <span class="c1"># type: ignore[import-not-found]</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">pxr</span><span class="w"> </span><span class="kn">import</span> <span class="n">PhysxSchema</span>  <span class="c1"># type: ignore[import-not-found]</span>
 
     <span class="n">scene_api</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">offsets</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
     <span class="k">for</span> <span class="n">prim</span> <span class="ow">in</span> <span class="n">stage</span><span class="o">.</span><span class="n">Traverse</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">scene_api</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">prim</span><span class="o">.</span><span class="n">HasAPI</span><span class="p">(</span><span class="n">PhysxSchema</span><span class="o">.</span><span class="n">PhysxSceneAPI</span><span class="p">):</span>
             <span class="n">scene_api</span> <span class="o">=</span> <span class="n">PhysxSchema</span><span class="o">.</span><span class="n">PhysxSceneAPI</span><span class="p">(</span><span class="n">prim</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">include_contact_offset</span> <span class="ow">and</span> <span class="n">prim</span><span class="o">.</span><span class="n">HasAPI</span><span class="p">(</span><span class="n">UsdPhysics</span><span class="o">.</span><span class="n">CollisionAPI</span><span class="p">):</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">prim</span><span class="o">.</span><span class="n">HasAPI</span><span class="p">(</span><span class="n">PhysxSchema</span><span class="o">.</span><span class="n">PhysxCollisionAPI</span><span class="p">):</span>
-                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                    <span class="s2">&quot;isaacsim collision prim is missing its PhysxCollisionAPI; &quot;</span>
-                    <span class="s2">&quot;the contact offset readback would silently use engine defaults&quot;</span>
-                <span class="p">)</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="n">PhysxSchema</span><span class="o">.</span><span class="n">PhysxCollisionAPI</span><span class="p">(</span><span class="n">prim</span><span class="p">)</span><span class="o">.</span><span class="n">GetContactOffsetAttr</span><span class="p">()</span><span class="o">.</span><span class="n">Get</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)):</span>
-                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                    <span class="s2">&quot;isaacsim collision prim has no authored contact offset; &quot;</span>
-                    <span class="s2">&quot;the readback would silently use engine defaults&quot;</span>
-                <span class="p">)</span>
-            <span class="n">offsets</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
     <span class="k">if</span> <span class="n">scene_api</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
             <span class="s2">&quot;isaacsim stage has no PhysxSceneAPI; solver settings cannot be read back&quot;</span>
@@ -791,16 +897,59 @@
         <span class="n">BOUNCE_THRESHOLD_FIELD</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">scene_api</span><span class="o">.</span><span class="n">GetBounceThresholdAttr</span><span class="p">()</span><span class="o">.</span><span class="n">Get</span><span class="p">()),</span>
     <span class="p">}</span>
     <span class="k">if</span> <span class="n">include_contact_offset</span><span class="p">:</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">offsets</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;isaacsim stage has no authored collision contact offsets&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">offsets</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;isaacsim collision shapes report non-uniform contact offsets: &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">offsets</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="p">)</span>
-        <span class="n">result</span><span class="p">[</span><span class="n">CONTACT_OFFSET_FIELD</span><span class="p">]</span> <span class="o">=</span> <span class="n">offsets</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+        <span class="n">result</span><span class="p">[</span><span class="n">CONTACT_OFFSET_FIELD</span><span class="p">]</span> <span class="o">=</span> <span class="n">_authored_offset_values</span><span class="p">(</span>
+            <span class="n">stage</span><span class="p">,</span>
+            <span class="n">offset_attr</span><span class="o">=</span><span class="s2">&quot;GetContactOffsetAttr&quot;</span><span class="p">,</span>
+            <span class="n">label</span><span class="o">=</span><span class="s2">&quot;contact offset&quot;</span><span class="p">,</span>
+            <span class="n">plural</span><span class="o">=</span><span class="s2">&quot;contact offsets&quot;</span><span class="p">,</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">include_rest_offset</span><span class="p">:</span>
+        <span class="n">result</span><span class="p">[</span><span class="n">REST_OFFSET_FIELD</span><span class="p">]</span> <span class="o">=</span> <span class="n">_authored_offset_values</span><span class="p">(</span>
+            <span class="n">stage</span><span class="p">,</span>
+            <span class="n">offset_attr</span><span class="o">=</span><span class="s2">&quot;GetRestOffsetAttr&quot;</span><span class="p">,</span>
+            <span class="n">label</span><span class="o">=</span><span class="s2">&quot;rest offset&quot;</span><span class="p">,</span>
+            <span class="n">plural</span><span class="o">=</span><span class="s2">&quot;rest offsets&quot;</span><span class="p">,</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">include_max_depenetration_velocity</span><span class="p">:</span>
+        <span class="n">result</span><span class="p">[</span><span class="n">MAX_DEPENETRATION_VELOCITY_FIELD</span><span class="p">]</span> <span class="o">=</span> <span class="n">_authored_rigid_body_values</span><span class="p">(</span>
+            <span class="n">stage</span><span class="p">,</span>
+            <span class="n">api_attr</span><span class="o">=</span><span class="s2">&quot;GetMaxDepenetrationVelocityAttr&quot;</span><span class="p">,</span>
+            <span class="n">label</span><span class="o">=</span><span class="s2">&quot;max depenetration velocity&quot;</span><span class="p">,</span>
+            <span class="n">plural</span><span class="o">=</span><span class="s2">&quot;max depenetration velocities&quot;</span><span class="p">,</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
     <span class="k">return</span> <span class="n">result</span></div>
 
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_authored_rigid_body_values</span><span class="p">(</span>
+    <span class="n">stage</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">api_attr</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plural</span><span class="p">:</span> <span class="nb">str</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">set</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Collect authored per-rigid-body values, failing closed on gaps.&quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">pxr</span><span class="w"> </span><span class="kn">import</span> <span class="n">PhysxSchema</span><span class="p">,</span> <span class="n">UsdPhysics</span>  <span class="c1"># type: ignore[import-not-found]</span>
+
+    <span class="n">values</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">prim</span> <span class="ow">in</span> <span class="n">stage</span><span class="o">.</span><span class="n">Traverse</span><span class="p">():</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">prim</span><span class="o">.</span><span class="n">HasAPI</span><span class="p">(</span><span class="n">UsdPhysics</span><span class="o">.</span><span class="n">RigidBodyAPI</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">prim</span><span class="o">.</span><span class="n">HasAPI</span><span class="p">(</span><span class="n">PhysxSchema</span><span class="o">.</span><span class="n">PhysxRigidBodyAPI</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;isaacsim rigid body prim is missing its PhysxRigidBodyAPI; &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;the </span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2"> readback would silently use engine defaults&quot;</span>
+            <span class="p">)</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">PhysxSchema</span><span class="o">.</span><span class="n">PhysxRigidBodyAPI</span><span class="p">(</span><span class="n">prim</span><span class="p">),</span> <span class="n">api_attr</span><span class="p">)()</span><span class="o">.</span><span class="n">Get</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;isaacsim rigid body prim has no authored </span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">; &quot;</span>
+                <span class="s2">&quot;the readback would silently use engine defaults&quot;</span>
+            <span class="p">)</span>
+        <span class="n">values</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">values</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;isaacsim stage has no authored rigid body </span><span class="si">{</span><span class="n">plural</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">values</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;isaacsim rigid bodies report non-uniform </span><span class="si">{</span><span class="n">plural</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">values</span>
 </pre></div>
         </article>
       </div>
