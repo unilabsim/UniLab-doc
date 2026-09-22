@@ -23,11 +23,11 @@ uv run eval  --algo ppo --task go2_joystick_flat --sim motrix --load-run -1
 
 ## What the guard covers
 
-Fields are classified by dotted path into three tiers (see `src/unilab/training/sim2sim.py`):
+Fields are classified by dotted path into three tiers (see `src/unilab/utils/sim2sim.py`):
 
 | Tier | Behavior | Fields |
 |---|---|---|
-| **DENYLIST** | Mismatch → `CrossBackendIncompatibleError`, aborts | `algo.obs_groups`, legacy `env.control_config.action_scale`, Manager-Based `env.observations` / `env.actions` / policy and critic group mapping, `algo.policy.actor_hidden_dims` / `critic_hidden_dims`, `algo.empirical_normalization` / `algo.obs_normalization`, `env.sampling_mode` |
+| **DENYLIST** | Mismatch → `CrossBackendIncompatibleError`, aborts | `algo.obs_groups`, legacy `env.control_config.action_scale`, Manager-Based `env.observations` / `env.actions` / policy and critic group mapping, `algo.actor.hidden_dims` / `algo.critic.hidden_dims`, `algo.actor.obs_normalization` / `algo.critic.obs_normalization` / `algo.obs_normalization`, `env.sampling_mode` |
 | **WARNING_LIST** | Prints a warning, continues | `reward.*`, `env.control_config.simulate_action_latency`, `env.ctrl_dt` |
 | **ALLOWLIST** | Free to override, not checked | `training.sim_backend`, `env.scene`, `training.play_steps`, `env.noise_config`, `env.commands.vel_limit` |
 

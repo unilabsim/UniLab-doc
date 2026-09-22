@@ -12,7 +12,7 @@ summary close to the code paths.
 `src/unilab/scripts/train_rsl_rl.py` composes Hydra config,
 calls registry bootstrap, constructs the env through `registry.make(...)`, and runs
 the learner in the same process. The RSL-RL path adapts `NpEnv` through
-`src/unilab/training/rsl_rl.py`.
+`src/unilab/rl/`.
 
 ### Async APPO And Off-Policy Paths
 

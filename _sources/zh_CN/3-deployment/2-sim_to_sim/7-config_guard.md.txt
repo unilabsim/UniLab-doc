@@ -23,11 +23,11 @@ uv run eval  --algo ppo --task go2_joystick_flat --sim motrix --load-run -1
 
 ## 守卫的字段
 
-守卫按 dotted path 分三档（定义见 `src/unilab/training/sim2sim.py`）：
+守卫按 dotted path 分三档（定义见 `src/unilab/utils/sim2sim.py`）：
 
 | 档位 | 行为 | 字段 |
 |---|---|---|
-| **DENYLIST** | 差异即 `CrossBackendIncompatibleError`，中断 | `algo.obs_groups`、legacy `env.control_config.action_scale`、Manager-Based `env.observations` / `env.actions` / policy 与 critic group mapping、`algo.policy.actor_hidden_dims` / `critic_hidden_dims`、`algo.empirical_normalization` / `algo.obs_normalization`、`env.sampling_mode` |
+| **DENYLIST** | 差异即 `CrossBackendIncompatibleError`，中断 | `algo.obs_groups`、legacy `env.control_config.action_scale`、Manager-Based `env.observations` / `env.actions` / policy 与 critic group mapping、`algo.actor.hidden_dims` / `algo.critic.hidden_dims`、`algo.actor.obs_normalization` / `algo.critic.obs_normalization` / `algo.obs_normalization`、`env.sampling_mode` |
 | **WARNING_LIST** | 仅打印 warning，继续 | `reward.*`、`env.control_config.simulate_action_latency`、`env.ctrl_dt` |
 | **ALLOWLIST** | 自由覆盖，不检查 | `training.sim_backend`、`env.scene`、`training.play_steps`、`env.noise_config`、`env.commands.vel_limit` |
 

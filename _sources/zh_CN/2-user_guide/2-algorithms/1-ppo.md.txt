@@ -1,8 +1,12 @@
 # PPO
 
 PPO 是默认的同步 on-policy 训练路径。它使用 `src/unilab/scripts/train_rsl_rl.py`，从
-`src/unilab/conf/ppo/config.yaml` 组合配置，并运行 `uni_rl.algos.rsl_rl_ppo` (unilab-rl repo)
-和 `src/unilab/training/rsl_rl.py` 中的 RSL-RL 适配代码。
+`src/unilab/conf/ppo/config.yaml` 组合配置，并直接驱动上游 RSL-RL（rsl-rl-lib）：
+`unilab.rl.RslRlVecEnvAdapter` 把 env 适配到 RSL-RL 的 `VecEnv` 契约，
+由 RSL-RL 自己的 `OnPolicyRunner` 训练 `rsl_rl.algorithms:PPO`。配置采用 RSL-RL v5
+原生 schema —— `algo.actor:` / `algo.critic:` 模型块（如
+`class_name: rsl_rl.models.MLPModel`、`hidden_dims`、`obs_normalization`），外加
+`algo.algorithm:` 块（`class_name: rsl_rl.algorithms:PPO`）。
 
 ## 快速开始
 
@@ -74,7 +78,7 @@ playback。`run_summary.json` 记录 world size、每 rank/全局环境数、每
 episode 统计仍是 rank 0 的本地视角。
 
 RSL-RL 启动后不会同步 observation normalizer buffer 或环境 curriculum 状态。因此，
-启用 empirical normalization 的 task（包括当前 Go2 flat owner）保留 rank-local
+启用 observation normalization（`algo.actor.obs_normalization`，包括当前 Go2 flat owner）的 task 保留 rank-local
 统计，checkpoint 保存 rank 0 的副本。这是上游 RSL-RL 的分布式语义，不是先拼接
 全局 rollout 再训练的 PPO。
 

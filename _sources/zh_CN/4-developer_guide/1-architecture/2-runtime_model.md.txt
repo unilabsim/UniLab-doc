@@ -13,7 +13,7 @@
 调用 registry bootstrap、通过 `registry.make(...)` 构造 env，并在同一进程内运行
 learner。默认配置保持单进程；`training.devices` 指定多张卡时，父进程通过 PyTorch
 elastic launcher 启动本机 worker，worker 再进入同一脚本完成上述构造。RSL-RL 路径
-通过 `src/unilab/training/rsl_rl.py` 适配 `NpEnv`。
+通过 `src/unilab/rl/` 适配 `NpEnv`。
 
 多卡时每个 rank 按配置创建完整的 `algo.num_envs`、policy copy 与 rollout storage，
 数据和 GAE 不跨 rank 交换。RSL-RL 负责 startup model broadcast、adaptive-KL 标量

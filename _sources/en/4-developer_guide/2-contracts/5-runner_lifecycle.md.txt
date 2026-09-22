@@ -17,8 +17,8 @@ The training scripts follow the same high-level sequence:
 
 ## Runtime-Specific Owners
 
-- `src/unilab/scripts/train_rsl_rl.py` uses `RslRlVecEnvWrapper` and RSL-RL's
-  `OnPolicyRunner`.
+- `src/unilab/scripts/train_rsl_rl.py` uses
+  `unilab.rl.RslRlVecEnvAdapter` and RSL-RL's `OnPolicyRunner`.
 - `src/unilab/scripts/train_appo.py` uses `APPORunner`, `RolloutRingBuffer`, and
   `SharedWeightSync`.
 - `src/unilab/scripts/train_sac.py`, `src/unilab/scripts/train_td3.py`, and

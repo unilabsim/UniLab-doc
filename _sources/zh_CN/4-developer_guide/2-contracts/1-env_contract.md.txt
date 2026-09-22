@@ -27,7 +27,7 @@ Env 契约由 `src/unilab/base/base.py` 与 `src/unilab/base/np_env.py` 在代�
 
 - Env base 契约：`src/unilab/base/base.py`
 - Numpy env 状态：`src/unilab/base/np_env.py`
-- RSL-RL 适配边界：`src/unilab/training/rsl_rl.py`
+- RSL-RL 适配边界：`src/unilab/rl/vec_env.py`
 - Final observation helper：`src/unilab/base/final_observation.py`
 - 测试：`tests/base/test_np_env.py`、`tests/utils/test_final_observation.py`、
   `tests/ipc/`

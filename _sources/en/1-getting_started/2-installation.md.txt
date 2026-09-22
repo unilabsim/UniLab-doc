@@ -57,21 +57,21 @@ brew install cmake
 Choose one core setup path:
 
 ```bash
-# Full default setup: MuJoCo + Motrix, with shell completion.
+# Full default setup: MuJoCo + Motrix + uni_rl, with shell completion.
 make setup
 
 # Fastest path for the first Motrix demo.
 # make setup-motrix
 ```
 
-`make setup` runs `uv sync --extra mujoco --extra motrix` and installs shell
-completion. `make setup-motrix` runs `uv sync --extra motrix` and installs the
-same completion entry. Run only one of these paths. If `make` is unavailable,
-run the matching commands directly:
+`make setup` runs `uv sync --extra mujoco --extra motrix --extra uni_rl` and
+installs shell completion. `make setup-motrix` runs `uv sync --extra motrix`
+and installs the same completion entry. Run only one of these paths. If `make`
+is unavailable, run the matching commands directly:
 
 ```bash
 # Full default setup:
-uv sync --extra mujoco --extra motrix
+uv sync --extra mujoco --extra motrix --extra uni_rl
 uv run --no-sync unilab-complete install
 
 # Motrix only:
@@ -196,6 +196,22 @@ runtime variables, renderer requirements, and verification commands:
 - {doc}`IsaacGym <../2-user_guide/3-backends/3-isaacgym>`
 - {doc}`IsaacSim <../2-user_guide/3-backends/4-isaacsim>`
 
+## Algorithm Extras
+
+PPO training and playback run directly on `rsl-rl-lib`, which the base package
+installs. The optional `uni_rl` extra adds the `uni_rl` runtime
+(`unilab-rl`), required only for APPO, the off-policy algorithms (SAC/TD3),
+and multi-GPU data-parallel PPO launches (`training.devices` with more than
+one entry):
+
+```bash
+uv sync --extra uni_rl
+# or, from PyPI:
+pip install unilab[uni_rl]
+```
+
+`make setup` already includes this extra.
+
 ## Switching The Local MuJoCo Version
 
 The `mujoco` extra declares `mujoco~=3.11.0`, and the `mjbatch` batch engine
@@ -292,7 +308,7 @@ For a local package mirror, set the uv index before syncing:
 
 ```bash
 export UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-uv sync --extra mujoco --extra motrix \
+uv sync --extra mujoco --extra motrix --extra uni_rl \
   --index-url https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 

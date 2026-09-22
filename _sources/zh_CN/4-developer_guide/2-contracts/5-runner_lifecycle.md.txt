@@ -15,8 +15,8 @@ runner；它们不应另起第二套 collector/learner 协议。
 
 ## 各运行时的 owner
 
-- `src/unilab/scripts/train_rsl_rl.py` 使用 `RslRlVecEnvWrapper` 与 RSL-RL 的
-  `OnPolicyRunner`。
+- `src/unilab/scripts/train_rsl_rl.py` 使用
+  `unilab.rl.RslRlVecEnvAdapter` 与 RSL-RL 的 `OnPolicyRunner`。
 - `src/unilab/scripts/train_appo.py` 使用 `APPORunner`、`RolloutRingBuffer` 与
   `SharedWeightSync`。
 - `src/unilab/scripts/train_sac.py`、`src/unilab/scripts/train_td3.py` 与 `src/unilab/scripts/train_flashsac.py`

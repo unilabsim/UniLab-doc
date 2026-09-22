@@ -1,7 +1,8 @@
 # 从 RSL-RL 迁移
 
-你已经在独立使用 RSL-RL 了？好消息：UniLab 把 RSL-RL PPO 作为其受支持算法之一
-（`uni_rl.algos.rsl_rl_ppo`）提供，而且几乎是即插即用的。
+你已经在独立使用 RSL-RL 了？好消息：UniLab 直接驱动上游 RSL-RL PPO
+（`unilab.rl` 把 env 适配给 `rsl_rl.runners.OnPolicyRunner`），
+而且几乎是即插即用的。
 
 ## 迁移进 UniLab 后你能获得什么
 

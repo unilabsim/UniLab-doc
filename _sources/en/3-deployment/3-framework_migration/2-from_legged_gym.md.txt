@@ -14,7 +14,7 @@ mostly mechanical.
 | `_reward_*` methods | owner `reward` terms + `unilab.managers.reward_manager` |
 | `command_ranges` | task owner YAML's `env.commands` block |
 | Terrain curriculum | {doc}`../../2-user_guide/6-terrain/1-procedural` |
-| RSL-RL PPO | `uni_rl.algos.rsl_rl_ppo` |
+| RSL-RL PPO | upstream `rsl_rl.algorithms:PPO` via `unilab.rl` |
 
 ## What's new
 

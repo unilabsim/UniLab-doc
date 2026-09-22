@@ -1,9 +1,13 @@
 # PPO
 
 PPO is the default synchronous on-policy training path. It uses
-`src/unilab/scripts/train_rsl_rl.py`, composes from `src/unilab/conf/ppo/config.yaml`, and runs the
-RSL-RL adapter code in `uni_rl.algos.rsl_rl_ppo` (unilab-rl repo) and
-`src/unilab/training/rsl_rl.py`.
+`src/unilab/scripts/train_rsl_rl.py`, composes from `src/unilab/conf/ppo/config.yaml`, and drives
+upstream RSL-RL (rsl-rl-lib) directly: `unilab.rl.RslRlVecEnvAdapter`
+adapts the env to RSL-RL's `VecEnv` contract, and RSL-RL's own `OnPolicyRunner`
+trains `rsl_rl.algorithms:PPO`. The config follows the native RSL-RL v5 schema —
+`algo.actor:` / `algo.critic:` model blocks (e.g. `class_name: rsl_rl.models.MLPModel`,
+`hidden_dims`, `obs_normalization`) plus an `algo.algorithm:` block with
+`class_name: rsl_rl.algorithms:PPO`.
 
 ## Quick Start
 
@@ -80,10 +84,10 @@ env counts, samples per iteration, and aggregate training throughput. RSL-RL's
 statistics remain rank-0-local.
 
 RSL-RL does not synchronize observation-normalizer buffers or environment
-curriculum state after startup. Consequently, tasks with empirical
-normalization (including the current Go2 flat owner) keep rank-local statistics,
-and the checkpoint contains rank 0's copy. This is the upstream RSL-RL
-distributed semantic, not global-rollout PPO.
+curriculum state after startup. Consequently, tasks with observation
+normalization (`algo.actor.obs_normalization`, including the current Go2 flat
+owner) keep rank-local statistics, and the checkpoint contains rank 0's copy.
+This is the upstream RSL-RL distributed semantic, not global-rollout PPO.
 
 The integrated launcher is single-node only. The repository has two-GPU MuJoCo
 smoke coverage for `go2_joystick_flat` and `g1_motion_tracking`; this does not

@@ -10,8 +10,9 @@ changing behavior.
 | `src/unilab/conf/` | Hydra roots and task owner YAMLs. The top-level CLI exposes backend selection as `--task` plus `--sim`, then composes the matching owner YAML. |
 | `src/unilab/base/` | Registry, env state, scene, and backend contracts. |
 | `src/unilab/envs/` | Task env implementations and task-specific reset, reward, observation, and DR logic. |
-| `uni_rl` (unilab-rl repo) | PPO, APPO, and off-policy algorithm code. |
+| `uni_rl` (unilab-rl repo) | APPO and off-policy algorithm code. |
 | `uni_rl.ipc` (unilab-rl repo) | Shared-memory and async runner primitives. |
+| `src/unilab/rl/` | The direct RSL-RL PPO integration (VecEnv adapter and distributed helpers). |
 | `src/unilab/training/` | Shared training helpers for logging, playback, seed handling, and config guards. |
 | `src/unilab/visualization/` | Playback, rendering, NaN inspection, and scene/export utilities. |
 | `tests/` | Contract, config, env, algorithm, script, and integration tests. |

@@ -17,9 +17,12 @@ Change no code — only adjust the Hydra config under `src/unilab/conf/<algo>/`:
 - Each task×backend combination maps to one owner YAML:
   `src/unilab/conf/<algo>/task/<task>/<backend>.yaml`;
 - Swapping policy / algorithm implementation classes works through the
-  `class_name` dotted path in the owner YAML (in-repo example:
-  `uni_rl.algos.rsl_rl_ppo:FinalObservationAwarePPO` in
-  `src/unilab/conf/ppo/config.yaml`), with no new code path required.
+  `class_name` dotted paths in the owner YAML (in-repo example:
+  `algorithm.class_name: rsl_rl.algorithms:PPO` in
+  `src/unilab/conf/ppo/config.yaml` — any `rsl_rl.algorithms:PPO`-compatible
+  class works; the `algo.actor:` / `algo.critic:` model classes follow the same
+  mechanism and are resolved by rsl-rl's `resolve_callable`), with no new code
+  path required.
 
 ### 2. `runtime_resolver`: Algorithm Code In Your Own Repository
 
@@ -38,11 +41,12 @@ Contract:
 - Signature is `(rl_cfg: dict) -> Runtime | None`; returning `None` falls back
   to the algorithm's default runtime;
 - The returned object must carry `runner_cls`; depending on the algorithm
-  family it may optionally carry `play_fn` (APPO style) or `wrapper_cls`
-  (PPO style);
-- Resolution happens on the uni_rl side (`uni_rl.algos.appo.runtime` /
-  `uni_rl.algos.rsl_rl_runtime`); the dotted path may point at any importable
-  module.
+  family it may optionally carry `play_fn` (APPO style);
+- Resolution happens on the uni_rl side (`uni_rl.algos.appo.runtime`); the
+  dotted path may point at any importable module. The PPO path no longer uses
+  `runtime_resolver` — it drives upstream RSL-RL directly through
+  `unilab.rl`, so PPO customization goes through the `class_name`
+  config keys (tier 1).
 
 ### 3. Fork unilab_rl: Modify `uni_rl/algos/`
 

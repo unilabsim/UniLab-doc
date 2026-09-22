@@ -17,7 +17,9 @@
   `src/unilab/conf/<algo>/task/<task>/<backend>.yaml`；
 - 替换策略 / 算法实现类可以走 owner YAML 中的 `class_name` dotted path
   （仓内实例：`src/unilab/conf/ppo/config.yaml` 中的
-  `uni_rl.algos.rsl_rl_ppo:FinalObservationAwarePPO`），无需新增代码路径。
+  `algorithm.class_name: rsl_rl.algorithms:PPO` —— 任何与
+  `rsl_rl.algorithms:PPO` 兼容的类都可以；`algo.actor:` / `algo.critic:`
+  模型类同理，均由 rsl-rl 的 `resolve_callable` 解析），无需新增代码路径。
 
 ### 2. `runtime_resolver`：算法代码放在自己的仓库
 
@@ -34,10 +36,11 @@ algo:
 
 - 签名为 `(rl_cfg: dict) -> Runtime | None`；返回 `None` 表示回落到该算法的
   默认 runtime；
-- 返回对象必须携带 `runner_cls`；按算法族可选携带 `play_fn`（APPO 风格）
-  或 `wrapper_cls`（PPO 风格）；
-- 解析发生在 uni_rl 侧（`uni_rl.algos.appo.runtime` /
-  `uni_rl.algos.rsl_rl_runtime`），dotted path 可以指向任何可 import 的模块。
+- 返回对象必须携带 `runner_cls`；按算法族可选携带 `play_fn`（APPO 风格）；
+- 解析发生在 uni_rl 侧（`uni_rl.algos.appo.runtime`），dotted path 可以指向
+  任何可 import 的模块。PPO 路径不再使用 `runtime_resolver` —— 它通过
+  `unilab.rl` 直接驱动上游 RSL-RL，因此 PPO 的定制化走
+  `class_name` 配置键（第一档）。
 
 ### 3. fork unilab_rl：改 `uni_rl/algos/`
 

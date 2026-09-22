@@ -61,13 +61,13 @@ make setup
 # make setup-motrix
 ```
 
-`make setup` 会运行 `uv sync --extra mujoco --extra motrix` 并安装 shell 自动补全。
+`make setup` 会运行 `uv sync --extra mujoco --extra motrix --extra uni_rl` 并安装 shell 自动补全。
 `make setup-motrix` 会运行 `uv sync --extra motrix` 并安装相同的补全条目。
 两条路径只选择一条。如果 `make` 不可用，可运行对应的底层命令：
 
 ```bash
 # 完整默认环境：
-uv sync --extra mujoco --extra motrix
+uv sync --extra mujoco --extra motrix --extra uni_rl
 uv run --no-sync unilab-complete install
 
 # 仅 Motrix：
@@ -176,6 +176,20 @@ Drake、IsaacGym 和 IsaacSim 的 setup 脚本会将外部 runtime 安装到仓�
 - {doc}`IsaacGym <../2-user_guide/3-backends/3-isaacgym>`
 - {doc}`IsaacSim <../2-user_guide/3-backends/4-isaacsim>`
 
+## 算法 Extras
+
+PPO 训练与回放直接运行在 `rsl-rl-lib` 之上，基础 package 已包含该依赖。可选的
+`uni_rl` extra 提供 `uni_rl` runtime（`unilab-rl`），仅 APPO、off-policy
+算法（SAC/TD3）以及多卡数据并行 PPO（`training.devices` 配置多项）需要：
+
+```bash
+uv sync --extra uni_rl
+# 或从 PyPI 安装：
+pip install unilab[uni_rl]
+```
+
+`make setup` 已包含该 extra。
+
 ## 切换本地 MuJoCo 版本
 
 `mujoco` extra 声明 `mujoco~=3.11.0`，`mjbatch` batch 引擎针对
@@ -260,7 +274,7 @@ Intel XPU 说明：
 
 ```bash
 export UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-uv sync --extra mujoco --extra motrix \
+uv sync --extra mujoco --extra motrix --extra uni_rl \
   --index-url https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 

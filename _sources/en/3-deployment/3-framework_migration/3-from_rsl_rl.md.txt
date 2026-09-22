@@ -1,8 +1,8 @@
 # Migrating from RSL-RL
 
-You're already using RSL-RL standalone? Good news: UniLab ships RSL-RL PPO
-as one of its supported algorithms (`uni_rl.algos.rsl_rl_ppo`)
-and it's nearly drop-in.
+You're already using RSL-RL standalone? Good news: UniLab drives upstream
+RSL-RL PPO directly (`unilab.rl` adapts the env to
+`rsl_rl.runners.OnPolicyRunner`) and it's nearly drop-in.
 
 ## What you gain by moving inside UniLab
 

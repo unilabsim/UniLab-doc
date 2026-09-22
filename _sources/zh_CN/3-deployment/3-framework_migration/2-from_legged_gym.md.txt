@@ -13,7 +13,7 @@ Legged Gym 曾是那套 GPU 常驻的 PPO 模板，教会了整个领域如何�
 | `_reward_*` 方法 | owner 的 `reward` term + `unilab.managers.reward_manager` |
 | `command_ranges` | 任务 owner YAML 的 `env.commands` 块 |
 | 地形课程 | {doc}`../../2-user_guide/6-terrain/1-procedural` |
-| RSL-RL PPO | `uni_rl.algos.rsl_rl_ppo` |
+| RSL-RL PPO | 上游 `rsl_rl.algorithms:PPO`，经由 `unilab.rl` |
 
 ## 有哪些新东西
 

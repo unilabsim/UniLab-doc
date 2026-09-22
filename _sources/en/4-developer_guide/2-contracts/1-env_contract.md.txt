@@ -28,7 +28,7 @@ The env contract is code-owned by `src/unilab/base/base.py` and
 
 - Env base contract: `src/unilab/base/base.py`
 - Numpy env state: `src/unilab/base/np_env.py`
-- RSL-RL adapter boundary: `src/unilab/training/rsl_rl.py`
+- RSL-RL adapter boundary: `src/unilab/rl/vec_env.py`
 - Final observation helper: `src/unilab/base/final_observation.py`
 - Tests: `tests/base/test_np_env.py`, `tests/utils/test_final_observation.py`,
   `tests/ipc/`
