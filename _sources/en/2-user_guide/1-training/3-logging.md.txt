@@ -8,7 +8,7 @@ persistent backend, which keeps each unsmoothed iteration value.
 
 This page first covers the log directory shared by all algorithms and the
 Manager-Based reward metric contract, then documents the off-policy terminal used by
-SAC / TD3 / FlashSAC and APPO. Every terminal field in the tables maps directly to one
+SAC / FlashSAC and APPO. Every terminal field in the tables maps directly to one
 backend key; an `_ms` suffix always means milliseconds.
 
 ## Log Directory and Backend
@@ -28,7 +28,6 @@ stack overrides `training.log_root` or `training.log_dir`:
 | APPO | `logs/appo/<task>/` | `src/unilab/conf/appo/config.yaml` |
 | SAC | `logs/fast_sac/<task>/` | `src/unilab/conf/sac/config.yaml` |
 | FlashSAC | `logs/flash_sac/<task>/` | `src/unilab/conf/flashsac/config.yaml` |
-| TD3 | `logs/fast_td3/<task>/` | `src/unilab/conf/td3/config.yaml` |
 
 A run directory is named `YYYY-MM-DD_HH-MM-SS_<sim_backend>`, for example
 `2026-03-09_18-30-00_mujoco`. Common artifacts include `run_config.json`,
@@ -154,7 +153,7 @@ with `perf/learner_accounted_pct` plus `perf/learner_other_pct`.
 
 ### Collector Timeline
 
-SAC / TD3 / FlashSAC record four mutually exclusive hot-path phases per vectorized
+SAC / FlashSAC record four mutually exclusive hot-path phases per vectorized
 env tick. Terminal percentages use `perf/collector_cycle_ms`, the sum of these four
 phases:
 

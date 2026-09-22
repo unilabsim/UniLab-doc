@@ -1,6 +1,6 @@
 # 从 skrl 迁移
 
-skrl 的强项在于算法广度。UniLab 专注于一组精选算法（PPO、SAC、TD3，以及若干
+skrl 的强项在于算法广度。UniLab 专注于一组精选算法（PPO、SAC，以及若干
 优化变体），但增加了一条真实硬件部署路径。
 
 ## 把 skrl 概念映射到 UniLab

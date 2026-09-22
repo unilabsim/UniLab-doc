@@ -25,8 +25,8 @@ The main config roots are:
 
 - `src/unilab/conf/ppo/config.yaml` for torch PPO.
 - `src/unilab/conf/appo/config.yaml` for APPO.
-- `src/unilab/conf/sac/config.yaml`, `src/unilab/conf/td3/config.yaml`, and
-  `src/unilab/conf/flashsac/config.yaml` for SAC, TD3, and FlashSAC, each with its
+- `src/unilab/conf/sac/config.yaml` and
+  `src/unilab/conf/flashsac/config.yaml` for SAC and FlashSAC, each with its
   algorithm hyperparameters inlined.
 
 Task owner YAMLs are the backend identity. Examples:

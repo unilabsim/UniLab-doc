@@ -101,7 +101,7 @@ uv run train --algo ppo --task go2_joystick_flat --sim motrix \
 :::{grid-item-card} 挑选算法
 :link: 2-user_guide/2-algorithms/0-index
 :link-type: doc
-对比 PPO、APPO、SAC、TD3 和 FlashSAC 的入口。
+对比 PPO、APPO、SAC 和 FlashSAC 的入口。
 :::
 
 :::{grid-item-card} 部署或切换仿真
@@ -131,7 +131,7 @@ flowchart LR
   env --> backend["SimBackend<br/>unisim-core adapters"]
   env --> factory["EnvFactory contract"]
   factory --> runtime["Runner / IPC<br/>unilab-rl async runtime"]
-  runtime --> learner["Learner<br/>PPO / APPO / SAC / TD3"]
+  runtime --> learner["Learner<br/>PPO / APPO / SAC"]
 ```
 
 承载核心的 contract 记录在
@@ -146,8 +146,8 @@ recommendation 元数据。
 
 | 机器人 / 任务族 | 有仓库证据的算法路径 | 后端证据 |
 | --- | --- | --- |
-| Go2 joystick | PPO、FlashSAC、TD3 | PPO 有已测试的 MuJoCo 与 Motrix 行。FlashSAC 有 `go2_joystick_flat` 的 MuJoCo owner YAML；TD3 有 `go2_joystick_flat` 的 Motrix owner YAML。 |
-| G1 reference locomotion / tracking | PPO、APPO、SAC、TD3 | PPO、APPO、SAC 都为保留的 G1 任务提供了已提交的 MuJoCo 与 Motrix owner YAML；TD3 有一个 `g1_walk_flat` 的 MuJoCo owner。 |
+| Go2 joystick | PPO、FlashSAC | PPO 有已测试的 MuJoCo 与 Motrix 行。FlashSAC 有 `go2_joystick_flat` 的 MuJoCo owner YAML。 |
+| G1 reference locomotion / tracking | PPO、APPO、SAC | PPO、APPO、SAC 都为保留的 G1 任务提供了已提交的 MuJoCo 与 Motrix owner YAML。 |
 | Allegro in-hand | PPO、APPO | PPO 和 APPO 为 Allegro in-hand 任务提供了已提交的 MuJoCo 与 Motrix owner YAML。 |
 
 Unitree production 任务族由 `unitree_rl_unilab` 维护，不计入核心仓库证据。

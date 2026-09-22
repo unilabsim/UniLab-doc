@@ -200,7 +200,7 @@ runtime variables, renderer requirements, and verification commands:
 
 PPO training and playback run directly on `rsl-rl-lib`, which the base package
 installs. The optional `uni_rl` extra adds the `uni_rl` runtime
-(`unilab-rl`), required only for APPO, the off-policy algorithms (SAC/TD3),
+(`unilab-rl`), required only for APPO, the off-policy algorithms (SAC),
 and multi-GPU data-parallel PPO launches (`training.devices` with more than
 one entry):
 

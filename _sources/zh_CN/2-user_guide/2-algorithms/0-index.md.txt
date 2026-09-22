@@ -8,7 +8,6 @@
 | PPO | 同步 on-policy | `src/unilab/scripts/train_rsl_rl.py` | `src/unilab/conf/ppo/config.yaml` |
 | APPO | 异步 on-policy | `src/unilab/scripts/train_appo.py` | `src/unilab/conf/appo/config.yaml` |
 | SAC | off-policy | `src/unilab/scripts/train_sac.py` | `src/unilab/conf/sac/config.yaml` |
-| TD3 | off-policy | `src/unilab/scripts/train_td3.py` | `src/unilab/conf/td3/config.yaml` |
 | FlashSAC | off-policy | `src/unilab/scripts/train_flashsac.py` | `src/unilab/conf/flashsac/config.yaml` |
 
 ```{toctree}
@@ -17,6 +16,5 @@
 1-ppo
 2-appo
 3-sac
-4-td3
-5-flash_sac
+4-flash_sac
 ```

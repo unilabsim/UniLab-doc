@@ -7,7 +7,7 @@
 
 - PPO 与 APPO 的 owner YAML 使用
   `src/unilab/conf/{ppo,appo}/task/<task>/<backend>.yaml`。
-- Off-policy 算法（SAC / TD3 / FlashSAC）各自有独立的配置树：
+- Off-policy 算法（SAC / FlashSAC）各自有独立的配置树：
   `src/unilab/conf/<algo>/task/<task>/<backend>.yaml`。
 
 ## 必需语义
@@ -27,7 +27,7 @@
 
 - PPO owner 示例：`src/unilab/conf/ppo/task/go2_joystick_flat/mujoco.yaml`
 - APPO config 根目录：`src/unilab/conf/appo/config.yaml`
-- Off-policy config 根目录：`src/unilab/conf/{sac,td3,flashsac}/config.yaml`
+- Off-policy config 根目录：`src/unilab/conf/{sac,flashsac}/config.yaml`
 - Config 测试：`tests/config/test_config_system.py`、
   `tests/scripts/test_train_script_configs.py`、
   `tests/envs/locomotion/g1/test_g1_owner_contract.py`

@@ -2,7 +2,7 @@
 
 Training in UniLab is config-first. Use the package CLI for day-to-day runs and
 the script entrypoints when debugging the underlying Hydra composition.
-Off-policy SAC, TD3, and FlashSAC runs use one learner device per training
+Off-policy SAC and FlashSAC runs use one learner device per training
 process.
 
 ::::{grid} 1 1 2 2

@@ -21,7 +21,7 @@ The training scripts follow the same high-level sequence:
   `unilab.rl.RslRlVecEnvAdapter` and RSL-RL's `OnPolicyRunner`.
 - `src/unilab/scripts/train_appo.py` uses `APPORunner`, `RolloutRingBuffer`, and
   `SharedWeightSync`.
-- `src/unilab/scripts/train_sac.py`, `src/unilab/scripts/train_td3.py`, and
+- `src/unilab/scripts/train_sac.py` and
   `src/unilab/scripts/train_flashsac.py` use off-policy runners with `ReplayBuffer` and
   `SharedWeightSync`.
 - `AsyncRunner` owns collector process lifecycle and shared-resource cleanup for

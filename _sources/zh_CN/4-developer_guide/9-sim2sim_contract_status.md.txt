@@ -45,7 +45,7 @@ uv run scripts/audit_sim2sim_contracts.py
 
 ## 其它配置树
 
-`src/unilab/conf/sac/task`、`src/unilab/conf/td3/task`、`src/unilab/conf/flashsac/task`
+`src/unilab/conf/sac/task` 与 `src/unilab/conf/flashsac/task`
 均无 mujoco↔motrix 配对，sim2sim 不适用。
 
 ## 字段语义速查

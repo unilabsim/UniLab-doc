@@ -1,7 +1,7 @@
 # Migrating from skrl
 
 skrl's strength is algorithm breadth. UniLab focuses on a curated set
-(PPO, SAC, TD3 with several optimized variants) but adds a real-hardware
+(PPO, SAC with several optimized variants) but adds a real-hardware
 deployment path.
 
 ## Mapping skrl concepts to UniLab

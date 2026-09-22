@@ -77,7 +77,7 @@ uv run train --algo sac --task g1_walk_flat --sim mujoco
 Owner YAML 位置：
 
 - PPO / APPO：`src/unilab/conf/{ppo,appo}/task/<task>/<backend>.yaml`
-- Off-policy（SAC / TD3 / FlashSAC）：`src/unilab/conf/<algo>/task/<task>/<backend>.yaml`
+- Off-policy（SAC / FlashSAC）：`src/unilab/conf/<algo>/task/<task>/<backend>.yaml`
 
 被选中的 owner YAML 将 `training.sim_backend` 设为身份字段。
 

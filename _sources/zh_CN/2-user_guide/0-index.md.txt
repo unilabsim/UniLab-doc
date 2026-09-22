@@ -15,7 +15,7 @@ CLI 路由、Hydra owner YAML、日志、检查点与 Docker。
 :::{grid-item-card} 算法
 :link: 2-algorithms/0-index
 :link-type: doc
-对比 PPO、APPO、SAC、TD3 与 FlashSAC。
+对比 PPO、APPO、SAC 与 FlashSAC。
 :::
 
 :::{grid-item-card} 后端

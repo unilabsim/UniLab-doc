@@ -40,7 +40,7 @@ in English. Do not infer support beyond the evidence grade shown below.
 | Grade | Repository Evidence |
 | --- | --- |
 | `Registered` | The env/backend pair exists in `registry.list_registered_envs()` after `ensure_registries()`. |
-| `Configured` | A matching owner YAML exists under `src/unilab/conf/{ppo,appo,sac,td3,flashsac}/task/...`. |
+| `Configured` | A matching owner YAML exists under `src/unilab/conf/{ppo,appo,sac,flashsac}/task/...`. |
 | `Tested` | Automated tests under `tests/` cover the entrypoint/task-owner/backend combination, or an explicit maintainer full-training validation with near-risk automated tests exists. `Tested` here does not mean the default recommended path. |
 | `Benchmarked` | A checked-in benchmark manifest exists for the combination. |
 | `Recommended` | Explicit recommendation metadata exists in the repo. |
@@ -69,7 +69,7 @@ recommendation metadata in the repo, so rows do not auto-promote to
 
 `isaacsim` is a Python 3.11 subprocess backend. Its bounded materialization
 and headless-physics smoke evidence is intentionally not promoted to `Tested`:
-the G1 PPO/SAC cells below are `Configured`, while APPO/TD3/FlashSAC remain
+the G1 PPO/SAC cells below are `Configured`, while APPO/FlashSAC remain
 `Registered`. Do not label these cells `Tested` until a maintainer records full
 training evidence. Contact-force sensors, domain randomization, and all native
 rendering/playback paths remain unsupported.
@@ -97,8 +97,6 @@ rendering/playback paths remain unsupported.
 | SAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Configured | Tested | Configured | Configured | Configured | Configured | - |
 | SAC (torch) | `g1_flip_tracking` (G1 flip tracking) | Tested | - | Registered | - | - | - | - | - |
 | SAC (torch) | `g1_wbt_obs` (g1 wbt obs) | Tested | - | Registered | - | - | - | - | - |
-| TD3 (torch) | `go2_joystick_flat` (Go2 joystick) | Registered | - | Tested | - | - | - | - | Registered |
-| TD3 (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Registered | Registered | Registered | Registered | Registered | Registered | - |
 | FlashSAC (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | - | Registered | - | - | - | - | Registered |
 | FlashSAC (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Configured | Tested | Registered | Registered | Registered | Registered | - |
 | FlashSAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Configured | Tested | Registered | Configured | Registered | Configured | - |
@@ -108,7 +106,7 @@ rendering/playback paths remain unsupported.
 - Registry bootstrap: `src/unilab/envs/**` decorators via
   `unilab.base.registry.ensure_registries()`.
 - Owner YAML scan: `src/unilab/conf/ppo/task/**`, `src/unilab/conf/appo/task/**`,
-  `src/unilab/conf/sac/task/**`, `src/unilab/conf/td3/task/**`, `src/unilab/conf/flashsac/task/**`.
+  `src/unilab/conf/sac/task/**`, `src/unilab/conf/flashsac/task/**`.
 - Generic compose coverage:
   `tests/config/test_config_system.py::test_supported_task_composes`.
 - Validated mjwarp entrypoints are explicitly recorded in

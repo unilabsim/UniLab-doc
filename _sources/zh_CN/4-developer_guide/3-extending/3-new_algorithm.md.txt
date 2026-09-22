@@ -59,7 +59,7 @@ algo:
 2. `src/unilab/scripts/train_<algo>.py` —— 入口脚本，保持为组装层薄壳：
    compose Hydra、调用 `ensure_registries()`、通过 registry 路径构造 env，
    然后把控制权交给 runner 或 trainer。薄壳先例：`train_sac.py` /
-   `train_td3.py` / `train_flashsac.py` 复用 `train_offpolicy.py` 的共享实现。
+   `train_flashsac.py` 复用 `train_offpolicy.py` 的共享实现。
 
 除此之外，每个 task×backend 组合需要 owner YAML
 `src/unilab/conf/<algo>/task/<task>/<backend>.yaml`。未知 algo 会

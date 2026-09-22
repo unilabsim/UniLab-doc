@@ -108,7 +108,7 @@ capability requirements.
 :::{grid-item-card} Pick an algorithm
 :link: 2-user_guide/2-algorithms/0-index
 :link-type: doc
-Compare PPO, APPO, SAC, TD3, and FlashSAC entrypoints.
+Compare PPO, APPO, SAC, and FlashSAC entrypoints.
 :::
 
 :::{grid-item-card} Deploy or switch sims
@@ -138,7 +138,7 @@ flowchart LR
   env --> backend["SimBackend<br/>unisim-core adapters"]
   env --> factory["EnvFactory contract"]
   factory --> runtime["Runner / IPC<br/>unilab-rl async runtime"]
-  runtime --> learner["Learner<br/>PPO / APPO / SAC / TD3"]
+  runtime --> learner["Learner<br/>PPO / APPO / SAC"]
 ```
 
 The load-bearing contracts are documented in
@@ -153,8 +153,8 @@ committed benchmark manifest or separate recommendation metadata.
 
 | Robot / task family | Algorithm paths with repo evidence | Backend evidence |
 | --- | --- | --- |
-| Go2 joystick | PPO, FlashSAC, TD3 | PPO has tested MuJoCo and Motrix rows. FlashSAC has MuJoCo owner YAMLs for `go2_joystick_flat`; TD3 has a Motrix owner YAML for `go2_joystick_flat`. |
-| G1 reference locomotion / tracking | PPO, APPO, SAC, TD3 | PPO, APPO, and SAC include committed MuJoCo and Motrix owner YAMLs for retained G1 tasks; TD3 has a `g1_walk_flat` MuJoCo owner. |
+| Go2 joystick | PPO, FlashSAC | PPO has tested MuJoCo and Motrix rows. FlashSAC has MuJoCo owner YAMLs for `go2_joystick_flat`. |
+| G1 reference locomotion / tracking | PPO, APPO, SAC | PPO, APPO, and SAC include committed MuJoCo and Motrix owner YAMLs for retained G1 tasks. |
 | Allegro in-hand | PPO, APPO | PPO and APPO have committed MuJoCo and Motrix owner YAMLs for Allegro in-hand tasks. |
 
 Unitree production task families are maintained in `unitree_rl_unilab` and are

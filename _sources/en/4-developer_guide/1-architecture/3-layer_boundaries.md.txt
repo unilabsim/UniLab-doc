@@ -35,4 +35,4 @@ standard is {doc}`/zh_CN/4-developer_guide/0-index`.
 - Registry construction path: `src/unilab/base/registry.py`
 - Training entrypoints: `src/unilab/scripts/train_rsl_rl.py`,
   `src/unilab/scripts/train_appo.py`, `src/unilab/scripts/train_sac.py`,
-  `src/unilab/scripts/train_td3.py`, `src/unilab/scripts/train_flashsac.py`
+  `src/unilab/scripts/train_flashsac.py`

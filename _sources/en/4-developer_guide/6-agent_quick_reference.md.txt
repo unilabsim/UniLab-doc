@@ -11,8 +11,8 @@ repo facts.
 - Algorithms index: {doc}`../2-user_guide/2-algorithms/0-index`
 - PPO entrypoint: `src/unilab/scripts/train_rsl_rl.py`
 - APPO entrypoint: `src/unilab/scripts/train_appo.py`
-- SAC / TD3 / FlashSAC entrypoints: `src/unilab/scripts/train_sac.py` /
-  `src/unilab/scripts/train_td3.py` / `src/unilab/scripts/train_flashsac.py`
+- SAC / FlashSAC entrypoints: `src/unilab/scripts/train_sac.py` /
+  `src/unilab/scripts/train_flashsac.py`
 
 ## Contracts To Keep In Mind
 

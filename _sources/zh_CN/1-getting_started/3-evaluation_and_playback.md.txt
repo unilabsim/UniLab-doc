@@ -27,8 +27,8 @@ uv run demo dance
 `training.play_env_num` 在此模式下会被忽略。
 
 `training.export_onnx=false` 目前仅适用于 off-policy 回放路径
-（`src/unilab/scripts/train_sac.py` / `src/unilab/scripts/train_td3.py` / `src/unilab/scripts/train_flashsac.py`
-以及使用 `--algo sac|td3|flashsac` 的 CLI 运行）。它会跳过
+（`src/unilab/scripts/train_sac.py` / `src/unilab/scripts/train_flashsac.py`
+以及使用 `--algo sac|flashsac` 的 CLI 运行）。它会跳过
 `policy.onnx` 的导出与校验，但仍会执行回放和视频录制。
 
 ## MuJoCo viewer 可视化脚本

@@ -10,7 +10,7 @@ owner；回放代码加载检查点、导出 `policy.onnx`，并在该路径实�
 | --- | --- | --- |
 | PPO（torch） | `src/unilab/scripts/train_rsl_rl.py` | 脚本入口处 `EXPORT_POLICY=True`；回放调用 `runner.export_policy_to_onnx(...)` 与 `runner.export_policy_to_jit(...)`。 |
 | APPO | `src/unilab/scripts/train_appo.py` | 回放写出 `policy.onnx` 并将 ONNX Runtime 输出与 PyTorch 比对校验。 |
-| SAC / TD3 / FlashSAC | `src/unilab/scripts/train_sac.py` / `src/unilab/scripts/train_td3.py` / `src/unilab/scripts/train_flashsac.py` | 回放写出 `policy.onnx`；SAC 与 FlashSAC 在导出前使用 `actor.as_export_module()`。 |
+| SAC / FlashSAC | `src/unilab/scripts/train_sac.py` / `src/unilab/scripts/train_flashsac.py` | 回放写出 `policy.onnx`；SAC 与 FlashSAC 在导出前使用 `actor.as_export_module()`。 |
 
 ## 命令
 

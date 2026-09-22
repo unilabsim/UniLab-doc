@@ -25,7 +25,7 @@ CPU physics env loop -> shared IPC buffer -> learner
 ```
 
 - APPO uses `APPORunner`, `RolloutRingBuffer`, and `SharedWeightSync`.
-- SAC, TD3, and FlashSAC use one off-policy execution path: `ReplayBuffer`
+- SAC and FlashSAC use one off-policy execution path: `ReplayBuffer`
   provides bounded host ingress, the complete ring lives on one CUDA/MPS
   learner device, and `SharedWeightSync` publishes actor weights.
 - `AsyncRunner` in `uni_rl.ipc.async_runner` (unilab-rl repo) owns collector process

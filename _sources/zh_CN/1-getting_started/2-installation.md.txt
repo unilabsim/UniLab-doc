@@ -180,7 +180,7 @@ Drake、IsaacGym 和 IsaacSim 的 setup 脚本会将外部 runtime 安装到仓�
 
 PPO 训练与回放直接运行在 `rsl-rl-lib` 之上，基础 package 已包含该依赖。可选的
 `uni_rl` extra 提供 `uni_rl` runtime（`unilab-rl`），仅 APPO、off-policy
-算法（SAC/TD3）以及多卡数据并行 PPO（`training.devices` 配置多项）需要：
+算法（SAC）以及多卡数据并行 PPO（`training.devices` 配置多项）需要：
 
 ```bash
 uv sync --extra uni_rl

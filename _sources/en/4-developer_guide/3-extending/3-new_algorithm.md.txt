@@ -69,7 +69,7 @@ the following exist — **no cli.py change required**:
 2. `src/unilab/scripts/train_<algo>.py` — the entrypoint script, kept as a
    thin assembly shell: compose Hydra, call `ensure_registries()`, construct
    the env through the registry path, then hand control to the runner or
-   trainer. Thin-shell precedent: `train_sac.py` / `train_td3.py` /
+   trainer. Thin-shell precedent: `train_sac.py` /
    `train_flashsac.py` reuse the shared implementation in `train_offpolicy.py`.
 
 On top of that, each task×backend combination needs an owner YAML at

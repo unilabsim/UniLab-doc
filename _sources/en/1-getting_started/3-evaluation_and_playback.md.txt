@@ -28,8 +28,8 @@ so the viewer camera and controls remain interactive; `training.play_env_num` is
 ignored.
 
 `training.export_onnx=false` currently applies only to the off-policy playback path
-(`src/unilab/scripts/train_sac.py` / `src/unilab/scripts/train_td3.py` / `src/unilab/scripts/train_flashsac.py`
-and CLI runs with `--algo sac|td3|flashsac`). It skips
+(`src/unilab/scripts/train_sac.py` / `src/unilab/scripts/train_flashsac.py`
+and CLI runs with `--algo sac|flashsac`). It skips
 `policy.onnx` export and verification but still runs playback and video recording.
 
 ## MuJoCo Viewer Scripts

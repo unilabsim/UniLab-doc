@@ -5,7 +5,7 @@ Select it with `--algo flashsac`; defaults are inlined in
 `src/unilab/conf/flashsac/config.yaml`, and the implementation lives under
 `uni_rl.algos.flash_sac` (unilab-rl repo).
 
-It shares the off-policy runner design with SAC and TD3, but does not use the
+It shares the off-policy runner design with SAC, but does not use the
 same default networks: the actor uses a block-based structure and the critic
 uses a distributional (categorical) Q variant.
 
@@ -30,8 +30,8 @@ playback video. See {doc}`/en/1-getting_started/3-evaluation_and_playback`.
 - `algo.algo_params.actor_num_blocks=2`
 - `algo.algo_params.critic_num_blocks=2`
 
-FlashSAC requires synchronized collection and the same sole replay path as SAC
-and TD3: bounded host ingress plus one complete replay ring on a CUDA or Apple
+FlashSAC requires synchronized collection and the same sole replay path as SAC:
+bounded host ingress plus one complete replay ring on a CUDA or Apple
 MPS learner device. CPU and XPU training are unsupported.
 
 The log root is `logs/flash_sac/<task>/`.

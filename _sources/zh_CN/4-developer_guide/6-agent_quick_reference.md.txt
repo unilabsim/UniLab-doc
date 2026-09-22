@@ -10,8 +10,8 @@
 - 算法索引：{doc}`../2-user_guide/2-algorithms/0-index`
 - PPO 入口：`src/unilab/scripts/train_rsl_rl.py`
 - APPO 入口：`src/unilab/scripts/train_appo.py`
-- SAC / TD3 / FlashSAC 入口：`src/unilab/scripts/train_sac.py` /
-  `src/unilab/scripts/train_td3.py` / `src/unilab/scripts/train_flashsac.py`
+- SAC / FlashSAC 入口：`src/unilab/scripts/train_sac.py` /
+  `src/unilab/scripts/train_flashsac.py`
 
 ## 需要记住的契约
 

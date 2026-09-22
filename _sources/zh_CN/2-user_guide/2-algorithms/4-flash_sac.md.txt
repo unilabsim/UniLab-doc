@@ -4,7 +4,7 @@ FlashSAC 通过 `src/unilab/scripts/train_flashsac.py` 运行，拥有独立的�
 `--algo flashsac` 选择它；默认值内联在 `src/unilab/conf/flashsac/config.yaml` 中，实现位于
 `uni_rl.algos.flash_sac` (unilab-rl repo) 下。
 
-它与 SAC、TD3 共用 off-policy runner 设计，但默认网络并不相同：actor 使用
+它与 SAC 共用 off-policy runner 设计，但默认网络并不相同：actor 使用
 block-based 结构，critic 使用 distributional（categorical）Q 变体。
 
 ## 快速开始
@@ -28,7 +28,7 @@ uv run train --algo flashsac --task go2_joystick_flat --sim mujoco training.no_p
 - `algo.algo_params.actor_num_blocks=2`
 - `algo.algo_params.critic_num_blocks=2`
 
-FlashSAC 要求同步采集，并与 SAC、TD3 共用唯一 replay 路径：有界 host ingress 加
+FlashSAC 要求同步采集，并与 SAC 共用唯一 replay 路径：有界 host ingress 加
 一个驻留在 CUDA 或 Apple MPS learner device 上的完整 replay ring。CPU 与 XPU
 training 不受支持。
 

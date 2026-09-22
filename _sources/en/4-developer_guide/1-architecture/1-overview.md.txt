@@ -81,7 +81,6 @@ Use `make test` for the fast path and `make test-all` (`make check`,
 - `src/unilab/scripts/train_rsl_rl.py`
 - `src/unilab/scripts/train_appo.py`
 - `src/unilab/scripts/train_sac.py`
-- `src/unilab/scripts/train_td3.py`
 - `src/unilab/scripts/train_flashsac.py`
 - `src/unilab/base/np_env.py`
 - `unisim.backend.base`

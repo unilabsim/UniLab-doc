@@ -8,7 +8,7 @@ contract is recorded in
 
 - PPO and APPO owner YAMLs use
   `src/unilab/conf/{ppo,appo}/task/<task>/<backend>.yaml`.
-- Off-policy algorithms (SAC / TD3 / FlashSAC) each have their own config
+- Off-policy algorithms (SAC / FlashSAC) each have their own config
   tree: `src/unilab/conf/<algo>/task/<task>/<backend>.yaml`.
 
 ## Required Semantics
@@ -29,7 +29,7 @@ contract is recorded in
 
 - PPO owner example: `src/unilab/conf/ppo/task/go2_joystick_flat/mujoco.yaml`
 - APPO config root: `src/unilab/conf/appo/config.yaml`
-- Off-policy config roots: `src/unilab/conf/{sac,td3,flashsac}/config.yaml`
+- Off-policy config roots: `src/unilab/conf/{sac,flashsac}/config.yaml`
 - Config tests: `tests/config/test_config_system.py`,
   `tests/scripts/test_train_script_configs.py`,
   `tests/envs/locomotion/g1/test_g1_owner_contract.py`

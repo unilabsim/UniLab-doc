@@ -50,7 +50,7 @@ Concrete locomotion, manipulation, and motion-tracking task packages.
 :::{grid-item-card} 🎛 Learning algorithms → `uni_rl`
 :link: algos/index
 :link-type: doc
-PPO / APPO / SAC / TD3 variants moved to the uni_rl package (issue #1480).
+PPO / APPO / SAC variants moved to the uni_rl package (issue #1480).
 :::
 
 :::{grid-item-card} 🏋 `unilab.training`

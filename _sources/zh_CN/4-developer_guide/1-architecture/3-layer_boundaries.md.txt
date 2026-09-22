@@ -35,4 +35,4 @@
 - Registry 构造路径：`src/unilab/base/registry.py`
 - 训练入口：`src/unilab/scripts/train_rsl_rl.py`、
   `src/unilab/scripts/train_appo.py`、`src/unilab/scripts/train_sac.py`、
-  `src/unilab/scripts/train_td3.py`、`src/unilab/scripts/train_flashsac.py`
+  `src/unilab/scripts/train_flashsac.py`

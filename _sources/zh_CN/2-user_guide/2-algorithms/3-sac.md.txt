@@ -1,6 +1,6 @@
 # SAC
 
-SAC 通过 `src/unilab/scripts/train_sac.py` 运行；TD3 与 FlashSAC 各有独立的入口与按算法
+SAC 通过 `src/unilab/scripts/train_sac.py` 运行；FlashSAC 有独立的入口与按算法
 划分的配置树。主配置为 `src/unilab/conf/sac/config.yaml`，SAC 算法的默认值内联在其中。
 当前的日志名称为 `fast_sac`。
 
@@ -81,8 +81,6 @@ MuJoCo worker 线程逐核绑定外，collector 进程本身（含 Numba 并行 
 
 当前限制：
 
-- 仅 SAC 与 FlashSAC：TD3 learner 未实现 optimizer-boundary gradient sync contract，
-  多卡启动即报错。
 - 多卡 actor/critic optimizer CUDA Graph 支持捕获 NCCL gradient all-reduce。首次 capture
   前，DP owner 会先执行一次 eager all-reduce 并同步设备，完成 NCCL collective lazy
   initialization；flat-gradient buffer 在 graph 生命周期内保持固定地址。runtime manifest

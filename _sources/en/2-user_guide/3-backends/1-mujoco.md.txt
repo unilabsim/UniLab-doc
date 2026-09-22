@@ -9,7 +9,7 @@ default version pinned by the committed `uv.lock`) plus the
 
 ## When To Use It
 
-- You want the default training route for PPO, APPO, off-policy SAC/TD3, or
+- You want the default training route for PPO, APPO, off-policy SAC, or
   FlashSAC.
 - The task owner exists only as `src/unilab/conf/.../<task>/mujoco.yaml`.
 - You need MuJoCo-specific tooling such as `scripts/play_viser.py` or scene

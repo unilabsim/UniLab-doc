@@ -15,7 +15,7 @@ CLI routes, Hydra owner YAMLs, logs, checkpoints, and Docker.
 :::{grid-item-card} Algorithms
 :link: 2-algorithms/0-index
 :link-type: doc
-Compare PPO, APPO, SAC, TD3, and FlashSAC.
+Compare PPO, APPO, SAC, and FlashSAC.
 :::
 
 :::{grid-item-card} Backends

@@ -2,7 +2,7 @@
 
 UniLab 中的训练以配置为先（config-first）。日常运行使用软件包 CLI，调试底层
 Hydra 组合时再使用脚本入口。
-off-policy SAC、TD3 与 FlashSAC 每个训练进程只使用一个 learner device。
+off-policy SAC 与 FlashSAC 每个训练进程只使用一个 learner device。
 
 ::::{grid} 1 1 2 2
 :gutter: 3

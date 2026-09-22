@@ -1,7 +1,7 @@
 # SAC
 
-SAC runs through `src/unilab/scripts/train_sac.py`; TD3 and FlashSAC have their own
-entrypoints and per-algorithm config trees. The main config is
+SAC runs through `src/unilab/scripts/train_sac.py`; FlashSAC has its own
+entrypoint and per-algorithm config tree. The main config is
 `src/unilab/conf/sac/config.yaml`, with the SAC algorithm defaults inlined there. The
 current log name is `fast_sac`.
 

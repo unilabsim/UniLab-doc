@@ -23,8 +23,8 @@ UniLab 将运行时 contract、配置、训练脚本和文档分置于不同的 
 
 - `src/unilab/conf/ppo/config.yaml`，用于 torch PPO。
 - `src/unilab/conf/appo/config.yaml`，用于 APPO。
-- `src/unilab/conf/sac/config.yaml`、`src/unilab/conf/td3/config.yaml` 和 `src/unilab/conf/flashsac/config.yaml`，
-  分别用于 SAC、TD3 和 FlashSAC，算法超参数内联在各自的 config.yaml 中。
+- `src/unilab/conf/sac/config.yaml` 和 `src/unilab/conf/flashsac/config.yaml`，
+  分别用于 SAC 和 FlashSAC，算法超参数内联在各自的 config.yaml 中。
 
 任务 owner YAML 即后端身份。示例：
 

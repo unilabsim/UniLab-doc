@@ -10,7 +10,6 @@ keeps the lower-level scripts available for debugging Hydra composition.
 | PPO | `uv run train --algo ppo --task <task> --sim <backend>` | `src/unilab/scripts/train_rsl_rl.py` |
 | APPO | `uv run train --algo appo --task <task> --sim <backend>` | `src/unilab/scripts/train_appo.py` |
 | SAC | `uv run train --algo sac --task <task> --sim <backend>` | `src/unilab/scripts/train_sac.py` |
-| TD3 | `uv run train --algo td3 --task <task> --sim <backend>` | `src/unilab/scripts/train_td3.py` |
 | FlashSAC | `uv run train --algo flashsac --task <task> --sim <backend>` | `src/unilab/scripts/train_flashsac.py` |
 
 Examples:
