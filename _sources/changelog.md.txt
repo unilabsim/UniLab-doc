@@ -13,9 +13,31 @@ UniLab 遵循[语义化版本](https://semver.org/)。本共享页面以中英�
 PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完整提交历史请参阅
 [UniLab 仓库](https://github.com/unilabsim/UniLab)。
 
-## Unreleased / 未发布
+## 1.3.2 (2026-09-22)
+
+### Breaking changes / 破坏性变更
+
+- Removed the TD3 algorithm: the `conf/td3` owner config tree, the
+  `train_td3.py` entrypoint, the TD3 structured configs, and the TD3 dispatch
+  branches in training, playback, and the CLI
+  ([#1625](https://github.com/Motphys/UniLab/pull/1625)). The optional
+  `unilab-rl` dependency moves to 1.3.2, the release that removed
+  `uni_rl.algos.fast_td3`. Use SAC or FlashSAC for off-policy training.
+  移除 TD3 算法：`conf/td3` owner 配置树、`train_td3.py` 入口、TD3 结构化
+  配置以及训练、回放与 CLI 中的 TD3 分发分支（#1625）。可选 `unilab-rl`
+  依赖升级到移除了 `uni_rl.algos.fast_td3` 的 1.3.2 版本。off-policy 训练
+  请改用 SAC 或 FlashSAC。
 
 ### Added / 新增
+
+- Added SAC owners for `g1_motion_tracking` on the Genesis, IsaacGym, Newton,
+  and IsaacSim backends, with per-backend domain-randomization splits narrowed
+  to each backend's declared capability set
+  ([#1618](https://github.com/Motphys/UniLab/pull/1618),
+  [#1619](https://github.com/Motphys/UniLab/pull/1619)).
+  为 `g1_motion_tracking` 新增 Genesis、IsaacGym、Newton、IsaacSim 后端的
+  SAC owner，并按后端拆分域随机化，收窄到各后端声明的 capability 集合
+  （#1618、#1619）。
 
 - Added IsaacSim PhysX solver knobs to `EnvCfg`
   (`isaacsim_solver_position_iteration_count`,
@@ -34,6 +56,27 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
   `env_backend_kwargs` 转发至 UniSim 1.7.x 在 IsaacSim 后端暴露的有界、
   带读回验证的求解器配置；`None` 保持 PhysX 场景默认值
   ([#1617](https://github.com/Motphys/UniLab/issues/1617)）。
+
+### Changed / 变更
+
+- PPO now drives upstream `rsl-rl-lib` directly through the UniLab-owned
+  VecEnv adapter and distributed helpers; `uni_rl` (the `unilab-rl` package)
+  is an optional extra needed only for APPO, off-policy algorithms, and
+  multi-GPU data-parallel PPO launches
+  ([#1621](https://github.com/Motphys/UniLab/issues/1621),
+  [#1622](https://github.com/Motphys/UniLab/pull/1622)). Single-process PPO
+  training and playback work without `uni_rl` installed.
+  PPO 改为通过 UniLab 自己的 VecEnv adapter 与分布式 helper 直接驱动上游
+  `rsl-rl-lib`；`uni_rl`（`unilab-rl` 包）变为可选 extra，仅 APPO、
+  off-policy 算法与多卡数据并行 PPO 启动需要（#1621、#1622）。单进程 PPO
+  训练与回放不再依赖 `uni_rl`。
+
+- Raised the base UniSim requirement to `unisim-core>=1.7.4` and pinned
+  `unilab-rl==1.3.2` for the optional `uni_rl` extra and the dev environment;
+  the MuJoCo backend uses the exact tracked-body-state path from the executor.
+  基础 UniSim 依赖提升到 `unisim-core>=1.7.4`，可选 `uni_rl` extra 与 dev
+  环境固定 `unilab-rl==1.3.2`；MuJoCo 后端改用执行器的精确
+  tracked-body-state 路径。
 
 ## 1.3.1 (2026-09-20)
 
