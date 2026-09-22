@@ -13,6 +13,28 @@ UniLab 遵循[语义化版本](https://semver.org/)。本共享页面以中英�
 PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完整提交历史请参阅
 [UniLab 仓库](https://github.com/unilabsim/UniLab)。
 
+## Unreleased / 未发布
+
+### Added / 新增
+
+- Added IsaacSim PhysX solver knobs to `EnvCfg`
+  (`isaacsim_solver_position_iteration_count`,
+  `isaacsim_solver_velocity_iteration_count`,
+  `isaacsim_bounce_threshold_velocity`, `isaacsim_contact_offset`,
+  `isaacsim_rest_offset`, `isaacsim_max_depenetration_velocity`), forwarded
+  by `env_backend_kwargs` to the bounded, readback-validated solver
+  configuration UniSim 1.7.x exposes on the IsaacSim backend; `None` keeps
+  the PhysX scene defaults
+  ([#1617](https://github.com/Motphys/UniLab/issues/1617)).
+  `EnvCfg` 新增 IsaacSim PhysX 求解器旋钮
+  （`isaacsim_solver_position_iteration_count`、
+  `isaacsim_solver_velocity_iteration_count`、
+  `isaacsim_bounce_threshold_velocity`、`isaacsim_contact_offset`、
+  `isaacsim_rest_offset`、`isaacsim_max_depenetration_velocity`），由
+  `env_backend_kwargs` 转发至 UniSim 1.7.x 在 IsaacSim 后端暴露的有界、
+  带读回验证的求解器配置；`None` 保持 PhysX 场景默认值
+  ([#1617](https://github.com/Motphys/UniLab/issues/1617)）。
+
 ## 1.3.1 (2026-09-20)
 
 ### Added / 新增
