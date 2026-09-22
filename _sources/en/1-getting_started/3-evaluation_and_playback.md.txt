@@ -20,12 +20,19 @@ Render modes:
 
 - `interactive` — open viewer window (default on macOS Motrix).
 - `record` — write MP4 to `runs/<run>/playback/`.
+- `viser` — serve the rollout in a browser-based viser viewer
+  (`--sim mujoco` / `--sim mjwarp` only; requires the viser extra).
 - `none` — skip rendering, just compute metrics.
 
 For `--sim mujoco --render-mode interactive`, `uv run eval` launches the dedicated
 `play_interactive.py` MuJoCo viewer directly. This mode rolls out one environment
 so the viewer camera and controls remain interactive; `training.play_env_num` is
 ignored.
+
+For `--sim mujoco` / `--sim mjwarp --render-mode viser`, `uv run eval` instead
+launches `play_viser.py`, serving the rollout at `http://localhost:8080`
+(configurable via the `viser.*` config group). It needs no local display and
+runs on macOS without `mjpython`.
 
 `training.export_onnx=false` currently applies only to the off-policy playback path
 (`src/unilab/scripts/train_sac.py` / `src/unilab/scripts/train_flashsac.py`

@@ -96,10 +96,17 @@ uv run eval --algo ppo --task go2_joystick_flat --sim motrix --load-run -1 \
   --render-mode record
 ```
 
-Supported render modes are `auto`, `interactive`, `record`, and `none`.
+Supported render modes are `auto`, `interactive`, `record`, `viser`, and
+`none`.
 
 The MuJoCo interactive mode (`--sim mujoco --render-mode interactive`) routes
 directly to `play_interactive.py` and always rolls out one environment.
+
+For `--sim mujoco` and `--sim mjwarp`, `--render-mode viser` routes to the
+browser-based viser viewer (`play_viser.py`): no local display is required,
+and macOS runs it without `mjpython`. It needs the viser extra (`uv sync
+--extra viser`); the `viser.*` config group (`viser.port`, `viser.max_envs`,
+`viser.display_mode`, `viser.env_idx`) tunes the server and the scene.
 
 ## Demo
 

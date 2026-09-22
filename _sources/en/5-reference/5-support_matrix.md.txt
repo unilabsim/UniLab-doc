@@ -21,14 +21,17 @@ in English. Do not infer support beyond the evidence grade shown below.
 
 ## Playback Differences
 
-- `mujoco`: `--render-mode auto` exports `play_video.mp4`.
+- `mujoco`: `--render-mode auto` exports `play_video.mp4`; `--render-mode
+  viser` serves the rollout in a browser-based viser viewer (requires the
+  viser extra).
 - `motrix`: `--render-mode auto` opens an interactive renderer window; it does
   not record a video and is not bound by `play_steps`.
 - `mjwarp`: supports explicit, finite-step `record` by default, rendered offline
   through the task owner's MuJoCo visual model; `--render-mode interactive`
   routes to the MuJoCo interactive viewer (mjwarp runs the physics while
-  MuJoCo renders env[0], forced to a single env); `auto` and native renderers
-  are not supported.
+  MuJoCo renders env[0], forced to a single env); `--render-mode viser`
+  routes to the browser-based viser viewer with per-env MuJoCo playback
+  models; `auto` and native renderers are not supported.
 - `isaacsim`: headless physics only. Interactive GUI, camera capture, native
   playback, and video recording are fail-closed for the current IsaacSim 5.1 /
   IsaacLab v2.3.0 worker profile.

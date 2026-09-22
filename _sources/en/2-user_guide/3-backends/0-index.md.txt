@@ -89,6 +89,8 @@ The selected owner YAML sets `training.sim_backend` as an identity field.
 - `--render-mode auto` opens Motrix native interactive rendering on Motrix
   paths.
 - `--render-mode record` records without opening an interactive window.
+- `--render-mode viser` serves the rollout in a browser-based viser viewer on
+  MuJoCo and mjwarp paths (requires the viser extra).
 - `--render-mode none` disables playback.
 
 ```bash

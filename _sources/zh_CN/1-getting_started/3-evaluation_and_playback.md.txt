@@ -20,11 +20,17 @@ uv run demo dance
 
 - `interactive` — 打开查看器窗口（macOS Motrix 上的默认值）。
 - `record` — 将 MP4 写入 `runs/<run>/playback/`。
+- `viser` — 在基于浏览器的 viser viewer 中展示回放
+  （仅 `--sim mujoco` / `--sim mjwarp`；需要 viser extra）。
 - `none` — 跳过渲染，仅计算指标。
 
 当使用 `--sim mujoco --render-mode interactive` 时，`uv run eval` 会直接启动
 `play_interactive.py` MuJoCo viewer。该模式只 rollout 一个环境以保持相机和交互控制；
 `training.play_env_num` 在此模式下会被忽略。
+
+当使用 `--sim mujoco` / `--sim mjwarp --render-mode viser` 时，`uv run eval` 改为启动
+`play_viser.py`，在 `http://localhost:8080` 提供浏览器回放（可通过 `viser.*`
+配置组调整）。该模式不需要本地显示，在 macOS 上也不需要 `mjpython`。
 
 `training.export_onnx=false` 目前仅适用于 off-policy 回放路径
 （`src/unilab/scripts/train_sac.py` / `src/unilab/scripts/train_flashsac.py`

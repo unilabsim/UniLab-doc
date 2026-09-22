@@ -93,9 +93,14 @@ uv run eval --algo ppo --task go2_joystick_flat --sim motrix --load-run -1 \
   --render-mode record
 ```
 
-支持的渲染模式为 `auto`、`interactive`、`record` 和 `none`。其中 MuJoCo 交互模式
+支持的渲染模式为 `auto`、`interactive`、`record`、`viser` 和 `none`。其中 MuJoCo 交互模式
 （`--sim mujoco --render-mode interactive`）直接路由到 `play_interactive.py`，并始终只
 rollout 一个环境。
+
+`--sim mujoco` 和 `--sim mjwarp` 还支持 `--render-mode viser`：路由到基于浏览器的
+viser viewer（`play_viser.py`），不需要本地显示，在 macOS 上也不需要 `mjpython`。
+该模式需要 viser extra（`uv sync --extra viser`）；`viser.*` 配置组
+（`viser.port`、`viser.max_envs`、`viser.display_mode`、`viser.env_idx`）用于调整服务器与场景。
 
 ## 演示
 
