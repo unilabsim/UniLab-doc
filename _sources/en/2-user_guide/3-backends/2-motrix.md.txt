@@ -30,3 +30,16 @@ uv run eval --algo ppo --task go2_joystick_flat --sim motrix --load-run -1 --ren
 Use `--render-mode record` for headless video-only playback. Leave backend
 selection in `--sim motrix` rather than overriding `training.sim_backend` by
 itself.
+
+## CPU Affinity
+
+`training.dp_collector_cpu_ids` may provide one explicit CPU-id list per
+collector rank. The block reaches the env as `EnvCfg.cpu_ids` and is
+validated on the cold path: entries must be non-empty, unique, non-negative
+CPU ids available to the owning process. The Motrix adapter then pins
+MotrixSim's shared worker pool before the first model load — worker `i`
+takes `cpu_ids[i % len(cpu_ids)]` — and env construction also confines the
+process itself to the same block, so host-side post-step compute stays
+inside the rank's partition. `null` (the default) leaves MotrixSim's default
+thread-pool policy and OS scheduling untouched. The validated block is
+exposed through the backend's read-only `cpu_ids` property.
