@@ -557,6 +557,39 @@
 
 
 
+<span class="k">class</span><span class="w"> </span><span class="nc">_InitProgress</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Time-throttled PROGRESS frames on the worker protocol stream.</span>
+
+<span class="sd">    Frames interleave with the pending INIT reply; the host consumes them and</span>
+<span class="sd">    re-arms its receive deadline.  Emission never masks a real init failure.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">min_interval</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.25</span><span class="p">,</span> <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_context</span> <span class="o">=</span> <span class="n">context</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_min_interval</span> <span class="o">=</span> <span class="n">min_interval</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_enabled</span> <span class="o">=</span> <span class="n">enabled</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">report</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">done</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">total</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">force</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_enabled</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">stream</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_context</span><span class="p">,</span> <span class="s2">&quot;progress_out&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">stream</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">now</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">force</span> <span class="ow">and</span> <span class="n">now</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_min_interval</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last</span> <span class="o">=</span> <span class="n">now</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_context</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">send_message</span><span class="p">(</span>
+                <span class="n">stream</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_context</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">CMD_PROGRESS</span><span class="p">,</span>
+                <span class="p">{</span><span class="s2">&quot;label&quot;</span><span class="p">:</span> <span class="n">label</span><span class="p">,</span> <span class="s2">&quot;done&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">done</span><span class="p">),</span> <span class="s2">&quot;total&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">total</span><span class="p">)},</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+
 <div class="viewcode-block" id="SceneWorker">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacgym.scene_worker.SceneWorker.html#unisim.backend.isaacgym.scene_worker.SceneWorker">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">SceneWorker</span><span class="p">:</span>
@@ -971,14 +1004,31 @@
                     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;body_visual_rgb components must lie in [0, 1]&quot;</span><span class="p">)</span>
                 <span class="n">unit_quaternion</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">variant</span><span class="p">[</span><span class="s2">&quot;body_iquat&quot;</span><span class="p">]),</span> <span class="s2">&quot;body_iquat&quot;</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">:</span>
+                    <span class="n">public</span> <span class="o">=</span> <span class="p">[(</span><span class="n">geom</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">geom</span><span class="o">.</span><span class="n">body_name</span><span class="p">)</span> <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">]</span>
+                    <span class="n">variant_names</span> <span class="o">=</span> <span class="n">variant</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_names&quot;</span><span class="p">)</span>
+                    <span class="n">variant_bodies</span> <span class="o">=</span> <span class="n">variant</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_body_names&quot;</span><span class="p">)</span>
                     <span class="k">if</span> <span class="p">(</span>
-                        <span class="n">variant</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_names&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="p">[</span><span class="n">geom</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">]</span>
-                        <span class="ow">or</span> <span class="n">variant</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_body_names&quot;</span><span class="p">)</span>
-                        <span class="o">!=</span> <span class="p">[</span><span class="n">geom</span><span class="o">.</span><span class="n">body_name</span> <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">]</span>
+                        <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">variant_names</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span>
+                        <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">variant_bodies</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span>
+                        <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">variant_names</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">variant_bodies</span><span class="p">)</span>
                     <span class="p">):</span>
                         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;variant geometry identity differs from public layout&quot;</span><span class="p">)</span>
+                    <span class="c1"># TEMP(unisimtoolreal local workaround): uniform_public_layout</span>
+                    <span class="c1"># permits optional mesh-geom slots to be absent from a variant</span>
+                    <span class="c1"># (e.g. eraser heads). Accept an order-preserving subset of the</span>
+                    <span class="c1"># public layout until the worker grows first-class optional-slot</span>
+                    <span class="c1"># handling.</span>
+                    <span class="n">cursor</span> <span class="o">=</span> <span class="mi">0</span>
+                    <span class="k">for</span> <span class="n">pair</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">variant_names</span><span class="p">,</span> <span class="n">variant_bodies</span><span class="p">):</span>
+                        <span class="k">while</span> <span class="n">cursor</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">public</span><span class="p">)</span> <span class="ow">and</span> <span class="n">public</span><span class="p">[</span><span class="n">cursor</span><span class="p">]</span> <span class="o">!=</span> <span class="n">pair</span><span class="p">:</span>
+                            <span class="n">cursor</span> <span class="o">+=</span> <span class="mi">1</span>
+                        <span class="k">if</span> <span class="n">cursor</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">public</span><span class="p">):</span>
+                            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                                <span class="s2">&quot;variant geometry identity differs from public layout&quot;</span>
+                            <span class="p">)</span>
+                        <span class="n">cursor</span> <span class="o">+=</span> <span class="mi">1</span>
                     <span class="n">friction</span> <span class="o">=</span> <span class="n">finite_array</span><span class="p">(</span>
-                        <span class="n">variant</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_friction&quot;</span><span class="p">),</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span> <span class="s2">&quot;geom_friction&quot;</span>
+                        <span class="n">variant</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_friction&quot;</span><span class="p">),</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">variant_names</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span> <span class="s2">&quot;geom_friction&quot;</span>
                     <span class="p">)</span>
                     <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">friction</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">):</span>
                         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;negative geom_friction&quot;</span><span class="p">)</span>
@@ -1026,6 +1076,9 @@
         <span class="n">plane_params</span><span class="o">.</span><span class="n">normal</span> <span class="o">=</span> <span class="n">gymapi</span><span class="o">.</span><span class="n">Vec3</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">gym</span><span class="o">.</span><span class="n">add_ground</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">sim</span><span class="p">,</span> <span class="n">plane_params</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_shaped_bodies</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">progress</span> <span class="o">=</span> <span class="n">_InitProgress</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">enabled</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">payload</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;init_progress&quot;</span><span class="p">)))</span>
+        <span class="n">total_assets</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_materialized_source_ids</span><span class="p">(</span><span class="n">spec</span><span class="p">))</span> <span class="k">for</span> <span class="n">spec</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">specs</span><span class="p">)</span>
+        <span class="n">loaded_assets</span> <span class="o">=</span> <span class="mi">0</span>
         <span class="k">for</span> <span class="n">entity</span><span class="p">,</span> <span class="n">spec</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">entities</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">specs</span><span class="p">):</span>
             <span class="n">entity_assets</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
             <span class="k">for</span> <span class="n">source_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_materialized_source_ids</span><span class="p">(</span><span class="n">spec</span><span class="p">):</span>
@@ -1043,6 +1096,13 @@
                 <span class="k">if</span> <span class="n">asset</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;IsaacGym could not load entity source &quot;</span> <span class="o">+</span> <span class="n">path</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_audit_asset</span><span class="p">(</span><span class="n">asset</span><span class="p">,</span> <span class="n">entity</span><span class="p">)</span>
+                <span class="n">loaded_assets</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">progress</span><span class="o">.</span><span class="n">report</span><span class="p">(</span>
+                    <span class="s2">&quot;isaacgym worker: loading assets&quot;</span><span class="p">,</span>
+                    <span class="n">loaded_assets</span><span class="p">,</span>
+                    <span class="n">total_assets</span><span class="p">,</span>
+                    <span class="n">force</span><span class="o">=</span><span class="n">loaded_assets</span> <span class="o">==</span> <span class="n">total_assets</span><span class="p">,</span>
+                <span class="p">)</span>
                 <span class="n">shaped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_shaped_bodies</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span>
                 <span class="n">bodies</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">gym</span><span class="o">.</span><span class="n">get_asset_rigid_body_names</span><span class="p">(</span><span class="n">asset</span><span class="p">))</span>
                 <span class="n">ranges</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">gym</span><span class="o">.</span><span class="n">get_asset_rigid_body_shape_indices</span><span class="p">(</span><span class="n">asset</span><span class="p">)</span>
@@ -1058,6 +1118,9 @@
         <span class="p">)</span>
         <span class="n">origins</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">env_spacing</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_env_spacing</span><span class="p">()</span>
+        <span class="c1"># Asset-level name tables depend only on the loaded asset, not on the</span>
+        <span class="c1"># env; query them once per (entity, source) instead of once per actor.</span>
+        <span class="n">asset_names</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">env_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">):</span>
             <span class="n">half_spacing</span> <span class="o">=</span> <span class="n">env_spacing</span> <span class="o">*</span> <span class="mf">0.5</span>
             <span class="n">env</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">gym</span><span class="o">.</span><span class="n">create_env</span><span class="p">(</span>
@@ -1073,6 +1136,15 @@
             <span class="k">for</span> <span class="n">entity_id</span><span class="p">,</span> <span class="p">(</span><span class="n">entity</span><span class="p">,</span> <span class="n">spec</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">entities</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">specs</span><span class="p">)):</span>
                 <span class="n">source_id</span> <span class="o">=</span> <span class="n">spec</span><span class="p">[</span><span class="s2">&quot;assignment&quot;</span><span class="p">][</span><span class="n">env_id</span><span class="p">]</span>
                 <span class="n">asset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">assets</span><span class="p">[</span><span class="n">entity_id</span><span class="p">][</span><span class="n">source_id</span><span class="p">]</span>
+                <span class="n">names_key</span> <span class="o">=</span> <span class="p">(</span><span class="n">entity_id</span><span class="p">,</span> <span class="n">source_id</span><span class="p">)</span>
+                <span class="n">names</span> <span class="o">=</span> <span class="n">asset_names</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">names_key</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">names</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">names</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="nb">tuple</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">gym</span><span class="o">.</span><span class="n">get_asset_dof_names</span><span class="p">(</span><span class="n">asset</span><span class="p">)),</span>
+                        <span class="nb">tuple</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">gym</span><span class="o">.</span><span class="n">get_asset_rigid_body_names</span><span class="p">(</span><span class="n">asset</span><span class="p">)),</span>
+                    <span class="p">)</span>
+                    <span class="n">asset_names</span><span class="p">[</span><span class="n">names_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">names</span>
+                <span class="n">native_joint_names</span><span class="p">,</span> <span class="n">native_body_names</span> <span class="o">=</span> <span class="n">names</span>
                 <span class="n">pose</span> <span class="o">=</span> <span class="n">gymapi</span><span class="o">.</span><span class="n">Transform</span><span class="p">()</span>
                 <span class="n">pose</span><span class="o">.</span><span class="n">p</span> <span class="o">=</span> <span class="n">gymapi</span><span class="o">.</span><span class="n">Vec3</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">roots0</span><span class="p">[</span><span class="n">env_id</span><span class="p">,</span> <span class="n">entity_id</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">])</span>
                 <span class="n">pose</span><span class="o">.</span><span class="n">r</span> <span class="o">=</span> <span class="n">gymapi</span><span class="o">.</span><span class="n">Quat</span><span class="p">(</span>
@@ -1098,7 +1170,6 @@
                 <span class="n">native_id</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">gym</span><span class="o">.</span><span class="n">get_actor_index</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">actor</span><span class="p">,</span> <span class="n">gymapi</span><span class="o">.</span><span class="n">DOMAIN_SIM</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">actor_ids</span><span class="p">[</span><span class="n">env_id</span><span class="p">,</span> <span class="n">entity_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">native_id</span>
                 <span class="n">variant</span> <span class="o">=</span> <span class="n">spec</span><span class="p">[</span><span class="s2">&quot;variants&quot;</span><span class="p">][</span><span class="n">source_id</span><span class="p">]</span>
-                <span class="n">native_joint_names</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">gym</span><span class="o">.</span><span class="n">get_asset_dof_names</span><span class="p">(</span><span class="n">asset</span><span class="p">))</span>
                 <span class="k">for</span> <span class="n">local</span><span class="p">,</span> <span class="n">color</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">variant</span><span class="p">[</span><span class="s2">&quot;body_visual_rgb&quot;</span><span class="p">]):</span>
                     <span class="n">ctx</span><span class="o">.</span><span class="n">gym</span><span class="o">.</span><span class="n">set_rigid_body_color</span><span class="p">(</span>
                         <span class="n">env</span><span class="p">,</span>
@@ -1128,7 +1199,6 @@
                                 <span class="s2">&quot;native drive readback differs for </span><span class="si">%s</span><span class="s2"> field </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2"> != </span><span class="si">%s</span><span class="s2">&quot;</span>
                                 <span class="o">%</span> <span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">readback</span><span class="p">[</span><span class="n">field</span><span class="p">],</span> <span class="n">props</span><span class="p">[</span><span class="n">field</span><span class="p">])</span>
                             <span class="p">)</span>
-                <span class="n">native_body_names</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">gym</span><span class="o">.</span><span class="n">get_asset_rigid_body_names</span><span class="p">(</span><span class="n">asset</span><span class="p">))</span>
                 <span class="n">body_props</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">gym</span><span class="o">.</span><span class="n">get_actor_rigid_body_properties</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">actor</span><span class="p">)</span>
                 <span class="n">native_body_ids</span> <span class="o">=</span> <span class="p">[]</span>
                 <span class="n">masses</span> <span class="o">=</span> <span class="p">[]</span>
@@ -1224,6 +1294,12 @@
                 <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">records</span><span class="p">)</span>
             <span class="n">ctx</span><span class="o">.</span><span class="n">actor_handles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">records</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s2">&quot;actor&quot;</span><span class="p">])</span>
+            <span class="n">progress</span><span class="o">.</span><span class="n">report</span><span class="p">(</span>
+                <span class="s2">&quot;isaacgym worker: building envs&quot;</span><span class="p">,</span>
+                <span class="n">env_id</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span>
+                <span class="n">force</span><span class="o">=</span><span class="n">env_id</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span>
+            <span class="p">)</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">gym</span><span class="o">.</span><span class="n">prepare_sim</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">sim</span><span class="p">)</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">_acquire_tensors</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_bind_refresh_indices</span><span class="p">()</span>
