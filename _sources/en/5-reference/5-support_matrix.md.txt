@@ -24,7 +24,9 @@ in English. Do not infer support beyond the evidence grade shown below.
 - `mujoco`: `--render-mode auto` exports `play_video.mp4`; `--render-mode
   viser` serves the rollout in a browser-based viser viewer.
 - `motrix`: `--render-mode auto` opens an interactive renderer window; it does
-  not record a video and is not bound by `play_steps`.
+  not record a video and is not bound by `play_steps`. `--render-mode viser`
+  routes to the browser-based viser viewer with per-env MuJoCo playback
+  models driven by physics-state snapshots.
 - `mjwarp`: supports explicit, finite-step `record` by default, rendered offline
   through the task owner's MuJoCo visual model; `--render-mode interactive`
   routes to the MuJoCo interactive viewer (mjwarp runs the physics while

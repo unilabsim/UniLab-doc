@@ -20,7 +20,7 @@
 
 - `mujoco`: `--render-mode auto` 会导出 `play_video.mp4`；`--render-mode viser`
   通过基于浏览器的 viser viewer 展示回放
-- `motrix`: `--render-mode auto` 会打开交互式 renderer 窗口，不录制视频，不受 `play_steps` 限制
+- `motrix`: `--render-mode auto` 会打开交互式 renderer 窗口，不录制视频，不受 `play_steps` 限制；`--render-mode viser` 路由到浏览器 viser viewer（物理快照驱动按 env 的 MuJoCo playback model）
 - `mjwarp`: 默认仅支持显式、有限步数的 `record`，通过 task owner 的 MuJoCo visual model 离线录制；`--render-mode interactive` 路由到 MuJoCo 交互 viewer（mjwarp 跑物理、MuJoCo 渲染 env[0]，强制单 env）；`--render-mode viser` 路由到浏览器 viser viewer（按 env 使用 MuJoCo playback model）；不支持 `auto` 或 native renderer
 - `isaacsim`: `auto` 在有 display 时选择 Kit viewer，否则选择 headless RGB camera；当前真实主机仍有 RTX renderer 初始化 blocker，支持等级保持 `Configured`
 - `--render-mode record`: MuJoCo、mjwarp、Motrix 和 IsaacSim 都只录制视频

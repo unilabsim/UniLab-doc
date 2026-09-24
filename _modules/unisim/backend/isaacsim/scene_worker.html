@@ -768,6 +768,17 @@
             <span class="s2">&quot;rest_offset&quot;</span><span class="p">:</span> <span class="n">rest_offset</span><span class="p">,</span>
         <span class="p">},</span>
     <span class="p">}</span>
+    <span class="n">placeholders</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">variants</span> <span class="o">=</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;variants&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">variants</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">variant</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">variants</span><span class="p">):</span>
+        <span class="n">placeholders</span> <span class="o">=</span> <span class="n">variants</span><span class="p">[</span><span class="n">variant</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_placeholders&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">placeholders</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">placeholders</span><span class="p">):</span>
+        <span class="c1"># Placeholder prims are baked into the role artifact; the padded slot</span>
+        <span class="c1"># set depends on the compiled public layout, which the raw identity</span>
+        <span class="c1"># does not cover, so the cache identity tracks it exactly.</span>
+        <span class="n">parameters</span><span class="p">[</span><span class="s2">&quot;bake&quot;</span><span class="p">][</span><span class="s2">&quot;placeholder_geoms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">index</span> <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">flag</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">placeholders</span><span class="p">)</span> <span class="k">if</span> <span class="n">flag</span>
+        <span class="p">]</span>
     <span class="n">identity</span> <span class="o">=</span> <span class="n">sha256</span><span class="p">(</span>
         <span class="n">_canonical_role_json</span><span class="p">(</span>
             <span class="p">{</span>
@@ -1080,10 +1091,11 @@
             <span class="k">if</span> <span class="n">record</span><span class="p">[</span><span class="s2">&quot;body_names&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="nb">list</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">body_names</span><span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;variant body names differ from compiled layout&quot;</span><span class="p">)</span>
             <span class="n">validate_body_sphere_radii</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="s2">&quot;body_sphere_radii&quot;</span><span class="p">],</span> <span class="nb">len</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">body_names</span><span class="p">))</span>
-            <span class="c1"># TEMP(unisimtoolreal local workaround): uniform_public_layout permits</span>
-            <span class="c1"># optional mesh-geom slots to be absent from a variant (e.g. eraser</span>
-            <span class="c1"># heads). Accept an order-preserving subset of the compiled layout</span>
-            <span class="c1"># until the worker grows first-class optional-slot handling.</span>
+            <span class="c1"># uniform_public_layout permits optional mesh-geom slots to be</span>
+            <span class="c1"># absent from a variant (e.g. eraser heads); the records are</span>
+            <span class="c1"># padded to the full public layout after this validation loop.</span>
+            <span class="c1"># Here, fail closed unless the rows form an order-preserving</span>
+            <span class="c1"># subset of the compiled layout.</span>
             <span class="n">public_geoms</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
                 <span class="nb">zip</span><span class="p">(</span>
                     <span class="p">(</span><span class="n">geom</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">),</span>
@@ -1139,6 +1151,11 @@
             <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">joint</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">joints</span><span class="p">):</span>
                 <span class="k">if</span> <span class="n">joint</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">actuator_joint_names</span> <span class="ow">and</span> <span class="n">record</span><span class="p">[</span><span class="s2">&quot;dof_stiffness&quot;</span><span class="p">][</span><span class="n">index</span><span class="p">]:</span>
                     <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;passive joint stiffness requires explicit semantics&quot;</span><span class="p">)</span>
+        <span class="c1"># Pad slot-omitting variant records to the full public layout so every</span>
+        <span class="c1"># environment realizes one homogeneous native geometry layout.</span>
+        <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;variants&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">_normalized_variant_record</span><span class="p">(</span><span class="n">entity</span><span class="p">,</span> <span class="n">record</span><span class="p">)</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;variants&quot;</span><span class="p">]</span>
+        <span class="p">]</span>
         <span class="c1"># One view shares one sim-baked effort limit table, and armature and</span>
         <span class="c1"># joint friction start from a single ImplicitActuatorCfg. Drive</span>
         <span class="c1"># stiffness/damping may differ across variants: initialization rewrites</span>
@@ -1333,9 +1350,16 @@
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> converted rigid-body paths are missing bodies: </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
-    <span class="n">_author_native_geometry</span><span class="p">(</span>
-        <span class="n">stage</span><span class="p">,</span> <span class="n">root_path</span><span class="p">,</span> <span class="n">body_paths</span><span class="p">,</span> <span class="n">entity</span><span class="p">,</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;variants&quot;</span><span class="p">][</span><span class="n">variant</span><span class="p">]</span>
+    <span class="n">record</span> <span class="o">=</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;variants&quot;</span><span class="p">][</span><span class="n">variant</span><span class="p">]</span>
+    <span class="n">_author_placeholder_geoms</span><span class="p">(</span>
+        <span class="n">stage</span><span class="p">,</span>
+        <span class="n">root_path</span><span class="p">,</span>
+        <span class="n">body_paths</span><span class="p">,</span>
+        <span class="n">record</span><span class="p">,</span>
+        <span class="n">contact_offset</span><span class="o">=</span><span class="n">contact_offset</span><span class="p">,</span>
+        <span class="n">rest_offset</span><span class="o">=</span><span class="n">rest_offset</span><span class="p">,</span>
     <span class="p">)</span>
+    <span class="n">_author_native_geometry</span><span class="p">(</span><span class="n">stage</span><span class="p">,</span> <span class="n">root_path</span><span class="p">,</span> <span class="n">body_paths</span><span class="p">,</span> <span class="n">entity</span><span class="p">,</span> <span class="n">record</span><span class="p">)</span>
     <span class="n">relative</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
     <span class="k">if</span> <span class="n">entity</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;articulation&quot;</span><span class="p">:</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">articulation_roots</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
@@ -1448,18 +1472,130 @@
     <span class="p">)</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_consistent_collision_mask</span><span class="p">(</span><span class="n">entry</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;One collision mask shared by every variant, failing closed on drift.&quot;&quot;&quot;</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_record_native_mask</span><span class="p">(</span><span class="n">record</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Per-slot native shape presence from a (possibly padded) variant record.</span>
+
+<span class="sd">    Placeholder slots own a collision-disabled placeholder prim, so they count</span>
+<span class="sd">    toward the native geometry layout even though they never collide.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">mask</span> <span class="o">=</span> <span class="n">_record_collision_mask</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+    <span class="n">placeholders</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_placeholders&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">placeholders</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">mask</span>
+    <span class="k">return</span> <span class="n">mask</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">placeholders</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalized_variant_record</span><span class="p">(</span><span class="n">entity</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">record</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pad an optional-slot-omitting variant record to the full public layout.</span>
+
+<span class="sd">    ``uniform_public_layout`` permits optional mesh-geom slots to be absent</span>
+<span class="sd">    from a variant (e.g. eraser heads), but PhysX views are homogeneous across</span>
+<span class="sd">    environments: every destination copy must carry the same native shape</span>
+<span class="sd">    count. The worker therefore normalizes each subset record to the compiled</span>
+<span class="sd">    public layout, marking padded rows through the worker-owned</span>
+<span class="sd">    ``geom_placeholders`` field; ``_bake`` authors collision-disabled,</span>
+<span class="sd">    invisible placeholder prims for exactly those rows. Records already</span>
+<span class="sd">    covering the full layout pass through unchanged.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;geom_placeholders&quot;</span> <span class="ow">in</span> <span class="n">record</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;variant geom_placeholders are worker-owned&quot;</span><span class="p">)</span>
+    <span class="n">public_geoms</span> <span class="o">=</span> <span class="p">[(</span><span class="n">geom</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">geom</span><span class="o">.</span><span class="n">body_name</span><span class="p">)</span> <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">geoms</span><span class="p">]</span>
+    <span class="n">actual_geoms</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_names&quot;</span><span class="p">],</span> <span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_body_names&quot;</span><span class="p">]))</span>
+    <span class="k">if</span> <span class="n">actual_geoms</span> <span class="o">==</span> <span class="n">public_geoms</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">record</span>
+    <span class="n">slots</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">cursor</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">pair</span> <span class="ow">in</span> <span class="n">actual_geoms</span><span class="p">:</span>
+        <span class="k">while</span> <span class="n">cursor</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">public_geoms</span><span class="p">)</span> <span class="ow">and</span> <span class="n">public_geoms</span><span class="p">[</span><span class="n">cursor</span><span class="p">]</span> <span class="o">!=</span> <span class="n">pair</span><span class="p">:</span>
+            <span class="n">cursor</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="n">cursor</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">public_geoms</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;variant geom names differ from compiled layout&quot;</span><span class="p">)</span>
+        <span class="n">slots</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cursor</span><span class="p">)</span>
+        <span class="n">cursor</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="n">present</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">slots</span><span class="p">)</span>
+    <span class="n">contype</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">public_geoms</span><span class="p">)</span>
+    <span class="n">conaffinity</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">public_geoms</span><span class="p">)</span>
+    <span class="n">friction</span> <span class="o">=</span> <span class="p">[[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">public_geoms</span><span class="p">]</span>
+    <span class="n">placeholders</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">public_geoms</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">source</span><span class="p">,</span> <span class="n">slot</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">slots</span><span class="p">):</span>
+        <span class="n">contype</span><span class="p">[</span><span class="n">slot</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_contype&quot;</span><span class="p">][</span><span class="n">source</span><span class="p">])</span>
+        <span class="n">conaffinity</span><span class="p">[</span><span class="n">slot</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_conaffinity&quot;</span><span class="p">][</span><span class="n">source</span><span class="p">])</span>
+        <span class="n">friction</span><span class="p">[</span><span class="n">slot</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_friction&quot;</span><span class="p">][</span><span class="n">source</span><span class="p">]]</span>
+    <span class="k">for</span> <span class="n">slot</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">public_geoms</span><span class="p">)):</span>
+        <span class="k">if</span> <span class="n">slot</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">present</span><span class="p">:</span>
+            <span class="n">placeholders</span><span class="p">[</span><span class="n">slot</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">normalized</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+    <span class="n">normalized</span><span class="p">[</span><span class="s2">&quot;geom_names&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">_body</span> <span class="ow">in</span> <span class="n">public_geoms</span><span class="p">]</span>
+    <span class="n">normalized</span><span class="p">[</span><span class="s2">&quot;geom_body_names&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">body</span> <span class="k">for</span> <span class="n">_name</span><span class="p">,</span> <span class="n">body</span> <span class="ow">in</span> <span class="n">public_geoms</span><span class="p">]</span>
+    <span class="n">normalized</span><span class="p">[</span><span class="s2">&quot;geom_contype&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">contype</span>
+    <span class="n">normalized</span><span class="p">[</span><span class="s2">&quot;geom_conaffinity&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">conaffinity</span>
+    <span class="n">normalized</span><span class="p">[</span><span class="s2">&quot;geom_friction&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">friction</span>
+    <span class="n">normalized</span><span class="p">[</span><span class="s2">&quot;geom_placeholders&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholders</span>
+    <span class="k">return</span> <span class="n">normalized</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_consistent_native_mask</span><span class="p">(</span><span class="n">entry</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;One native geometry layout shared by every variant, failing closed on drift.&quot;&quot;&quot;</span>
     <span class="n">masks</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="nb">tuple</span><span class="p">(</span>
-            <span class="nb">bool</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">ct</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span><span class="n">ca</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">ct</span><span class="p">,</span> <span class="n">ca</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_contype&quot;</span><span class="p">],</span> <span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_conaffinity&quot;</span><span class="p">])</span>
-        <span class="p">)</span>
+        <span class="nb">tuple</span><span class="p">(</span><span class="nb">bool</span><span class="p">(</span><span class="n">bit</span><span class="p">)</span> <span class="k">for</span> <span class="n">bit</span> <span class="ow">in</span> <span class="n">_record_native_mask</span><span class="p">(</span><span class="n">record</span><span class="p">))</span>
         <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;variants&quot;</span><span class="p">]</span>
     <span class="p">}</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">masks</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;entity variants disagree on the collision geometry layout&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;entity variants disagree on the native geometry layout&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">masks</span><span class="o">.</span><span class="n">pop</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_author_placeholder_geoms</span><span class="p">(</span>
+    <span class="n">stage</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">root_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">body_paths</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+    <span class="n">record</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="n">contact_offset</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">rest_offset</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Author collision-disabled placeholder prims for variant-absent slots.</span>
+
+<span class="sd">    PhysX views are homogeneous across environments, so a variant omitting an</span>
+<span class="sd">    optional public slot still owns a native shape for it: a tiny invisible</span>
+<span class="sd">    sphere with collision disabled. The prim carries the slot&#39;s authored</span>
+<span class="sd">    identity (``unisim:geomIndex``/``unisim:geomName``), which</span>
+<span class="sd">    ``_author_native_geometry`` and the readback match on, and the worker-only</span>
+<span class="sd">    ``unisim:placeholder`` marker. Collision-disabled shapes contribute no</span>
+<span class="sd">    contacts and no mass; explicit body MassAPI attributes are unchanged.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">pxr</span><span class="w"> </span><span class="kn">import</span> <span class="n">PhysxSchema</span><span class="p">,</span> <span class="n">Sdf</span><span class="p">,</span> <span class="n">UsdGeom</span><span class="p">,</span> <span class="n">UsdPhysics</span>
+
+    <span class="n">placeholders</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_placeholders&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">placeholders</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span><span class="n">placeholders</span><span class="p">):</span>
+        <span class="k">return</span>
+    <span class="k">for</span> <span class="n">geom_index</span><span class="p">,</span> <span class="n">is_placeholder</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">placeholders</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">is_placeholder</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">body_name</span> <span class="o">=</span> <span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_body_names&quot;</span><span class="p">][</span><span class="n">geom_index</span><span class="p">]</span>
+        <span class="n">body_prim</span> <span class="o">=</span> <span class="n">stage</span><span class="o">.</span><span class="n">GetPrimAtPath</span><span class="p">(</span><span class="n">root_path</span> <span class="o">+</span> <span class="n">body_paths</span><span class="p">[</span><span class="n">body_name</span><span class="p">])</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">body_prim</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">body_prim</span><span class="o">.</span><span class="n">IsValid</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;placeholder geom body prim is missing: </span><span class="si">{</span><span class="n">body_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">sphere</span> <span class="o">=</span> <span class="n">UsdGeom</span><span class="o">.</span><span class="n">Sphere</span><span class="o">.</span><span class="n">Define</span><span class="p">(</span>
+            <span class="n">stage</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">body_prim</span><span class="o">.</span><span class="n">GetPath</span><span class="p">()</span><span class="si">}</span><span class="s2">/unisim_placeholder_geom_</span><span class="si">{</span><span class="n">geom_index</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+        <span class="n">sphere</span><span class="o">.</span><span class="n">CreateRadiusAttr</span><span class="p">()</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span><span class="mf">1e-4</span><span class="p">)</span>
+        <span class="n">prim</span> <span class="o">=</span> <span class="n">sphere</span><span class="o">.</span><span class="n">GetPrim</span><span class="p">()</span>
+        <span class="n">prim</span><span class="o">.</span><span class="n">CreateAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:geomName&quot;</span><span class="p">,</span> <span class="n">Sdf</span><span class="o">.</span><span class="n">ValueTypeNames</span><span class="o">.</span><span class="n">String</span><span class="p">)</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span>
+            <span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_names&quot;</span><span class="p">][</span><span class="n">geom_index</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="n">prim</span><span class="o">.</span><span class="n">CreateAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:geomIndex&quot;</span><span class="p">,</span> <span class="n">Sdf</span><span class="o">.</span><span class="n">ValueTypeNames</span><span class="o">.</span><span class="n">Int</span><span class="p">)</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span><span class="n">geom_index</span><span class="p">)</span>
+        <span class="n">prim</span><span class="o">.</span><span class="n">CreateAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:placeholder&quot;</span><span class="p">,</span> <span class="n">Sdf</span><span class="o">.</span><span class="n">ValueTypeNames</span><span class="o">.</span><span class="n">Bool</span><span class="p">)</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">UsdPhysics</span><span class="o">.</span><span class="n">CollisionAPI</span><span class="o">.</span><span class="n">Apply</span><span class="p">(</span><span class="n">prim</span><span class="p">)</span><span class="o">.</span><span class="n">CreateCollisionEnabledAttr</span><span class="p">()</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+        <span class="c1"># Solver offsets are entity-level configuration; bake them onto</span>
+        <span class="c1"># placeholder prims too so cache-hit role inspection revalidates one</span>
+        <span class="c1"># uniform value set across every CollisionAPI prim.</span>
+        <span class="k">if</span> <span class="n">contact_offset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">rest_offset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">physx_collision</span> <span class="o">=</span> <span class="n">PhysxSchema</span><span class="o">.</span><span class="n">PhysxCollisionAPI</span><span class="o">.</span><span class="n">Apply</span><span class="p">(</span><span class="n">prim</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">contact_offset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">physx_collision</span><span class="o">.</span><span class="n">CreateContactOffsetAttr</span><span class="p">()</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">contact_offset</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">rest_offset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">physx_collision</span><span class="o">.</span><span class="n">CreateRestOffsetAttr</span><span class="p">()</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">rest_offset</span><span class="p">))</span>
+        <span class="n">UsdGeom</span><span class="o">.</span><span class="n">Imageable</span><span class="p">(</span><span class="n">prim</span><span class="p">)</span><span class="o">.</span><span class="n">MakeInvisible</span><span class="p">()</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_author_native_geometry</span><span class="p">(</span>
@@ -1474,10 +1610,12 @@
 
     <span class="c1"># Visual-only geoms (contype=0 &amp; conaffinity=0) carry no CollisionAPI in</span>
     <span class="c1"># the converted USD (the importer honors the contact bits), so identity</span>
-    <span class="c1"># and friction are authored on the colliding subset only; ``geomIndex``</span>
+    <span class="c1"># and friction are authored on the native subset only; ``geomIndex``</span>
     <span class="c1"># keeps the public (full) record position, matching all-colliding scenes</span>
-    <span class="c1"># value-for-value.</span>
-    <span class="n">collision_mask</span> <span class="o">=</span> <span class="n">_record_collision_mask</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+    <span class="c1"># value-for-value. Placeholder prims arrive pre-slotted by</span>
+    <span class="c1"># ``_author_placeholder_geoms`` and are matched by that authored identity</span>
+    <span class="c1"># instead of by prim order, so placeholder placement is order-free.</span>
+    <span class="n">native_mask</span> <span class="o">=</span> <span class="n">_record_native_mask</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
     <span class="n">authored</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="k">for</span> <span class="n">body_name</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">body_names</span><span class="p">:</span>
         <span class="n">body_prim</span> <span class="o">=</span> <span class="n">stage</span><span class="o">.</span><span class="n">GetPrimAtPath</span><span class="p">(</span><span class="n">root_path</span> <span class="o">+</span> <span class="n">body_paths</span><span class="p">[</span><span class="n">body_name</span><span class="p">])</span>
@@ -1486,7 +1624,7 @@
         <span class="n">expected</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">index</span>
             <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">owner</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_body_names&quot;</span><span class="p">])</span>
-            <span class="k">if</span> <span class="n">owner</span> <span class="o">==</span> <span class="n">body_name</span> <span class="ow">and</span> <span class="n">collision_mask</span><span class="p">[</span><span class="n">index</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">owner</span> <span class="o">==</span> <span class="n">body_name</span> <span class="ow">and</span> <span class="n">native_mask</span><span class="p">[</span><span class="n">index</span><span class="p">]</span>
         <span class="p">]</span>
         <span class="n">collisions</span> <span class="o">=</span> <span class="n">_body_collision_prims</span><span class="p">(</span><span class="n">body_prim</span><span class="p">)</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">collisions</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">expected</span><span class="p">):</span>
@@ -1494,12 +1632,40 @@
                 <span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> body </span><span class="si">{</span><span class="n">body_name</span><span class="si">}</span><span class="s2"> has &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">collisions</span><span class="p">)</span><span class="si">}</span><span class="s2"> native collision geoms, expected </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">expected</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
-        <span class="k">for</span> <span class="n">geom_index</span><span class="p">,</span> <span class="n">collision</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">expected</span><span class="p">,</span> <span class="n">collisions</span><span class="p">):</span>
-            <span class="n">name</span> <span class="o">=</span> <span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_names&quot;</span><span class="p">][</span><span class="n">geom_index</span><span class="p">]</span>
-            <span class="n">collision</span><span class="o">.</span><span class="n">CreateAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:geomName&quot;</span><span class="p">,</span> <span class="n">Sdf</span><span class="o">.</span><span class="n">ValueTypeNames</span><span class="o">.</span><span class="n">String</span><span class="p">)</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
-            <span class="n">collision</span><span class="o">.</span><span class="n">CreateAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:geomIndex&quot;</span><span class="p">,</span> <span class="n">Sdf</span><span class="o">.</span><span class="n">ValueTypeNames</span><span class="o">.</span><span class="n">Int</span><span class="p">)</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span>
-                <span class="n">geom_index</span>
+        <span class="n">preslotted</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">unmarked</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">collision</span> <span class="ow">in</span> <span class="n">collisions</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">collision</span><span class="o">.</span><span class="n">HasAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:geomIndex&quot;</span><span class="p">):</span>
+                <span class="n">observed</span> <span class="o">=</span> <span class="n">collision</span><span class="o">.</span><span class="n">GetAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:geomIndex&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">Get</span><span class="p">()</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">observed</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">observed</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> placeholder geom index is invalid&quot;</span>
+                    <span class="p">)</span>
+                <span class="k">if</span> <span class="n">observed</span> <span class="ow">in</span> <span class="n">preslotted</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> placeholder geom index is duplicated&quot;</span>
+                    <span class="p">)</span>
+                <span class="n">preslotted</span><span class="p">[</span><span class="n">observed</span><span class="p">]</span> <span class="o">=</span> <span class="n">collision</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">unmarked</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">collision</span><span class="p">)</span>
+        <span class="n">remaining</span> <span class="o">=</span> <span class="p">[</span><span class="n">index</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="n">expected</span> <span class="k">if</span> <span class="n">index</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">preslotted</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">unmarked</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">remaining</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="n">index</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">expected</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="n">preslotted</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> body </span><span class="si">{</span><span class="n">body_name</span><span class="si">}</span><span class="s2"> native geometry differs from source&quot;</span>
             <span class="p">)</span>
+        <span class="k">for</span> <span class="n">geom_index</span><span class="p">,</span> <span class="n">collision</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">remaining</span><span class="p">,</span> <span class="n">unmarked</span><span class="p">):</span>
+            <span class="n">collision</span><span class="o">.</span><span class="n">CreateAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:geomName&quot;</span><span class="p">,</span> <span class="n">Sdf</span><span class="o">.</span><span class="n">ValueTypeNames</span><span class="o">.</span><span class="n">String</span><span class="p">)</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span>
+                <span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_names&quot;</span><span class="p">][</span><span class="n">geom_index</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="n">collision</span><span class="o">.</span><span class="n">CreateAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:geomIndex&quot;</span><span class="p">,</span> <span class="n">Sdf</span><span class="o">.</span><span class="n">ValueTypeNames</span><span class="o">.</span><span class="n">Int</span><span class="p">)</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span><span class="n">geom_index</span><span class="p">)</span>
+            <span class="n">preslotted</span><span class="p">[</span><span class="n">geom_index</span><span class="p">]</span> <span class="o">=</span> <span class="n">collision</span>
+        <span class="k">for</span> <span class="n">geom_index</span> <span class="ow">in</span> <span class="n">expected</span><span class="p">:</span>
+            <span class="n">collision</span> <span class="o">=</span> <span class="n">preslotted</span><span class="p">[</span><span class="n">geom_index</span><span class="p">]</span>
+            <span class="n">observed_name</span> <span class="o">=</span> <span class="n">collision</span><span class="o">.</span><span class="n">GetAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:geomName&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">Get</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">observed_name</span> <span class="o">!=</span> <span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_names&quot;</span><span class="p">][</span><span class="n">geom_index</span><span class="p">]:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> native geometry identity differs&quot;</span><span class="p">)</span>
             <span class="n">sliding_friction</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_friction&quot;</span><span class="p">][</span><span class="n">geom_index</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
             <span class="n">material_path</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">root_path</span><span class="si">}</span><span class="s2">/Looks/unisim_geom_</span><span class="si">{</span><span class="n">geom_index</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="n">material</span> <span class="o">=</span> <span class="n">UsdShade</span><span class="o">.</span><span class="n">Material</span><span class="o">.</span><span class="n">Define</span><span class="p">(</span><span class="n">stage</span><span class="p">,</span> <span class="n">material_path</span><span class="p">)</span>
@@ -1510,7 +1676,7 @@
                 <span class="p">[</span><span class="n">Sdf</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">material_path</span><span class="p">)]</span>
             <span class="p">)</span>
             <span class="n">authored</span> <span class="o">+=</span> <span class="mi">1</span>
-    <span class="k">if</span> <span class="n">authored</span> <span class="o">!=</span> <span class="nb">int</span><span class="p">(</span><span class="n">collision_mask</span><span class="o">.</span><span class="n">sum</span><span class="p">()):</span>
+    <span class="k">if</span> <span class="n">authored</span> <span class="o">!=</span> <span class="nb">int</span><span class="p">(</span><span class="n">native_mask</span><span class="o">.</span><span class="n">sum</span><span class="p">()):</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> native geometry record is incomplete&quot;</span><span class="p">)</span>
 
 
@@ -1527,8 +1693,10 @@
     <span class="n">friction</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="c1"># Visual-only geoms have no native collision prim (see</span>
     <span class="c1"># _author_native_geometry); they keep their public row with a zero mask</span>
-    <span class="c1"># and the record&#39;s friction, and only the colliding subset is read back.</span>
-    <span class="n">collision_mask</span> <span class="o">=</span> <span class="n">_record_collision_mask</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+    <span class="c1"># and the record&#39;s friction, and only the native subset is read back.</span>
+    <span class="c1"># Native prims are matched through their authored ``unisim:geomIndex``</span>
+    <span class="c1"># identity, so placeholder placement never depends on prim order.</span>
+    <span class="n">native_mask</span> <span class="o">=</span> <span class="n">_record_native_mask</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">body_name</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">body_names</span><span class="p">:</span>
         <span class="n">body_prim</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">GetStage</span><span class="p">()</span><span class="o">.</span><span class="n">GetPrimAtPath</span><span class="p">(</span><span class="n">root_path</span> <span class="o">+</span> <span class="n">body_paths</span><span class="p">[</span><span class="n">body_name</span><span class="p">])</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">body_prim</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">body_prim</span><span class="o">.</span><span class="n">IsValid</span><span class="p">():</span>
@@ -1536,17 +1704,29 @@
         <span class="n">expected</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">index</span>
             <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">owner</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_body_names&quot;</span><span class="p">])</span>
-            <span class="k">if</span> <span class="n">owner</span> <span class="o">==</span> <span class="n">body_name</span> <span class="ow">and</span> <span class="n">collision_mask</span><span class="p">[</span><span class="n">index</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">owner</span> <span class="o">==</span> <span class="n">body_name</span> <span class="ow">and</span> <span class="n">native_mask</span><span class="p">[</span><span class="n">index</span><span class="p">]</span>
         <span class="p">]</span>
         <span class="n">collisions</span> <span class="o">=</span> <span class="n">_body_collision_prims</span><span class="p">(</span><span class="n">body_prim</span><span class="p">)</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">collisions</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">expected</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> body </span><span class="si">{</span><span class="n">body_name</span><span class="si">}</span><span class="s2"> native geometry differs from source&quot;</span>
             <span class="p">)</span>
-        <span class="k">for</span> <span class="n">geom_index</span><span class="p">,</span> <span class="n">collision</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">expected</span><span class="p">,</span> <span class="n">collisions</span><span class="p">):</span>
+        <span class="n">by_index</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">collision</span> <span class="ow">in</span> <span class="n">collisions</span><span class="p">:</span>
             <span class="n">observed_index</span> <span class="o">=</span> <span class="n">collision</span><span class="o">.</span><span class="n">GetAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:geomIndex&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">Get</span><span class="p">()</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="nb">isinstance</span><span class="p">(</span><span class="n">observed_index</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">observed_index</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="n">observed_index</span> <span class="ow">in</span> <span class="n">by_index</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> native geometry identity differs&quot;</span><span class="p">)</span>
+            <span class="n">by_index</span><span class="p">[</span><span class="n">observed_index</span><span class="p">]</span> <span class="o">=</span> <span class="n">collision</span>
+        <span class="k">for</span> <span class="n">geom_index</span> <span class="ow">in</span> <span class="n">expected</span><span class="p">:</span>
+            <span class="n">collision</span> <span class="o">=</span> <span class="n">by_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">geom_index</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">collision</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> native geometry identity differs&quot;</span><span class="p">)</span>
             <span class="n">observed_name</span> <span class="o">=</span> <span class="n">collision</span><span class="o">.</span><span class="n">GetAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:geomName&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">Get</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">observed_index</span> <span class="o">!=</span> <span class="n">geom_index</span> <span class="ow">or</span> <span class="n">observed_name</span> <span class="o">!=</span> <span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_names&quot;</span><span class="p">][</span><span class="n">geom_index</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="n">observed_name</span> <span class="o">!=</span> <span class="n">record</span><span class="p">[</span><span class="s2">&quot;geom_names&quot;</span><span class="p">][</span><span class="n">geom_index</span><span class="p">]:</span>
                 <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> native geometry identity differs&quot;</span><span class="p">)</span>
             <span class="n">enabled</span> <span class="o">=</span> <span class="n">UsdPhysics</span><span class="o">.</span><span class="n">CollisionAPI</span><span class="p">(</span><span class="n">collision</span><span class="p">)</span><span class="o">.</span><span class="n">GetCollisionEnabledAttr</span><span class="p">()</span><span class="o">.</span><span class="n">Get</span><span class="p">()</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">enabled</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
@@ -1646,7 +1826,17 @@
                 <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> has the wrong gravity role&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">prim</span><span class="o">.</span><span class="n">HasAPI</span><span class="p">(</span><span class="n">UsdPhysics</span><span class="o">.</span><span class="n">CollisionAPI</span><span class="p">):</span>
             <span class="n">collision</span> <span class="o">=</span> <span class="n">UsdPhysics</span><span class="o">.</span><span class="n">CollisionAPI</span><span class="p">(</span><span class="n">prim</span><span class="p">)</span><span class="o">.</span><span class="n">GetCollisionEnabledAttr</span><span class="p">()</span><span class="o">.</span><span class="n">Get</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">collision</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">expected_collision</span><span class="p">:</span>
+            <span class="n">placeholder</span> <span class="o">=</span> <span class="n">prim</span><span class="o">.</span><span class="n">HasAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:placeholder&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span>
+                <span class="n">prim</span><span class="o">.</span><span class="n">GetAttribute</span><span class="p">(</span><span class="s2">&quot;unisim:placeholder&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">Get</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">True</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">placeholder</span><span class="p">:</span>
+                <span class="c1"># Placeholder prims stand in for variant-absent optional</span>
+                <span class="c1"># slots; they must never collide.</span>
+                <span class="k">if</span> <span class="n">collision</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">False</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> has an enabled placeholder geom&quot;</span>
+                    <span class="p">)</span>
+            <span class="k">elif</span> <span class="n">collision</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">expected_collision</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> has the wrong collision role&quot;</span><span class="p">)</span>
             <span class="c1"># The cache identity tracks the requested offsets; revalidate the</span>
             <span class="c1"># authored values like every other baked role semantic.  PhysX</span>
@@ -2290,7 +2480,7 @@
                 <span class="p">[</span><span class="n">native_joints</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">entity</span><span class="o">.</span><span class="n">actuator_joint_names</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span>
             <span class="p">)</span>
             <span class="n">geom_columns</span> <span class="o">=</span> <span class="n">_native_geometry_columns</span><span class="p">(</span>
-                <span class="n">native_bodies</span><span class="p">,</span> <span class="n">bodies</span><span class="p">,</span> <span class="n">entity</span><span class="p">,</span> <span class="n">_consistent_collision_mask</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
+                <span class="n">native_bodies</span><span class="p">,</span> <span class="n">bodies</span><span class="p">,</span> <span class="n">entity</span><span class="p">,</span> <span class="n">_consistent_native_mask</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
             <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">maps</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                 <span class="p">{</span>
