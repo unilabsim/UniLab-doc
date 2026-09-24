@@ -22,8 +22,7 @@ in English. Do not infer support beyond the evidence grade shown below.
 ## Playback Differences
 
 - `mujoco`: `--render-mode auto` exports `play_video.mp4`; `--render-mode
-  viser` serves the rollout in a browser-based viser viewer (requires the
-  viser extra).
+  viser` serves the rollout in a browser-based viser viewer.
 - `motrix`: `--render-mode auto` opens an interactive renderer window; it does
   not record a video and is not bound by `play_steps`.
 - `mjwarp`: supports explicit, finite-step `record` by default, rendered offline

@@ -102,10 +102,12 @@ Supported render modes are `auto`, `interactive`, `record`, `viser`, and
 The MuJoCo interactive mode (`--sim mujoco --render-mode interactive`) routes
 directly to `play_interactive.py` and always rolls out one environment.
 
-For `--sim mujoco` and `--sim mjwarp`, `--render-mode viser` routes to the
-browser-based viser viewer (`play_viser.py`): no local display is required,
-and macOS runs it without `mjpython`. It needs the viser extra (`uv sync
---extra viser`); the `viser.*` config group (`viser.port`, `viser.max_envs`,
+For backends with physics-state playback (`mujoco`, `mjwarp`, `newton`,
+`drake`, `superdex`), `--render-mode viser` serves the rollout through the
+browser-based viser viewer: no local display is required, and macOS runs it
+without `mjpython`. Eval routes to the standalone `play_viser.py` viewer;
+train runs the same viewer as its post-training playback. viser is a required
+dependency; the `viser.*` config group (`viser.port`, `viser.max_envs`,
 `viser.display_mode`, `viser.env_idx`) tunes the server and the scene.
 
 ## Demo

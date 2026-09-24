@@ -90,7 +90,8 @@ The selected owner YAML sets `training.sim_backend` as an identity field.
   paths.
 - `--render-mode record` records without opening an interactive window.
 - `--render-mode viser` serves the rollout in a browser-based viser viewer on
-  MuJoCo and mjwarp paths (requires the viser extra).
+  backends with physics-state playback (MuJoCo, mjwarp, newton, drake,
+  superdex).
 - `--render-mode none` disables playback.
 
 ```bash

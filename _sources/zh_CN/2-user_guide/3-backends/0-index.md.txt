@@ -86,8 +86,8 @@ Owner YAML 位置：
 - `--render-mode auto` 在 MuJoCo 路径上导出 `play_video.mp4`。
 - `--render-mode auto` 在 Motrix 路径上打开 Motrix 原生交互式渲染。
 - `--render-mode record` 在不打开交互式窗口的情况下录制。
-- `--render-mode viser` 在 MuJoCo 和 mjwarp 路径上通过基于浏览器的 viser
-  viewer 展示回放（需要 viser extra）。
+- `--render-mode viser` 在具备 physics-state playback 的后端（MuJoCo、mjwarp、
+  newton、drake、superdex）上通过基于浏览器的 viser viewer 展示回放。
 - `--render-mode none` 禁用回放。
 
 ```bash

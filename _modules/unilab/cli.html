@@ -560,6 +560,11 @@
 <span class="c1"># Physics backends whose interactive eval runs through the dedicated MuJoCo</span>
 <span class="c1"># viewer script: the selected backend owns the rollout while MuJoCo renders.</span>
 <span class="n">MUJOCO_VIEWER_PHYSICS_SIMS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">&quot;mujoco&quot;</span><span class="p">,</span> <span class="s2">&quot;mjwarp&quot;</span><span class="p">})</span>
+<span class="c1"># Backends whose upstream unisim adapter does not implement the physics-state</span>
+<span class="c1"># playback contract the viser viewer renders from (they expose native</span>
+<span class="c1"># renderers instead). Supporting viser there requires upstream unisim</span>
+<span class="c1"># capability work, so these sims fail closed with an actionable message.</span>
+<span class="n">VISER_UNSUPPORTED_SIMS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">&quot;motrix&quot;</span><span class="p">,</span> <span class="s2">&quot;genesis&quot;</span><span class="p">,</span> <span class="s2">&quot;isaacgym&quot;</span><span class="p">,</span> <span class="s2">&quot;isaacsim&quot;</span><span class="p">})</span>
 <span class="n">RESERVED_OVERRIDE_KEYS</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">&quot;algo&quot;</span><span class="p">,</span>
     <span class="s2">&quot;task&quot;</span><span class="p">,</span>
@@ -933,7 +938,7 @@
     <span class="k">return</span> <span class="n">selected_mode</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">selected_mode</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;interactive&quot;</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_uses_mujoco_viser_play</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_uses_viser_play</span><span class="p">(</span>
     <span class="o">*</span><span class="p">,</span>
     <span class="n">mode</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">algo</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -941,12 +946,15 @@
     <span class="n">render_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">overrides</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return whether eval should use the browser-based viser viewer script.&quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="p">(</span>
-        <span class="n">mode</span> <span class="o">!=</span> <span class="s2">&quot;eval&quot;</span>
-        <span class="ow">or</span> <span class="n">sim</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">MUJOCO_VIEWER_PHYSICS_SIMS</span>
-        <span class="ow">or</span> <span class="n">algo</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">INTERACTIVE_PLAY_ALGOS</span>
-    <span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return whether eval should use the browser-based viser viewer script.</span>
+
+<span class="sd">    Any physics owner whose backend declares physics-state playback is</span>
+<span class="sd">    routable; :data:`VISER_UNSUPPORTED_SIMS` sims are rejected earlier with a</span>
+<span class="sd">    targeted message, and the viewer itself fails closed on the runtime</span>
+<span class="sd">    capability check.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">del</span> <span class="n">sim</span>  <span class="c1"># routing is sim-agnostic; capability gating happens at runtime</span>
+    <span class="k">if</span> <span class="n">mode</span> <span class="o">!=</span> <span class="s2">&quot;eval&quot;</span> <span class="ow">or</span> <span class="n">algo</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">INTERACTIVE_PLAY_ALGOS</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">False</span>
     <span class="n">selected_mode</span> <span class="o">=</span> <span class="n">_override_value</span><span class="p">(</span><span class="n">overrides</span><span class="p">,</span> <span class="s2">&quot;training.play_render_mode&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">render_mode</span>
     <span class="k">return</span> <span class="n">selected_mode</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">selected_mode</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;viser&quot;</span>
@@ -980,7 +988,7 @@
         <span class="n">render_mode</span><span class="o">=</span><span class="n">render_mode</span><span class="p">,</span>
         <span class="n">overrides</span><span class="o">=</span><span class="n">overrides</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="n">use_viser_play</span> <span class="o">=</span> <span class="n">_uses_mujoco_viser_play</span><span class="p">(</span>
+    <span class="n">use_viser_play</span> <span class="o">=</span> <span class="n">_uses_viser_play</span><span class="p">(</span>
         <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">,</span>
         <span class="n">algo</span><span class="o">=</span><span class="n">algo</span><span class="p">,</span>
         <span class="n">sim</span><span class="o">=</span><span class="n">sim</span><span class="p">,</span>
@@ -988,15 +996,17 @@
         <span class="n">overrides</span><span class="o">=</span><span class="n">overrides</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">selected_mode</span> <span class="o">=</span> <span class="n">_override_value</span><span class="p">(</span><span class="n">overrides</span><span class="p">,</span> <span class="s2">&quot;training.play_render_mode&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">render_mode</span>
-    <span class="k">if</span> <span class="p">(</span>
-        <span class="n">selected_mode</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="ow">and</span> <span class="n">selected_mode</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;viser&quot;</span>
-        <span class="ow">and</span> <span class="ow">not</span> <span class="n">use_viser_play</span>
-    <span class="p">):</span>
+    <span class="n">viser_mode_requested</span> <span class="o">=</span> <span class="n">selected_mode</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">selected_mode</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;viser&quot;</span>
+    <span class="k">if</span> <span class="n">viser_mode_requested</span> <span class="ow">and</span> <span class="n">sim</span> <span class="ow">in</span> <span class="n">VISER_UNSUPPORTED_SIMS</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span>
-            <span class="s2">&quot;render mode &#39;viser&#39; is only supported for eval with a browser-renderable &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;physics owner (--sim mujoco or --sim mjwarp); got mode=</span><span class="si">{</span><span class="n">mode</span><span class="si">}</span><span class="s2">, sim=</span><span class="si">{</span><span class="n">sim</span><span class="si">}</span><span class="s2">, &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;algo=</span><span class="si">{</span><span class="n">algo</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;render mode &#39;viser&#39; renders through the physics-state playback contract, &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;which the </span><span class="si">{</span><span class="n">sim</span><span class="si">}</span><span class="s2"> backend does not implement in upstream unisim; &quot;</span>
+            <span class="s2">&quot;use --render-mode interactive or record for its native renderer.&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">viser_mode_requested</span> <span class="ow">and</span> <span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;eval&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">use_viser_play</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;render mode &#39;viser&#39; eval requires one of the interactive play algos &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">INTERACTIVE_PLAY_ALGOS</span><span class="p">))</span><span class="si">}</span><span class="s2">); got algo=</span><span class="si">{</span><span class="n">algo</span><span class="si">}</span><span class="s2">.&quot;</span>
         <span class="p">)</span>
     <span class="k">if</span> <span class="n">use_interactive_play</span> <span class="ow">and</span> <span class="n">find_spec</span><span class="p">(</span><span class="s2">&quot;mujoco&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span>
@@ -1004,19 +1014,12 @@
             <span class="s2">&quot;extra. Install it with `pip install unilab[mujoco]` (or `uv sync --extra &quot;</span>
             <span class="s2">&quot;mujoco` in a source checkout).&quot;</span>
         <span class="p">)</span>
-    <span class="k">if</span> <span class="n">use_viser_play</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">find_spec</span><span class="p">(</span><span class="s2">&quot;mujoco&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span>
-                <span class="s2">&quot;viser eval renders MuJoCo playback models and requires the MuJoCo &quot;</span>
-                <span class="s2">&quot;extra. Install it with `pip install unilab[mujoco]` (or `uv sync &quot;</span>
-                <span class="s2">&quot;--extra mujoco` in a source checkout).&quot;</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="n">find_spec</span><span class="p">(</span><span class="s2">&quot;viser&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span>
-                <span class="s2">&quot;viser eval serves the rollout through a browser-based viser viewer and &quot;</span>
-                <span class="s2">&quot;requires the viser extra. Install it with `pip install unilab[viser]` &quot;</span>
-                <span class="s2">&quot;(or `uv sync --extra viser` in a source checkout).&quot;</span>
-            <span class="p">)</span>
+    <span class="k">if</span> <span class="n">viser_mode_requested</span> <span class="ow">and</span> <span class="n">find_spec</span><span class="p">(</span><span class="s2">&quot;mujoco&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span>
+            <span class="s2">&quot;viser playback renders MuJoCo playback models and requires the MuJoCo &quot;</span>
+            <span class="s2">&quot;package. Install it with `pip install unilab[mujoco]` (or `uv sync &quot;</span>
+            <span class="s2">&quot;--extra mujoco` in a source checkout).&quot;</span>
+        <span class="p">)</span>
     <span class="n">viewer_script_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="n">use_interactive_play</span><span class="p">:</span>
         <span class="n">viewer_script_name</span> <span class="o">=</span> <span class="s2">&quot;play_interactive.py&quot;</span>

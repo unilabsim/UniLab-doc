@@ -21,7 +21,7 @@ uv run demo dance
 - `interactive` — 打开查看器窗口（macOS Motrix 上的默认值）。
 - `record` — 将 MP4 写入 `runs/<run>/playback/`。
 - `viser` — 在基于浏览器的 viser viewer 中展示回放
-  （仅 `--sim mujoco` / `--sim mjwarp`；需要 viser extra）。
+  （支持所有具备 physics-state playback 的后端：`mujoco`、`mjwarp`、`newton`、`drake`、`superdex`）。
 - `none` — 跳过渲染，仅计算指标。
 
 当使用 `--sim mujoco --render-mode interactive` 时，`uv run eval` 会直接启动

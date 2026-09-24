@@ -20,8 +20,9 @@ Render modes:
 
 - `interactive` — open viewer window (default on macOS Motrix).
 - `record` — write MP4 to `runs/<run>/playback/`.
-- `viser` — serve the rollout in a browser-based viser viewer
-  (`--sim mujoco` / `--sim mjwarp` only; requires the viser extra).
+- `viser` — serve the rollout in a browser-based viser viewer (any backend
+  with physics-state playback: `mujoco`, `mjwarp`, `newton`, `drake`,
+  `superdex`).
 - `none` — skip rendering, just compute metrics.
 
 For `--sim mujoco --render-mode interactive`, `uv run eval` launches the dedicated
