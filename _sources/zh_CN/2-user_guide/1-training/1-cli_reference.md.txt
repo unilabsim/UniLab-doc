@@ -11,6 +11,7 @@ Hydra 组合。
 | APPO | `uv run train --algo appo --task <task> --sim <backend>` | `src/unilab/scripts/train_appo.py` |
 | SAC | `uv run train --algo sac --task <task> --sim <backend>` | `src/unilab/scripts/train_sac.py` |
 | FlashSAC | `uv run train --algo flashsac --task <task> --sim <backend>` | `src/unilab/scripts/train_flashsac.py` |
+| WarpSAC | `uv run train --algo warpsac --task <task> --sim <backend>` | `src/unilab/scripts/train_warpsac.py` |
 
 示例：
 

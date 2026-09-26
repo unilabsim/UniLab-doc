@@ -104,13 +104,16 @@ rendering/playback paths remain unsupported.
 | FlashSAC (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | - | Registered | - | - | - | - | Registered |
 | FlashSAC (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Configured | Tested | Registered | Registered | Registered | Registered | - |
 | FlashSAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Configured | Tested | Registered | Configured | Registered | Configured | - |
+| WarpSAC (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Tested | Registered | Registered | Registered | Registered | Registered | - |
+| WarpSAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | Registered | Registered | Registered | Registered | Registered | - |
 
 ## Source Index
 
 - Registry bootstrap: `src/unilab/envs/**` decorators via
   `unilab.base.registry.ensure_registries()`.
 - Owner YAML scan: `src/unilab/conf/ppo/task/**`, `src/unilab/conf/appo/task/**`,
-  `src/unilab/conf/sac/task/**`, `src/unilab/conf/flashsac/task/**`.
+  `src/unilab/conf/sac/task/**`, `src/unilab/conf/flashsac/task/**`, and
+  `src/unilab/conf/warpsac/task/**`.
 - Generic compose coverage:
   `tests/config/test_config_system.py::test_supported_task_composes`.
 - Validated mjwarp entrypoints are explicitly recorded in

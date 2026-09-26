@@ -40,14 +40,14 @@ uv run scripts/generate_support_matrix.py --write
 | 等级 | 仓库事实来源 |
 |------|--------------|
 | `Registered` | `ensure_registries()` 导入后的 `registry.list_registered_envs()` 中存在该 env/backend。 |
-| `Configured` | 存在对应的 owner YAML：`src/unilab/conf/{ppo,appo,sac,flashsac}/task/...`。 |
+| `Configured` | 存在对应的 owner YAML：`src/unilab/conf/{ppo,appo,sac,flashsac,warpsac}/task/...`。 |
 | `Tested` | `tests/` 中有自动化覆盖该 entrypoint/task owner/backend 组合，或存在显式 maintainer 完整训练验证并具备近风险自动化测试。这里的 `Tested` 不等同于默认推荐路径。 |
 | `Benchmarked` | 存在与该组合绑定的已提交 benchmark manifest。 |
 | `Recommended` | 仓库中存在显式 recommendation 元数据。 |
 
 `Tested` 只描述仓库中已有自动化覆盖或显式 maintainer 训练验证，不代表该组合具备同名 MuJoCo owner 的全部 backend capability；例如 phase-1 Motrix owner 可能只覆盖训练 smoke 和明确启用的 DR 子集。
 
-`mjwarp` 完成训练验证的只有 `g1_walk_flat` host adapter：PPO (torch) 与 SAC (torch) owner 已完成训练验证，并有 backend、contract 与 playback 自动化覆盖，因此标记为 `Tested`。mjwarp playback 默认仅支持显式、有限步数的 `record` 并复用 MuJoCo 离线 renderer；`uv run eval --sim mjwarp --render-mode interactive` 路由到 MuJoCo 交互 viewer（mjwarp 跑物理、MuJoCo 渲染 env[0]，强制单 env）；不支持 `auto` 或 native playback。其他 entrypoint 中出现的 `Registered` 只表示 env/backend registry identity，不代表对应算法、terrain、完整 DR 或 production training 支持。
+`mjwarp` 完成训练验证的是 `g1_walk_flat` host adapter 的 PPO (torch)、SAC (torch) 与 WarpSAC (torch)，以及 `g1_motion_tracking` 的 WarpSAC (torch)；这些 owner 有 backend、contract 与 playback 自动化覆盖，因此标记为 `Tested`。mjwarp playback 默认仅支持显式、有限步数的 `record` 并复用 MuJoCo 离线 renderer；`uv run eval --sim mjwarp --render-mode interactive` 路由到 MuJoCo 交互 viewer（mjwarp 跑物理、MuJoCo 渲染 env[0]，强制单 env）；不支持 `auto` 或 native playback。其他 entrypoint 中出现的 `Registered` 只表示 env/backend registry identity，不代表对应算法、terrain、完整 DR 或 production training 支持。
 
 `isaacgym` 是 Python 3.8 子进程后端，当前只接入 `g1_walk_flat`。SAC (torch) owner 已在真机（external Python 3.8 worker runtime，不在仓库 CI 覆盖）完成训练与 record playback 验证，标记为 `Tested`；其余 isaacgym cell 最高只到 `Configured`（registry + owner YAML + compose/contract 覆盖），不代表任何训练或 play 验证。playback 走 IsaacGym 原生渲染（viewer + camera sensor 离屏录制），有显示器时 `play_render_mode=auto` 打开交互 viewer，无显示器时自动降级为离屏录制。
 
@@ -84,11 +84,13 @@ uv run scripts/generate_support_matrix.py --write
 | FlashSAC (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | - | Registered | - | - | - | - | Registered |
 | FlashSAC (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Configured | Tested | Registered | Registered | Registered | Registered | - |
 | FlashSAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Configured | Tested | Registered | Configured | Registered | Configured | - |
+| WarpSAC (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Tested | Registered | Registered | Registered | Registered | Registered | - |
+| WarpSAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | Registered | Registered | Registered | Registered | Registered | - |
 
 ### Source Index
 
 - Registry bootstrap: `src/unilab/envs/**` decorators via `unilab.base.registry.ensure_registries()`.
-- Owner YAML scan: `src/unilab/conf/ppo/task/**`, `src/unilab/conf/appo/task/**`, `src/unilab/conf/sac/task/**`, `src/unilab/conf/flashsac/task/**`.
+- Owner YAML scan: `src/unilab/conf/ppo/task/**`, `src/unilab/conf/appo/task/**`, `src/unilab/conf/sac/task/**`, `src/unilab/conf/flashsac/task/**`, `src/unilab/conf/warpsac/task/**`.
 - Generic compose coverage: `tests/config/test_config_system.py::test_supported_task_composes`.
 - SuperDex remains `Configured`: FR3 has optional CPU rollout/spawn coverage in `tests/envs/test_fr3_superdex.py`; the Go2 research profile has policy-contract/rollout/checkpoint coverage in `tests/envs/test_go2_superdex.py`. Neither profile claims full-training performance or cross-platform support.
 - Validated mjwarp entrypoints are explicitly recorded in `_MAINTAINER_VALIDATED_MJWARP_ENTRYPOINT_TASKS`; near-risk coverage lives in `tests/base/test_mjwarp_backend.py`, `tests/base/test_backend_conformance.py`, `tests/base/test_mjwarp_differential.py`, and `tests/base/test_mjwarp_playback.py`.

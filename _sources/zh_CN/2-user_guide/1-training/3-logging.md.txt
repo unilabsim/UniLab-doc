@@ -6,7 +6,7 @@ training logger 提交一次指标。终端面板按固定 2 Hz 时钟刷新，�
 backend 保留每个 iteration 未经时间平滑的值。
 
 本文先说明所有算法共用的日志目录和 Manager-Based reward 指标契约，再详细说明
-SAC / FlashSAC 与 APPO 共用的 off-policy 终端视图。表中的“终端字段”与
+SAC / FlashSAC / WarpSAC 与 APPO 共用的 off-policy 终端视图。表中的“终端字段”与
 backend key 一一对应；后缀 `_ms` 均为毫秒。
 
 ## 日志目录与 backend
@@ -26,6 +26,7 @@ uv run train --algo ppo --task go2_joystick_flat --sim mujoco
 | APPO | `logs/appo/<task>/` | `src/unilab/conf/appo/config.yaml` |
 | SAC | `logs/fast_sac/<task>/` | `src/unilab/conf/sac/config.yaml` |
 | FlashSAC | `logs/flash_sac/<task>/` | `src/unilab/conf/flashsac/config.yaml` |
+| WarpSAC | `logs/warp_sac/<task>/` | `src/unilab/conf/warpsac/config.yaml` |
 
 单个 run 目录名为 `YYYY-MM-DD_HH-MM-SS_<sim_backend>`，例如
 `2026-03-09_18-30-00_mujoco`。常见产物包括 `run_config.json`、

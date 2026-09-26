@@ -5,7 +5,7 @@ independently released **uni_rl** package (distribution name `unilab-rl`,
 published on PyPI; issue #1480):
 
 - `uni_rl.algos.appo` — APPO runner, learner, staging, worker
-- `uni_rl.algos.fast_sac` / `uni_rl.algos.flash_sac` — off-policy learners and runners
+- `uni_rl.algos.fast_sac` / `uni_rl.algos.flash_sac` / `uni_rl.algos.warp_sac` — off-policy learners and runners
 - `uni_rl.offpolicy` — generic off-policy runner, worker, thread budget
 - `uni_rl.algos.common` — shared actor factory, networks, normalization, compile helpers
 
