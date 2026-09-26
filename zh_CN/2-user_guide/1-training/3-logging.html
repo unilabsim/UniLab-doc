@@ -427,8 +427,11 @@ training logger 提交一次指标。终端面板按固定 2 Hz 时钟刷新，�
 <code class="docutils literal notranslate"><span class="pre">training.logger=tensorboard</span></code>（默认）或 <code class="docutils literal notranslate"><span class="pre">training.logger=wandb</span></code> 决定持久化 backend，
 backend 保留每个 iteration 未经时间平滑的值。</p>
 <p>本文先说明所有算法共用的日志目录和 Manager-Based reward 指标契约，再详细说明
-SAC / FlashSAC / WarpSAC 与 APPO 共用的 off-policy 终端视图。表中的“终端字段”与
-backend key 一一对应；后缀 <code class="docutils literal notranslate"><span class="pre">_ms</span></code> 均为毫秒。</p>
+SAC / FlashSAC / WarpSAC 与 APPO 共用的 off-policy 终端视图。持久化 backend tag
+遵循 <code class="docutils literal notranslate"><span class="pre">uni_rl.logging.metric_schema</span></code> 持有的 canonical schema：毫秒计时字段以
+<code class="docutils literal notranslate"><span class="pre">_ms</span></code> 结尾，而 <code class="docutils literal notranslate"><span class="pre">Perf/learning_time</span></code>、<code class="docutils literal notranslate"><span class="pre">Perf/collection_time</span></code> 与
+<code class="docutils literal notranslate"><span class="pre">Perf/iteration_time</span></code> 单位为秒。少数终端字段（<code class="docutils literal notranslate"><span class="pre">Other</span></code>、各阶段百分比、collector
+cycle 合计、<code class="docutils literal notranslate"><span class="pre">Rows/s</span></code>）是在内存中为显示推导的值，有意不持久化。</p>
 <section id="backend">
 <h2>日志目录与 backend<a class="headerlink" href="#backend" title="Link to this heading">¶</a></h2>
 <p>使用默认 TensorBoard logger 运行训练：</p>
@@ -533,9 +536,10 @@ key 的契约如下：</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">System</span></code>：buffer 大小、timeout rate、env 数和每 rank batch 大小。</p></li>
 </ul>
 <p>面板边框标题显示 <code class="docutils literal notranslate"><span class="pre">GPUs</span> <span class="pre">N</span></code>。多卡训练中只有 rank 0 持有终端与持久化 logger；learner
-指标和计时先在 rank 间取平均，再进入终端的两秒时间窗口。<code class="docutils literal notranslate"><span class="pre">Steps/s</span></code> 与 <code class="docutils literal notranslate"><span class="pre">Samples/s</span></code>
-不取 rank 平均：前者把各 rank collector step rate 求和，后者把各 rank learner sample
-rate 求和，因此两者都是整个训练任务的总吞吐。标题中的 <code class="docutils literal notranslate"><span class="pre">Avg</span> <span class="pre">2s</span> <span class="pre">(n=...)</span></code> 表示当前窗口
+指标和计时先在 rank 间取平均，再进入终端的两秒时间窗口。<code class="docutils literal notranslate"><span class="pre">Steps/s</span></code> 与 <code class="docutils literal notranslate"><span class="pre">Rows/s</span></code>
+不取 rank 平均：前者把各 rank collector step rate 求和，后者把各 rank learner
+replay 行速率求和，因此两者都是整个训练任务的总吞吐。其中只有 <code class="docutils literal notranslate"><span class="pre">Steps/s</span></code> 会持久化
+（即 <code class="docutils literal notranslate"><span class="pre">Perf/total_fps</span></code>），<code class="docutils literal notranslate"><span class="pre">Rows/s</span></code> 仅终端显示。标题中的 <code class="docutils literal notranslate"><span class="pre">Avg</span> <span class="pre">2s</span> <span class="pre">(n=...)</span></code> 表示当前窗口
 包含多少个已经完成 rank 聚合的 learner 样本。</p>
 <p>两列时间不能横向相加。只有 learner 列从 <code class="docutils literal notranslate"><span class="pre">Collector</span> <span class="pre">Wait</span></code> 到 <code class="docutils literal notranslate"><span class="pre">Other</span></code> 的行是互斥主线程
 阶段；实现以 <code class="docutils literal notranslate"><span class="pre">Other</span> <span class="pre">=</span> <span class="pre">max(Iter</span> <span class="pre">Wall</span> <span class="pre">-</span> <span class="pre">accounted,</span> <span class="pre">0)</span></code> 补齐未命名区间。正常情况下它们合计
@@ -556,62 +560,62 @@ APPO 出现。</p>
 </thead>
 <tbody>
 <tr class="row-even"><td><p>Collector Wait</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_collector_wait_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_collector_wait_ms</span></code></p></td>
 <td><p>全部</p></td>
 <td><p>learner 主线程等待达到本轮 update 边界；SAC 类路径会服务 inference request，并继续等 replay ready 与 <code class="docutils literal notranslate"><span class="pre">env_steps_per_sync</span></code> tick 数满足，APPO 等 ring 中 rollout</p></td>
 </tr>
 <tr class="row-odd"><td><p>Inference</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_inference_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_inference_ms</span></code></p></td>
 <td><p>learner-owned inference</p></td>
 <td><p>observation H2D、actor forward、action D2H 的总墙钟；三项嵌套明细见下表</p></td>
 </tr>
 <tr class="row-even"><td><p>Collector Release</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_collector_release_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_collector_release_ms</span></code></p></td>
 <td><p>learner-owned inference</p></td>
 <td><p>将 action response token 发给 collector；正常应很短，阻塞表示 response queue 尚未腾空</p></td>
 </tr>
 <tr class="row-odd"><td><p>Replay Batch Wait</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_replay_batch_wait_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_replay_batch_wait_ms</span></code></p></td>
 <td><p>device replay</p></td>
 <td><p>等已预取的 device batch 完成 ingress commit 与 gather；预取命中时接近 0</p></td>
 </tr>
 <tr class="row-even"><td><p>Replay Stage</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_replay_stage_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_replay_stage_ms</span></code></p></td>
 <td><p>APPO</p></td>
 <td><p>将 ring buffer 中本轮新到的 NumPy rollout 顺序 materialize 到 learner staging pool；这是 learner 主线程的独占阶段</p></td>
 </tr>
 <tr class="row-odd"><td><p>Replay Sample</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_replay_sample_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_replay_sample_ms</span></code></p></td>
 <td><p>全部</p></td>
 <td><p>取得 ready batch；CUDA device replay 通常只是 hot/cold swap 与 view，MPS 还可能等待 slot event</p></td>
 </tr>
-<tr class="row-even"><td><p>Train</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_train_ms</span></code></p></td>
+<tr class="row-even"><td><p>Learning</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learning_time</span></code>（秒）</p></td>
 <td><p>全部</p></td>
 <td><p>learner update 阶段的墙钟</p></td>
 </tr>
 <tr class="row-odd"><td><p>Weight Publish</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_weight_publish_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_weight_publish_ms</span></code></p></td>
 <td><p>APPO</p></td>
 <td><p>将新 actor / critic 权重写入共享内存</p></td>
 </tr>
 <tr class="row-even"><td><p>Other</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_other_ms</span></code></p></td>
+<td><p>仅终端</p></td>
 <td><p>全部</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">Iter</span> <span class="pre">Wall</span></code> 减去上述互斥阶段的 residual，例如 metrics drain、reward stats 与 loop bookkeeping</p></td>
 </tr>
 <tr class="row-odd"><td><p>Iter Wall</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">perf/iter_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/iteration_time</span></code>（秒）</p></td>
 <td><p>全部</p></td>
-<td><p>从本轮 learner loop 开始到 update 完成的墙钟，固定显示 100%</p></td>
+<td><p>从本轮 learner loop 开始到 update 完成的墙钟，固定显示 100%；仅在 runner 测得完整迭代墙钟时写出</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>backend 还记录 <code class="docutils literal notranslate"><span class="pre">perf/learner_train_pct</span></code>、<code class="docutils literal notranslate"><span class="pre">perf/learner_accounted_pct</span></code> 与
-<code class="docutils literal notranslate"><span class="pre">perf/learner_other_pct</span></code>。<code class="docutils literal notranslate"><span class="pre">accounted</span></code> 只包含上表的互斥主线程阶段，不包含任何嵌套或后台
+<p><code class="docutils literal notranslate"><span class="pre">Other</span></code> 与各行百分比是在内存中为终端推导的值，不作为 backend chart 持久化。
+<code class="docutils literal notranslate"><span class="pre">accounted</span></code> 只包含上表的互斥主线程阶段，不包含任何嵌套或后台
 诊断。正常采样下 <code class="docutils literal notranslate"><span class="pre">accounted</span> <span class="pre">+</span> <span class="pre">other</span> <span class="pre">=</span> <span class="pre">100%</span></code>；如果系统时钟异常或未来埋点意外重叠使
-<code class="docutils literal notranslate"><span class="pre">accounted</span> <span class="pre">&gt;</span> <span class="pre">Iter</span> <span class="pre">Wall</span></code>，<code class="docutils literal notranslate"><span class="pre">Other</span></code> 会钳制为 0，而 <code class="docutils literal notranslate"><span class="pre">accounted_pct</span> <span class="pre">&gt;</span> <span class="pre">100%</span></code> 是应修复的 contract
+<code class="docutils literal notranslate"><span class="pre">accounted</span> <span class="pre">&gt;</span> <span class="pre">Iter</span> <span class="pre">Wall</span></code>，<code class="docutils literal notranslate"><span class="pre">Other</span></code> 会钳制为 0，而 accounted 超过 100% 是应修复的 contract
 告警，不是可解释的并行占比。</p>
 </section>
 <section id="id2">
@@ -626,19 +630,19 @@ APPO 出现。</p>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_inference_h2d_ms</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_inference_h2d_ms</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">Inference</span></code> 子项</p></td>
 <td><p>observation 从共享 CPU slot 拷到 learner device</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_inference_forward_ms</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_inference_forward_ms</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">Inference</span></code> 子项</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">learner.actor</span></code> 推理；包含当前实现中的 device synchronize</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_inference_d2h_ms</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_inference_d2h_ms</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">Inference</span></code> 子项</p></td>
 <td><p>action 写回共享 CPU slot</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/replay_ingress_h2d_submit_ms</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Perf/replay_ingress_h2d_submit_ms</span></code></p></td>
 <td><p>replay ingress；CUDA daemon 或 MPS learner 线程</p></td>
 <td><p>最近一次 transition span 提交到 authoritative device ring 的 CPU 侧耗时；它可能落在任意主阶段内，因此绝不能再加到 learner 百分比中</p></td>
 </tr>
@@ -653,48 +657,89 @@ APPO 出现。</p>
 </section>
 <section id="run-tag">
 <h3>旧 run 的 tag 对照<a class="headerlink" href="#run-tag" title="Link to this heading">¶</a></h3>
-<p>历史 TensorBoard event 不会被重写。新 run 使用下列 canonical tag；打开旧 run 时仍会看到
-旧名：</p>
+<p>历史 TensorBoard event 不会被重写。unilab-rl 1.4.1 及以后的 run 使用下列
+canonical tag（权威定义：<code class="docutils literal notranslate"><span class="pre">uni_rl.logging.metric_schema</span></code>，完整迁移表见 unilab_rl
+仓库的 <code class="docutils literal notranslate"><span class="pre">docs/metrics.md</span></code>）；打开旧 run 时仍会看到已退役的旧名：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>旧 tag</p></th>
 <th class="head"><p>新 tag</p></th>
-<th class="head"><p>变化原因</p></th>
+<th class="head"><p>说明</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/inference_total_ms</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_inference_ms</span></code></p></td>
-<td><p>与终端 <code class="docutils literal notranslate"><span class="pre">Inference</span></code> 统一，并明确 owner</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">perf/steps_per_sec</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/total_fps</span></code></p></td>
+<td><p>聚合 collector env-step 吞吐（DP 下跨 rank 求和）</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/inference_{h2d,forward,d2h}_ms</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_inference_{h2d,forward,d2h}_ms</span></code></p></td>
-<td><p>三个嵌套项统一放入 learner namespace</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">reward/mean</span></code>、<code class="docutils literal notranslate"><span class="pre">reward/mean_ep100</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Train/mean_reward</span></code></p></td>
+<td><p>collector 最近 100 个 episode 的 return 均值；runner 的 10-report 平滑仅是 checkpoint 状态</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_incremental_h2d_ms</span></code>（SAC 类）</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/replay_ingress_h2d_submit_ms</span></code></p></td>
-<td><p>明确它是可能并行的 submit 诊断，不是 learner 主阶段</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">episode/timeout_rate</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Episode/timeout_rate</span></code></p></td>
+<td><p>首个完成 episode 之前不写出</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_incremental_h2d_ms</span></code>（APPO）</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_replay_stage_ms</span></code></p></td>
-<td><p>明确它是可计入 <code class="docutils literal notranslate"><span class="pre">Iter</span> <span class="pre">Wall</span></code> 的同步 staging 阶段</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">perf/iter_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/iteration_time</span></code></p></td>
+<td><p>毫秒 → 秒；仅在测得完整迭代墙钟时写出</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_train_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learning_time</span></code></p></td>
+<td><p>毫秒 → 秒</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_&lt;phase&gt;_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_&lt;phase&gt;_ms</span></code></p></td>
+<td><p>同样的毫秒阶段计时，canonical 命名空间</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/inference_total_ms</span></code>、<code class="docutils literal notranslate"><span class="pre">timing/inference_{h2d,forward,d2h}_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_inference_ms</span></code>、<code class="docutils literal notranslate"><span class="pre">Perf/learner_inference_{h2d,forward,d2h}_ms</span></code></p></td>
+<td><p>同一批字段的更早期名称</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_incremental_h2d_ms</span></code>（SAC 类）、<code class="docutils literal notranslate"><span class="pre">timing/replay_ingress_h2d_submit_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/replay_ingress_h2d_submit_ms</span></code></p></td>
+<td><p>可能并行的 submit 诊断，不是 learner 主阶段</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_incremental_h2d_ms</span></code>（APPO）</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_replay_stage_ms</span></code></p></td>
+<td><p>可计入 <code class="docutils literal notranslate"><span class="pre">Iter</span> <span class="pre">Wall</span></code> 的同步 staging 阶段</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_&lt;phase&gt;_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_&lt;phase&gt;_ms</span></code></p></td>
+<td><p>同样的毫秒 collector 阶段，canonical 命名空间</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_inference_wait_ms</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_learner_action_wait_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_learner_action_wait_ms</span></code></p></td>
 <td><p>等待范围还包含剩余 learner update，不等于 inference latency</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_rollout_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collection_time</span></code></p></td>
+<td><p>毫秒 → 秒；APPO 的整条 rollout 墙钟</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">train/dp_sync_time</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/dp_gradient_sync_ms_per_rank</span></code></p></td>
+<td><p>秒 → 毫秒；明确为每 rank 值</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">train/dp_gradient_sync_calls</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/dp_gradient_sync_calls_per_rank</span></code></p></td>
+<td><p>明确为每 rank 值</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">perf/learner_pipeline_ms</span></code> 已移除：它曾把互斥主阶段与后台 H2D submit 混加。主时间线请使用
-<code class="docutils literal notranslate"><span class="pre">perf/iter_ms</span></code>，完整性请对照 <code class="docutils literal notranslate"><span class="pre">perf/learner_accounted_pct</span></code> 与
-<code class="docutils literal notranslate"><span class="pre">perf/learner_other_pct</span></code>。</p>
+<p>已退役且无替代 tag：<code class="docutils literal notranslate"><span class="pre">perf/effective_samples_per_sec</span></code> /
+<code class="docutils literal notranslate"><span class="pre">perf/learner_samples_per_sec</span></code>（可由 run 配置与 <code class="docutils literal notranslate"><span class="pre">Perf/iteration_time</span></code> 推导 replay
+行数）、<code class="docutils literal notranslate"><span class="pre">perf/collector_active_steps_per_sec</span></code>（可由 collector 计时与 run 配置推导）、
+<code class="docutils literal notranslate"><span class="pre">perf/collector_cycle_ms</span></code>、<code class="docutils literal notranslate"><span class="pre">perf/learner_*_pct</span></code>、<code class="docutils literal notranslate"><span class="pre">timing/learner_other_ms</span></code> 与
+<code class="docutils literal notranslate"><span class="pre">perf/learner_pipeline_ms</span></code>——它们都可以从上面的 canonical 字段推导，或本来就是仅终端
+显示的推导值。提取工具 <code class="docutils literal notranslate"><span class="pre">scripts/benchmark/rl/extract_offpolicy_metrics.py</span></code> 两种 schema
+都认，优先使用 canonical tag 并换算单位。</p>
 </section>
 <section id="collector">
 <h3>Collector 自有时间线<a class="headerlink" href="#collector" title="Link to this heading">¶</a></h3>
 <p>SAC / FlashSAC 每个 vectorized env tick 记录四个热路径互斥阶段，终端百分比使用
-<code class="docutils literal notranslate"><span class="pre">perf/collector_cycle_ms</span></code>（这四项之和）作分母：</p>
+这四项之和（collector cycle）作分母；该合计在内存中推导，不作为 backend chart 持久化：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -705,19 +750,19 @@ APPO 出现。</p>
 </thead>
 <tbody>
 <tr class="row-even"><td><p>Inference Request</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_inference_request_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_inference_request_ms</span></code></p></td>
 <td><p>发布 observation / dones 到共享 slot，并通知 learner</p></td>
 </tr>
 <tr class="row-odd"><td><p>Learner Action Wait</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_learner_action_wait_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_learner_action_wait_ms</span></code></p></td>
 <td><p>request 发出后，等 learner 发布当前 tick action 的屏障墙钟</p></td>
 </tr>
 <tr class="row-even"><td><p>Env Step</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_env_step_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_env_step_ms</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">env.step()</span></code> 墙钟</p></td>
 </tr>
 <tr class="row-odd"><td><p>Replay Write</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_replay_write_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_replay_write_ms</span></code></p></td>
 <td><p>transition 后处理、打包并写入 bounded ingress</p></td>
 </tr>
 </tbody>
@@ -727,10 +772,10 @@ APPO 出现。</p>
 在 learner update 期间先完成 <code class="docutils literal notranslate"><span class="pre">Env</span> <span class="pre">Step</span> <span class="pre">+</span> <span class="pre">Replay</span> <span class="pre">Write</span></code> 并提交下一 request，这一项会包含
 剩余 update、下一轮 learner <code class="docutils literal notranslate"><span class="pre">Collector</span> <span class="pre">Wait</span></code> 中的少量调度延迟，以及下一次 <code class="docutils literal notranslate"><span class="pre">Inference</span> <span class="pre">+</span> <span class="pre">Collector</span> <span class="pre">Release</span></code>。所以它很长并不与“两侧并行”矛盾，反而说明 collector 比 learner
 update 更早到达下一屏障。</p>
-<p>持久化指标 <code class="docutils literal notranslate"><span class="pre">perf/collector_active_steps_per_sec</span></code> 按 collector 活跃路径计算：
-<code class="docutils literal notranslate"><span class="pre">num_envs</span> <span class="pre">/</span> <span class="pre">(Inference</span> <span class="pre">Request</span> <span class="pre">+</span> <span class="pre">Env</span> <span class="pre">Step</span> <span class="pre">+</span> <span class="pre">Replay</span> <span class="pre">Write)</span></code> 计算；它有意排除
-<code class="docutils literal notranslate"><span class="pre">Learner</span> <span class="pre">Action</span> <span class="pre">Wait</span></code>；诊断价值较低的亚毫秒 episode / metrics bookkeeping 不再单独计时。
-终端 <code class="docutils literal notranslate"><span class="pre">Steps/s</span></code> 则报告同步 collector 的总吞吐。<code class="docutils literal notranslate"><span class="pre">Env</span> <span class="pre">Step</span></code> 下缩进的 Backend Step /
+<p>collector 活跃吞吐诊断（<code class="docutils literal notranslate"><span class="pre">num_envs</span> <span class="pre">/</span> <span class="pre">(Inference</span> <span class="pre">Request</span> <span class="pre">+</span> <span class="pre">Env</span> <span class="pre">Step</span> <span class="pre">+</span> <span class="pre">Replay</span> <span class="pre">Write)</span></code>，
+有意排除 <code class="docutils literal notranslate"><span class="pre">Learner</span> <span class="pre">Action</span> <span class="pre">Wait</span></code>）不再作为 backend chart 持久化；需要时可由 canonical
+collector 计时字段与 run 配置推导。终端 <code class="docutils literal notranslate"><span class="pre">Steps/s</span></code> 则报告同步 collector 的总吞吐，
+并持久化为 <code class="docutils literal notranslate"><span class="pre">Perf/total_fps</span></code>。<code class="docutils literal notranslate"><span class="pre">Env</span> <span class="pre">Step</span></code> 下缩进的 Backend Step /
 Update State / Reset Done 是父项的嵌套明细，不参与 cycle 求和，但百分比仍使用同一
 collector cycle 分母。</p>
 <p>APPO 使用不同的采集 contract，因此 collector 只上报：</p>
@@ -744,23 +789,23 @@ collector cycle 分母。</p>
 </thead>
 <tbody>
 <tr class="row-even"><td><p>MLP Infer</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_mlp_infer_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_mlp_infer_ms</span></code></p></td>
 <td><p>单步策略推理 EMA</p></td>
 </tr>
 <tr class="row-odd"><td><p>Env Step</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_env_step_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_env_step_ms</span></code></p></td>
 <td><p>单次 <code class="docutils literal notranslate"><span class="pre">env.step()</span></code> EMA</p></td>
 </tr>
 <tr class="row-even"><td><p>Rollout Wall</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_rollout_ms</span></code></p></td>
-<td><p>完整 <code class="docutils literal notranslate"><span class="pre">steps_per_env</span></code> 步 rollout 的墙钟 EMA</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collection_time</span></code>（秒）</p></td>
+<td><p>完整 <code class="docutils literal notranslate"><span class="pre">steps_per_env</span></code> 步 rollout 的墙钟</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 <p>APPO 的三个值不是一组百分比分解：前两个是单步 EMA，<code class="docutils literal notranslate"><span class="pre">Rollout</span> <span class="pre">Wall</span></code> 是整条 rollout 总量，
-所以终端只显示 ms。backend 的活跃吞吐诊断按
-<code class="docutils literal notranslate"><span class="pre">(num_envs</span> <span class="pre">*</span> <span class="pre">steps_per_env)</span> <span class="pre">/</span> <span class="pre">Rollout</span> <span class="pre">Wall</span></code> 计算。</p>
+所以终端只显示 ms。backend 的活跃吞吐诊断 <code class="docutils literal notranslate"><span class="pre">(num_envs</span> <span class="pre">*</span> <span class="pre">steps_per_env)</span> <span class="pre">/</span> <span class="pre">Rollout</span> <span class="pre">Wall</span></code>
+同样不再持久化，可由上述字段推导。</p>
 </section>
 </section>
 <section id="fastsac">
@@ -857,7 +902,7 @@ learner <code class="docutils literal notranslate"><span class="pre">Iter</span>
 </tr>
 <tr class="row-odd"><td><p>collector <code class="docutils literal notranslate"><span class="pre">Learner</span> <span class="pre">Action</span> <span class="pre">Wait</span></code> 高，同时 learner <code class="docutils literal notranslate"><span class="pre">Collector</span> <span class="pre">Wait</span></code> 低</p></td>
 <td><p>collector 先到下一屏障，在等 learner 完成 update 并服务 inference</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">Train</span></code>、<code class="docutils literal notranslate"><span class="pre">updates_per_step</span></code>、batch size；再看 inference 三项明细</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Learning</span></code>、<code class="docutils literal notranslate"><span class="pre">updates_per_step</span></code>、batch size；再看 inference 三项明细</p></td>
 </tr>
 <tr class="row-even"><td><p>learner <code class="docutils literal notranslate"><span class="pre">Inference</span></code> 高</p></td>
 <td><p>learner-owned action 路径本身慢</p></td>

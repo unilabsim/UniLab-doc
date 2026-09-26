@@ -428,8 +428,11 @@ refreshes on a fixed 2 Hz clock and shows a two-second sliding average;
 persistent backend, which keeps each unsmoothed iteration value.</p>
 <p>This page first covers the log directory shared by all algorithms and the
 Manager-Based reward metric contract, then documents the off-policy terminal used by
-SAC / FlashSAC / WarpSAC and APPO. Every terminal field in the tables maps directly to one
-backend key; an <code class="docutils literal notranslate"><span class="pre">_ms</span></code> suffix always means milliseconds.</p>
+SAC / FlashSAC / WarpSAC and APPO. Persisted backend tags follow the canonical schema
+owned by <code class="docutils literal notranslate"><span class="pre">uni_rl.logging.metric_schema</span></code>: millisecond timing fields end in <code class="docutils literal notranslate"><span class="pre">_ms</span></code>,
+while <code class="docutils literal notranslate"><span class="pre">Perf/learning_time</span></code>, <code class="docutils literal notranslate"><span class="pre">Perf/collection_time</span></code>, and <code class="docutils literal notranslate"><span class="pre">Perf/iteration_time</span></code> are
+seconds. A few terminal fields (<code class="docutils literal notranslate"><span class="pre">Other</span></code>, phase percentages, collector cycle total,
+<code class="docutils literal notranslate"><span class="pre">Rows/s</span></code>) are derived in memory for the display and are intentionally not persisted.</p>
 <section id="log-directory-and-backend">
 <h2>Log Directory and Backend<a class="headerlink" href="#log-directory-and-backend" title="Link to this heading">¶</a></h2>
 <p>Run training with the default TensorBoard backend:</p>
@@ -540,8 +543,9 @@ batch size.</p></li>
 <p>The panel-border title reports <code class="docutils literal notranslate"><span class="pre">GPUs</span> <span class="pre">N</span></code>. In multi-GPU training, only rank 0 owns the
 terminal and persistent logger. Learner metrics and timings are averaged across
 ranks first and then across the terminal’s two-second window. <code class="docutils literal notranslate"><span class="pre">Steps/s</span></code> and
-<code class="docutils literal notranslate"><span class="pre">Samples/s</span></code> are exceptions to the rank average: per-rank collector step rates and
-learner sample rates are summed, so both fields are total job throughput. The
+<code class="docutils literal notranslate"><span class="pre">Rows/s</span></code> are exceptions to the rank average: per-rank collector step rates and
+learner replay-row rates are summed, so both fields are total job throughput. Only
+<code class="docutils literal notranslate"><span class="pre">Steps/s</span></code> is persisted (as <code class="docutils literal notranslate"><span class="pre">Perf/total_fps</span></code>); <code class="docutils literal notranslate"><span class="pre">Rows/s</span></code> is terminal-only. The
 <code class="docutils literal notranslate"><span class="pre">Avg</span> <span class="pre">2s</span> <span class="pre">(n=...)</span></code> header field gives the number of already rank-reduced learner
 samples in the current time window.</p>
 <p>Do not add times across the learner and collector columns. Only the learner rows from
@@ -566,63 +570,63 @@ rows nor get persisted for other algorithms; for example, <code class="docutils 
 </thead>
 <tbody>
 <tr class="row-even"><td><p>Collector Wait</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_collector_wait_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_collector_wait_ms</span></code></p></td>
 <td><p>All</p></td>
 <td><p>Learner-main-thread wait to reach this iteration’s update boundary; SAC-like paths serve inference requests and continue until replay is ready and the <code class="docutils literal notranslate"><span class="pre">env_steps_per_sync</span></code> tick count is met, while APPO waits for a rollout in the ring</p></td>
 </tr>
 <tr class="row-odd"><td><p>Inference</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_inference_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_inference_ms</span></code></p></td>
 <td><p>Learner-owned inference</p></td>
 <td><p>Total wall time for observation H2D, actor forward, and action D2H; nested details are listed below</p></td>
 </tr>
 <tr class="row-even"><td><p>Collector Release</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_collector_release_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_collector_release_ms</span></code></p></td>
 <td><p>Learner-owned inference</p></td>
 <td><p>Publishing the action response token; normally short, while blocking means the response queue has not drained</p></td>
 </tr>
 <tr class="row-odd"><td><p>Replay Batch Wait</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_replay_batch_wait_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_replay_batch_wait_ms</span></code></p></td>
 <td><p>Device replay</p></td>
 <td><p>Waiting for the prefetched device batch to finish ingress commit and gather; near zero on a prefetch hit</p></td>
 </tr>
 <tr class="row-even"><td><p>Replay Stage</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_replay_stage_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_replay_stage_ms</span></code></p></td>
 <td><p>APPO</p></td>
 <td><p>Sequentially materializing newly arrived NumPy rollouts from the ring into the learner staging pool; this is an exclusive learner-main-thread phase</p></td>
 </tr>
 <tr class="row-odd"><td><p>Replay Sample</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_replay_sample_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_replay_sample_ms</span></code></p></td>
 <td><p>All</p></td>
 <td><p>Acquiring the ready batch; usually hot/cold swap plus views on CUDA, with possible slot-event waiting on MPS</p></td>
 </tr>
-<tr class="row-even"><td><p>Train</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_train_ms</span></code></p></td>
+<tr class="row-even"><td><p>Learning</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learning_time</span></code> (seconds)</p></td>
 <td><p>All</p></td>
 <td><p>Learner update-phase wall time</p></td>
 </tr>
 <tr class="row-odd"><td><p>Weight Publish</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_weight_publish_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_weight_publish_ms</span></code></p></td>
 <td><p>APPO</p></td>
 <td><p>Writing fresh actor / critic weights to shared memory</p></td>
 </tr>
 <tr class="row-even"><td><p>Other</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_other_ms</span></code></p></td>
+<td><p>terminal-only</p></td>
 <td><p>All</p></td>
 <td><p>Residual after subtracting the phases above from <code class="docutils literal notranslate"><span class="pre">Iter</span> <span class="pre">Wall</span></code>, including metrics drain, reward stats, and loop bookkeeping</p></td>
 </tr>
 <tr class="row-odd"><td><p>Iter Wall</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">perf/iter_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/iteration_time</span></code> (seconds)</p></td>
 <td><p>All</p></td>
-<td><p>Wall time from learner-loop iteration start through update completion; always shown as 100%</p></td>
+<td><p>Wall time from learner-loop iteration start through update completion; always shown as 100%; emitted only when the runner measured the complete iteration wall time</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>Backends also record <code class="docutils literal notranslate"><span class="pre">perf/learner_train_pct</span></code>, <code class="docutils literal notranslate"><span class="pre">perf/learner_accounted_pct</span></code>, and
-<code class="docutils literal notranslate"><span class="pre">perf/learner_other_pct</span></code>. Accounted time contains only the mutually exclusive
+<p><code class="docutils literal notranslate"><span class="pre">Other</span></code> and the per-row percentages are derived in memory for the terminal and are
+not persisted as backend charts. Accounted time contains only the mutually exclusive
 main-thread phases above, never nested or background work. Normally
 <code class="docutils literal notranslate"><span class="pre">accounted</span> <span class="pre">+</span> <span class="pre">other</span> <span class="pre">=</span> <span class="pre">100%</span></code>. If a clock anomaly or a future overlapping timer makes
-<code class="docutils literal notranslate"><span class="pre">accounted</span> <span class="pre">&gt;</span> <span class="pre">Iter</span> <span class="pre">Wall</span></code>, <code class="docutils literal notranslate"><span class="pre">Other</span></code> is clamped to zero and <code class="docutils literal notranslate"><span class="pre">accounted_pct</span> <span class="pre">&gt;</span> <span class="pre">100%</span></code> is a
+<code class="docutils literal notranslate"><span class="pre">accounted</span> <span class="pre">&gt;</span> <span class="pre">Iter</span> <span class="pre">Wall</span></code>, <code class="docutils literal notranslate"><span class="pre">Other</span></code> is clamped to zero and accounted exceeding 100% is a
 contract violation to fix, not an interpretable parallel-work percentage.</p>
 </section>
 <section id="learner-nested-and-background-diagnostics">
@@ -638,19 +642,19 @@ slices:</p>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_inference_h2d_ms</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_inference_h2d_ms</span></code></p></td>
 <td><p>Child of <code class="docutils literal notranslate"><span class="pre">Inference</span></code></p></td>
 <td><p>Observation copy from the shared CPU slot to the learner device</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_inference_forward_ms</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_inference_forward_ms</span></code></p></td>
 <td><p>Child of <code class="docutils literal notranslate"><span class="pre">Inference</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">learner.actor</span></code> inference, including the current device synchronization</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_inference_d2h_ms</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_inference_d2h_ms</span></code></p></td>
 <td><p>Child of <code class="docutils literal notranslate"><span class="pre">Inference</span></code></p></td>
 <td><p>Action copy into the shared CPU slot</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/replay_ingress_h2d_submit_ms</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Perf/replay_ingress_h2d_submit_ms</span></code></p></td>
 <td><p>Replay ingress; CUDA daemon or MPS learner thread</p></td>
 <td><p>CPU-side duration of the latest transition-span submission into the authoritative device ring; it can occur inside any main phase and must not be added to learner percentages</p></td>
 </tr>
@@ -665,49 +669,92 @@ copy / gather interval instead of treating submit wall time as extra iteration s
 </section>
 <section id="tags-in-existing-runs">
 <h3>Tags in Existing Runs<a class="headerlink" href="#tags-in-existing-runs" title="Link to this heading">¶</a></h3>
-<p>Historical TensorBoard event files are not rewritten. New runs use the canonical
-tags below, while an existing run continues to show its old names:</p>
+<p>Historical TensorBoard event files are not rewritten. Runs made with unilab-rl 1.4.1
+or later use the canonical tags below (source of truth:
+<code class="docutils literal notranslate"><span class="pre">uni_rl.logging.metric_schema</span></code>, with the full migration table in the unilab_rl
+repo’s <code class="docutils literal notranslate"><span class="pre">docs/metrics.md</span></code>), while an older run continues to show its retired names:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>Old tag</p></th>
 <th class="head"><p>New tag</p></th>
-<th class="head"><p>Reason</p></th>
+<th class="head"><p>Note</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/inference_total_ms</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_inference_ms</span></code></p></td>
-<td><p>Match terminal <code class="docutils literal notranslate"><span class="pre">Inference</span></code> and identify the owner</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">perf/steps_per_sec</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/total_fps</span></code></p></td>
+<td><p>Aggregate collector env-step throughput (cross-rank sum in DP)</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/inference_{h2d,forward,d2h}_ms</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_inference_{h2d,forward,d2h}_ms</span></code></p></td>
-<td><p>Put all three nested items in the learner namespace</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">reward/mean</span></code>, <code class="docutils literal notranslate"><span class="pre">reward/mean_ep100</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Train/mean_reward</span></code></p></td>
+<td><p>Collector’s latest 100-episode mean return; the runner’s 10-report smoothing is checkpoint state only</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_incremental_h2d_ms</span></code> (SAC-like)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/replay_ingress_h2d_submit_ms</span></code></p></td>
-<td><p>Identify a potentially parallel submit diagnostic rather than a learner main phase</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">episode/timeout_rate</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Episode/timeout_rate</span></code></p></td>
+<td><p>Omitted until the first completed episode</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_incremental_h2d_ms</span></code> (APPO)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_replay_stage_ms</span></code></p></td>
-<td><p>Identify synchronous staging that is part of <code class="docutils literal notranslate"><span class="pre">Iter</span> <span class="pre">Wall</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">perf/iter_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/iteration_time</span></code></p></td>
+<td><p>Milliseconds → seconds; emitted only for a measured complete iteration wall time</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_train_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learning_time</span></code></p></td>
+<td><p>Milliseconds → seconds</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_&lt;phase&gt;_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_&lt;phase&gt;_ms</span></code></p></td>
+<td><p>Same millisecond phase timings, canonical namespace</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/inference_total_ms</span></code>, <code class="docutils literal notranslate"><span class="pre">timing/inference_{h2d,forward,d2h}_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_inference_ms</span></code>, <code class="docutils literal notranslate"><span class="pre">Perf/learner_inference_{h2d,forward,d2h}_ms</span></code></p></td>
+<td><p>Pre-canonical names of the same fields</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_incremental_h2d_ms</span></code> (SAC-like), <code class="docutils literal notranslate"><span class="pre">timing/replay_ingress_h2d_submit_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/replay_ingress_h2d_submit_ms</span></code></p></td>
+<td><p>Potentially parallel submit diagnostic, not a learner main phase</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/learner_incremental_h2d_ms</span></code> (APPO)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/learner_replay_stage_ms</span></code></p></td>
+<td><p>Synchronous staging that is part of <code class="docutils literal notranslate"><span class="pre">Iter</span> <span class="pre">Wall</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_&lt;phase&gt;_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_&lt;phase&gt;_ms</span></code></p></td>
+<td><p>Same millisecond collector phases, canonical namespace</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_inference_wait_ms</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_learner_action_wait_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_learner_action_wait_ms</span></code></p></td>
 <td><p>The wait can include the remaining learner update, not only inference latency</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_rollout_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collection_time</span></code></p></td>
+<td><p>Milliseconds → seconds; APPO’s whole-rollout wall time</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">train/dp_sync_time</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/dp_gradient_sync_ms_per_rank</span></code></p></td>
+<td><p>Seconds → milliseconds; explicitly per rank</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">train/dp_gradient_sync_calls</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/dp_gradient_sync_calls_per_rank</span></code></p></td>
+<td><p>Explicitly per rank</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">perf/learner_pipeline_ms</span></code> was removed because it mixed exclusive main phases with a
-background H2D submission. Use <code class="docutils literal notranslate"><span class="pre">perf/iter_ms</span></code> for the main timeline and reconcile it
-with <code class="docutils literal notranslate"><span class="pre">perf/learner_accounted_pct</span></code> plus <code class="docutils literal notranslate"><span class="pre">perf/learner_other_pct</span></code>.</p>
+<p>Retired without a replacement tag: <code class="docutils literal notranslate"><span class="pre">perf/effective_samples_per_sec</span></code> /
+<code class="docutils literal notranslate"><span class="pre">perf/learner_samples_per_sec</span></code> (derive replay rows from the run configuration and
+<code class="docutils literal notranslate"><span class="pre">Perf/iteration_time</span></code>), <code class="docutils literal notranslate"><span class="pre">perf/collector_active_steps_per_sec</span></code> (derive from collector
+timing and the run configuration), <code class="docutils literal notranslate"><span class="pre">perf/collector_cycle_ms</span></code>, <code class="docutils literal notranslate"><span class="pre">perf/learner_*_pct</span></code>,
+<code class="docutils literal notranslate"><span class="pre">timing/learner_other_ms</span></code>, and <code class="docutils literal notranslate"><span class="pre">perf/learner_pipeline_ms</span></code> — all of these are
+derivable from the canonical fields above or are terminal-only derived values. The
+extraction helper <code class="docutils literal notranslate"><span class="pre">scripts/benchmark/rl/extract_offpolicy_metrics.py</span></code> accepts both
+schemas, preferring the canonical tag and scaling units to match.</p>
 </section>
 <section id="collector-timeline">
 <h3>Collector Timeline<a class="headerlink" href="#collector-timeline" title="Link to this heading">¶</a></h3>
 <p>SAC / FlashSAC record four mutually exclusive hot-path phases per vectorized
-env tick. Terminal percentages use <code class="docutils literal notranslate"><span class="pre">perf/collector_cycle_ms</span></code>, the sum of these four
-phases:</p>
+env tick. Terminal percentages use the sum of these four phases (the collector
+cycle), which is derived in memory and not persisted as a backend chart:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -718,19 +765,19 @@ phases:</p>
 </thead>
 <tbody>
 <tr class="row-even"><td><p>Inference Request</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_inference_request_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_inference_request_ms</span></code></p></td>
 <td><p>Publish observations / dones to the shared slot and notify the learner</p></td>
 </tr>
 <tr class="row-odd"><td><p>Learner Action Wait</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_learner_action_wait_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_learner_action_wait_ms</span></code></p></td>
 <td><p>Barrier wall time from request publication until the learner publishes this tick’s action</p></td>
 </tr>
 <tr class="row-even"><td><p>Env Step</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_env_step_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_env_step_ms</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">env.step()</span></code> wall time</p></td>
 </tr>
 <tr class="row-odd"><td><p>Replay Write</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_replay_write_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_replay_write_ms</span></code></p></td>
 <td><p>Transition post-processing, packing, and bounded-ingress write</p></td>
 </tr>
 </tbody>
@@ -742,11 +789,11 @@ next request while the learner is still updating, the value includes the remaini
 update, a small scheduling part of the next learner <code class="docutils literal notranslate"><span class="pre">Collector</span> <span class="pre">Wait</span></code>, and the next
 <code class="docutils literal notranslate"><span class="pre">Inference</span> <span class="pre">+</span> <span class="pre">Collector</span> <span class="pre">Release</span></code>. A long value therefore agrees with parallel
 execution: it means the collector reached the next barrier before the learner.</p>
-<p>The persistent <code class="docutils literal notranslate"><span class="pre">perf/collector_active_steps_per_sec</span></code> diagnostic is calculated as
-<code class="docutils literal notranslate"><span class="pre">num_envs</span> <span class="pre">/</span> <span class="pre">(Inference</span> <span class="pre">Request</span> <span class="pre">+</span> <span class="pre">Env</span> <span class="pre">Step</span> <span class="pre">+</span> <span class="pre">Replay</span> <span class="pre">Write)</span></code>. It intentionally excludes
-<code class="docutils literal notranslate"><span class="pre">Learner</span> <span class="pre">Action</span> <span class="pre">Wait</span></code>; low-value sub-millisecond episode / metrics bookkeeping is no
-longer timed separately. The terminal <code class="docutils literal notranslate"><span class="pre">Steps/s</span></code> field instead reports total
-synchronized collector throughput. The indented Backend Step / Update State / Reset
+<p>The collector active-throughput diagnostic (<code class="docutils literal notranslate"><span class="pre">num_envs</span> <span class="pre">/</span> <span class="pre">(Inference</span> <span class="pre">Request</span> <span class="pre">+</span> <span class="pre">Env</span> <span class="pre">Step</span> <span class="pre">+</span> <span class="pre">Replay</span> <span class="pre">Write)</span></code>, intentionally excluding <code class="docutils literal notranslate"><span class="pre">Learner</span> <span class="pre">Action</span> <span class="pre">Wait</span></code>) is no
+longer persisted as a backend chart; it can be derived from the canonical collector
+timing fields and the run configuration when needed. The terminal <code class="docutils literal notranslate"><span class="pre">Steps/s</span></code> field
+instead reports total synchronized collector throughput, persisted as
+<code class="docutils literal notranslate"><span class="pre">Perf/total_fps</span></code>. The indented Backend Step / Update State / Reset
 Done rows are nested <code class="docutils literal notranslate"><span class="pre">Env</span> <span class="pre">Step</span></code> details. They do not enter the cycle sum, though their
 displayed percentages use the same collector-cycle denominator.</p>
 <p>APPO has a different collection contract and reports:</p>
@@ -760,22 +807,23 @@ displayed percentages use the same collector-cycle denominator.</p>
 </thead>
 <tbody>
 <tr class="row-even"><td><p>MLP Infer</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_mlp_infer_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_mlp_infer_ms</span></code></p></td>
 <td><p>Per-step policy-inference EMA</p></td>
 </tr>
 <tr class="row-odd"><td><p>Env Step</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_env_step_ms</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collector_env_step_ms</span></code></p></td>
 <td><p>Single-<code class="docutils literal notranslate"><span class="pre">env.step()</span></code> EMA</p></td>
 </tr>
 <tr class="row-even"><td><p>Rollout Wall</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">timing/collector_rollout_ms</span></code></p></td>
-<td><p>Whole <code class="docutils literal notranslate"><span class="pre">steps_per_env</span></code> rollout wall-time EMA</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Perf/collection_time</span></code> (seconds)</p></td>
+<td><p>Whole <code class="docutils literal notranslate"><span class="pre">steps_per_env</span></code> rollout wall time</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 <p>These are not one percentage breakdown: the first two are per-step EMAs and <code class="docutils literal notranslate"><span class="pre">Rollout</span> <span class="pre">Wall</span></code> is a whole-rollout total, so the terminal shows milliseconds only. The backend
-active-throughput diagnostic is <code class="docutils literal notranslate"><span class="pre">(num_envs</span> <span class="pre">*</span> <span class="pre">steps_per_env)</span> <span class="pre">/</span> <span class="pre">Rollout</span> <span class="pre">Wall</span></code>.</p>
+active-throughput diagnostic <code class="docutils literal notranslate"><span class="pre">(num_envs</span> <span class="pre">*</span> <span class="pre">steps_per_env)</span> <span class="pre">/</span> <span class="pre">Rollout</span> <span class="pre">Wall</span></code> is likewise
+no longer persisted and can be derived from the fields above.</p>
 </section>
 </section>
 <section id="fastsac-dual-timeline">
@@ -878,7 +926,7 @@ adjacent, additive learner phases, not background H2D diagnostics.</p>
 </tr>
 <tr class="row-odd"><td><p>Collector <code class="docutils literal notranslate"><span class="pre">Learner</span> <span class="pre">Action</span> <span class="pre">Wait</span></code> is high while learner <code class="docutils literal notranslate"><span class="pre">Collector</span> <span class="pre">Wait</span></code> is low</p></td>
 <td><p>Collector reaches the next barrier first and waits for update completion plus inference</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">Train</span></code>, <code class="docutils literal notranslate"><span class="pre">updates_per_step</span></code>, and batch size; then inference details</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Learning</span></code>, <code class="docutils literal notranslate"><span class="pre">updates_per_step</span></code>, and batch size; then inference details</p></td>
 </tr>
 <tr class="row-even"><td><p>Learner <code class="docutils literal notranslate"><span class="pre">Inference</span></code> is high</p></td>
 <td><p>The learner-owned action path itself is slow</p></td>
