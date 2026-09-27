@@ -108,18 +108,23 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
   （#1637、#1639）。
 
 - Bumped the optional `uni_rl` extra and dev environment from unilab-rl
-  1.3.2 to 1.4.2: 1.4.0 delivers WarpSAC, off-policy metric consumers
-  migrated to the 1.4.1 canonical metric schema, and the off-policy
-  inference request timeout config was removed
+  1.3.2 to 1.4.3: 1.4.0 delivers WarpSAC, off-policy metric consumers
+  migrated to the 1.4.1 canonical metric schema, the off-policy
+  inference request timeout config was removed, and 1.4.3 stops the
+  spurious "Learner stopped before inference tick" collector crash after
+  normal off-policy training completion
   ([#1640](https://github.com/Motphys/UniLab/pull/1640),
   [#1643](https://github.com/Motphys/UniLab/pull/1643),
   [#1645](https://github.com/Motphys/UniLab/pull/1645),
   [#1655](https://github.com/Motphys/UniLab/pull/1655),
   [#1658](https://github.com/Motphys/UniLab/pull/1658),
-  [#1659](https://github.com/Motphys/UniLab/pull/1659)).
-  可选 `uni_rl` extra 与 dev 环境的 unilab-rl 从 1.3.2 升级到 1.4.2：1.4.0
+  [#1659](https://github.com/Motphys/UniLab/pull/1659),
+  [#1662](https://github.com/Motphys/UniLab/pull/1662)).
+  可选 `uni_rl` extra 与 dev 环境的 unilab-rl 从 1.3.2 升级到 1.4.3：1.4.0
   提供 WarpSAC；off-policy 指标消费方迁移到 1.4.1 的规范指标 schema；移除
-  off-policy 推理请求超时配置（#1640、#1643、#1645、#1655、#1658、#1659）。
+  off-policy 推理请求超时配置；1.4.3 修复了 off-policy 训练正常结束后
+  collector 误报 "Learner stopped before inference tick" 崩溃的问题
+  （#1640、#1643、#1645、#1655、#1658、#1659、#1662）。
 
 - Bumped torch to 2.14 and unified the CUDA wheels on cu130 on Linux and
   Windows; measured on Apple Silicon, FlashSAC end-to-end throughput
