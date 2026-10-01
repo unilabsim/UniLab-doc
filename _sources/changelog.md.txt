@@ -15,6 +15,15 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
 
 ## 1.3.3 (2026-09-27)
 
+### Changed / 变更
+
+- Removed the repository-wide uv version pin: projects no longer require
+  `uv==0.12.5`, CI and Docker use the standard uv installation path, and
+  dependency reproducibility remains provided by `uv.lock`
+  ([#1809](https://github.com/Motphys/UniLab/issues/1809)).
+  移除仓库级 uv 版本限制：项目不再要求 `uv==0.12.5`，CI 与 Docker 使用
+  标准 uv 安装路径；依赖可复现性仍由 `uv.lock` 提供（#1809）。
+
 ### Added / 新增
 
 - Added the WarpSAC off-policy algorithm shipped by unilab-rl 1.4.0: the
