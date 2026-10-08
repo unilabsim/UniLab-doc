@@ -70,14 +70,25 @@ still display `Episode_Reward/<term>`. New Manager-Based runs should not emit it
 
 ## Off-policy Terminal
 
-The bottom of the terminal has three columns:
+The terminal has explicit width tiers:
 
-- `Learner (Iter Wall)` is one learner-main-thread iteration; every percentage uses
-  `Iter Wall` as its denominator.
-- `Collector (own clock)` is measured in the collector subprocess and runs in
-  parallel with the learner.
-- `System` contains the buffer size, timeout rate, environment count, and per-rank
-  batch size.
+- Below 96 columns, the metrics / rewards / timing sections stack vertically and
+  timing uses a single `Timing` column. Short headers are used, and reward peak
+  precision is reduced rather than truncating core labels.
+- From 96 through 119 columns, metrics and rewards share one row and timing uses
+  compact `Learner` / `Collector` headers.
+- At 120 columns and above, timing uses the full three columns:
+  - `Learner (Iter Wall)` is one learner-main-thread iteration; every percentage
+    uses `Iter Wall` as its denominator.
+  - `Collector (own clock)` is measured in the collector subprocess and runs in
+    parallel with the learner.
+  - `System` contains the buffer size, timeout rate, environment count, and
+    per-rank batch size.
+
+Metric rendering separates semantic groups: losses and policy state use stable short
+labels, training diagnostics are indented, and replay-ingress gauges render as
+`Ingress Backpressure`, `Ingress Depth`, and related labels. They are not placed in
+the loss group and are distinct from the learner timeline's `Collector Wait`.
 
 The panel-border title reports `GPUs N`. In multi-GPU training, only rank 0 owns the
 terminal and persistent logger. Learner metrics and timings are averaged across
@@ -92,11 +103,9 @@ Do not add times across the learner and collector columns. Only the learner rows
 `Collector Wait` through `Other` are mutually exclusive main-thread phases. The
 implementation fills unnamed intervals with `Other = max(Iter Wall - accounted, 0)`.
 Normally the rows sum to `Iter Wall`, so their displayed percentages sum to about
-100% (per-row rounding can introduce a small difference). The terminal no longer
-hides applicable phases below a 1% threshold: a zero row is kept so it can be matched
-directly with TensorBoard / W&B. Algorithm-specific phases neither occupy terminal
-rows nor get persisted for other algorithms; for example, `Replay Stage` and
-`Weight Publish` exist only for APPO.
+100% (per-row rounding can introduce a small difference). Algorithm-specific phases
+neither occupy terminal rows nor get persisted for other algorithms; for example,
+`Replay Stage` and `Weight Publish` exist only for APPO.
 
 ### Learner Main Timeline
 
@@ -231,9 +240,9 @@ default metric readers.
 
 ### Collector Timeline
 
-SAC / FlashSAC record four mutually exclusive hot-path phases per vectorized
-env tick. Terminal percentages use the sum of these four phases (the collector
-cycle), which is derived in memory and not persisted as a backend chart:
+SAC / FlashSAC record mutually exclusive hot-path phases per vectorized env tick.
+Terminal percentages use their sum (the collector cycle), which is derived in memory
+and not persisted as a backend chart:
 
 | Terminal field | TensorBoard / W&B key | Meaning |
 | --- | --- | --- |
@@ -241,6 +250,14 @@ cycle), which is derived in memory and not persisted as a backend chart:
 | Learner Action Wait | `Perf/collector_learner_action_wait_ms` | Barrier wall time from request publication until the learner publishes this tick's action |
 | Env Step | `Perf/collector_env_step_ms` | `env.step()` wall time |
 | Replay Write | `Perf/collector_replay_write_ms` | Transition post-processing, packing, and bounded-ingress write |
+
+The terminal keeps the core cycle rows above visible. `Inference Request`,
+`Transition Extract`, `Metrics Publish`, and the nested `Action Validate` /
+`Apply Action` / `Action+Backend` details are quiet diagnostics: they remain
+canonical TensorBoard / W&B fields, but appear in the terminal only when they
+reach at least 1% of the collector cycle. `Backend Step`, `Update State`, and
+`Reset Done` follow the same materiality rule because they are nested diagnostics
+rather than additional cycle slices.
 
 `Learner Action Wait` is deliberately not named “Inference Wait”: it is not pure
 inference latency. If the collector finishes `Env Step + Replay Write` and submits its
@@ -254,9 +271,8 @@ Env Step + Replay Write)`, intentionally excluding `Learner Action Wait`) is no
 longer persisted as a backend chart; it can be derived from the canonical collector
 timing fields and the run configuration when needed. The terminal `Steps/s` field
 instead reports total synchronized collector throughput, persisted as
-`Perf/total_fps`. The indented Backend Step / Update State / Reset
-Done rows are nested `Env Step` details. They do not enter the cycle sum, though their
-displayed percentages use the same collector-cycle denominator.
+`Perf/total_fps`. The indented Env Step detail rows do not enter the cycle sum,
+though their displayed percentages use the same collector-cycle denominator.
 
 APPO has a different collection contract and reports:
 

@@ -524,15 +524,28 @@ still display <code class="docutils literal notranslate"><span class="pre">Episo
 </section>
 <section id="off-policy-terminal">
 <h2>Off-policy Terminal<a class="headerlink" href="#off-policy-terminal" title="Link to this heading">¶</a></h2>
-<p>The bottom of the terminal has three columns:</p>
+<p>The terminal has explicit width tiers:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">Learner</span> <span class="pre">(Iter</span> <span class="pre">Wall)</span></code> is one learner-main-thread iteration; every percentage uses
-<code class="docutils literal notranslate"><span class="pre">Iter</span> <span class="pre">Wall</span></code> as its denominator.</p></li>
+<li><p>Below 96 columns, the metrics / rewards / timing sections stack vertically and
+timing uses a single <code class="docutils literal notranslate"><span class="pre">Timing</span></code> column. Short headers are used, and reward peak
+precision is reduced rather than truncating core labels.</p></li>
+<li><p>From 96 through 119 columns, metrics and rewards share one row and timing uses
+compact <code class="docutils literal notranslate"><span class="pre">Learner</span></code> / <code class="docutils literal notranslate"><span class="pre">Collector</span></code> headers.</p></li>
+<li><p>At 120 columns and above, timing uses the full three columns:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">Learner</span> <span class="pre">(Iter</span> <span class="pre">Wall)</span></code> is one learner-main-thread iteration; every percentage
+uses <code class="docutils literal notranslate"><span class="pre">Iter</span> <span class="pre">Wall</span></code> as its denominator.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">Collector</span> <span class="pre">(own</span> <span class="pre">clock)</span></code> is measured in the collector subprocess and runs in
 parallel with the learner.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">System</span></code> contains the buffer size, timeout rate, environment count, and per-rank
-batch size.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">System</span></code> contains the buffer size, timeout rate, environment count, and
+per-rank batch size.</p></li>
 </ul>
+</li>
+</ul>
+<p>Metric rendering separates semantic groups: losses and policy state use stable short
+labels, training diagnostics are indented, and replay-ingress gauges render as
+<code class="docutils literal notranslate"><span class="pre">Ingress</span> <span class="pre">Backpressure</span></code>, <code class="docutils literal notranslate"><span class="pre">Ingress</span> <span class="pre">Depth</span></code>, and related labels. They are not placed in
+the loss group and are distinct from the learner timeline’s <code class="docutils literal notranslate"><span class="pre">Collector</span> <span class="pre">Wait</span></code>.</p>
 <p>The panel-border title reports <code class="docutils literal notranslate"><span class="pre">GPUs</span> <span class="pre">N</span></code>. In multi-GPU training, only rank 0 owns the
 terminal and persistent logger. Learner metrics and timings are averaged across
 ranks first and then across the terminal’s two-second window. <code class="docutils literal notranslate"><span class="pre">Steps/s</span></code> and
@@ -545,11 +558,9 @@ samples in the current time window.</p>
 <code class="docutils literal notranslate"><span class="pre">Collector</span> <span class="pre">Wait</span></code> through <code class="docutils literal notranslate"><span class="pre">Other</span></code> are mutually exclusive main-thread phases. The
 implementation fills unnamed intervals with <code class="docutils literal notranslate"><span class="pre">Other</span> <span class="pre">=</span> <span class="pre">max(Iter</span> <span class="pre">Wall</span> <span class="pre">-</span> <span class="pre">accounted,</span> <span class="pre">0)</span></code>.
 Normally the rows sum to <code class="docutils literal notranslate"><span class="pre">Iter</span> <span class="pre">Wall</span></code>, so their displayed percentages sum to about
-100% (per-row rounding can introduce a small difference). The terminal no longer
-hides applicable phases below a 1% threshold: a zero row is kept so it can be matched
-directly with TensorBoard / W&amp;B. Algorithm-specific phases neither occupy terminal
-rows nor get persisted for other algorithms; for example, <code class="docutils literal notranslate"><span class="pre">Replay</span> <span class="pre">Stage</span></code> and
-<code class="docutils literal notranslate"><span class="pre">Weight</span> <span class="pre">Publish</span></code> exist only for APPO.</p>
+100% (per-row rounding can introduce a small difference). Algorithm-specific phases
+neither occupy terminal rows nor get persisted for other algorithms; for example,
+<code class="docutils literal notranslate"><span class="pre">Replay</span> <span class="pre">Stage</span></code> and <code class="docutils literal notranslate"><span class="pre">Weight</span> <span class="pre">Publish</span></code> exist only for APPO.</p>
 <section id="learner-main-timeline">
 <h3>Learner Main Timeline<a class="headerlink" href="#learner-main-timeline" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -816,9 +827,9 @@ default metric readers.</p>
 </section>
 <section id="collector-timeline">
 <h3>Collector Timeline<a class="headerlink" href="#collector-timeline" title="Link to this heading">¶</a></h3>
-<p>SAC / FlashSAC record four mutually exclusive hot-path phases per vectorized
-env tick. Terminal percentages use the sum of these four phases (the collector
-cycle), which is derived in memory and not persisted as a backend chart:</p>
+<p>SAC / FlashSAC record mutually exclusive hot-path phases per vectorized env tick.
+Terminal percentages use their sum (the collector cycle), which is derived in memory
+and not persisted as a backend chart:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -847,6 +858,13 @@ cycle), which is derived in memory and not persisted as a backend chart:</p>
 </tbody>
 </table>
 </div>
+<p>The terminal keeps the core cycle rows above visible. <code class="docutils literal notranslate"><span class="pre">Inference</span> <span class="pre">Request</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Transition</span> <span class="pre">Extract</span></code>, <code class="docutils literal notranslate"><span class="pre">Metrics</span> <span class="pre">Publish</span></code>, and the nested <code class="docutils literal notranslate"><span class="pre">Action</span> <span class="pre">Validate</span></code> /
+<code class="docutils literal notranslate"><span class="pre">Apply</span> <span class="pre">Action</span></code> / <code class="docutils literal notranslate"><span class="pre">Action+Backend</span></code> details are quiet diagnostics: they remain
+canonical TensorBoard / W&amp;B fields, but appear in the terminal only when they
+reach at least 1% of the collector cycle. <code class="docutils literal notranslate"><span class="pre">Backend</span> <span class="pre">Step</span></code>, <code class="docutils literal notranslate"><span class="pre">Update</span> <span class="pre">State</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">Reset</span> <span class="pre">Done</span></code> follow the same materiality rule because they are nested diagnostics
+rather than additional cycle slices.</p>
 <p><code class="docutils literal notranslate"><span class="pre">Learner</span> <span class="pre">Action</span> <span class="pre">Wait</span></code> is deliberately not named “Inference Wait”: it is not pure
 inference latency. If the collector finishes <code class="docutils literal notranslate"><span class="pre">Env</span> <span class="pre">Step</span> <span class="pre">+</span> <span class="pre">Replay</span> <span class="pre">Write</span></code> and submits its
 next request while the learner is still updating, the value includes the remaining
@@ -857,9 +875,8 @@ execution: it means the collector reached the next barrier before the learner.</
 longer persisted as a backend chart; it can be derived from the canonical collector
 timing fields and the run configuration when needed. The terminal <code class="docutils literal notranslate"><span class="pre">Steps/s</span></code> field
 instead reports total synchronized collector throughput, persisted as
-<code class="docutils literal notranslate"><span class="pre">Perf/total_fps</span></code>. The indented Backend Step / Update State / Reset
-Done rows are nested <code class="docutils literal notranslate"><span class="pre">Env</span> <span class="pre">Step</span></code> details. They do not enter the cycle sum, though their
-displayed percentages use the same collector-cycle denominator.</p>
+<code class="docutils literal notranslate"><span class="pre">Perf/total_fps</span></code>. The indented Env Step detail rows do not enter the cycle sum,
+though their displayed percentages use the same collector-cycle denominator.</p>
 <p>APPO has a different collection contract and reports:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">

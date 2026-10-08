@@ -67,11 +67,20 @@ key 的契约如下：
 
 ## Off-policy 终端视图
 
-终端底部并排显示三列：
+终端有显式宽度分层：
 
-- `Learner (Iter Wall)`：learner 主线程的一圈；所有行使用 `Iter Wall` 作分母。
-- `Collector (own clock)`：collector 子进程自己的采集时钟，与 learner 并行。
-- `System`：buffer 大小、timeout rate、env 数和每 rank batch 大小。
+- 小于 96 列时，metrics / rewards / timing 区域纵向堆叠，timing 使用单一
+  `Timing` 列；使用短标题，并降低 reward peak 精度，而不是截断核心标签。
+- 96–119 列时，metrics 与 rewards 同行显示，timing 使用 `Learner` / `Collector`
+  短标题。
+- 120 列及以上时，timing 使用完整三列：
+  - `Learner (Iter Wall)`：learner 主线程的一圈；所有行使用 `Iter Wall` 作分母。
+  - `Collector (own clock)`：collector 子进程自己的采集时钟，与 learner 并行。
+  - `System`：buffer 大小、timeout rate、env 数和每 rank batch 大小。
+
+Metric 渲染按语义分组：loss 与 policy 状态使用稳定短标签，training 诊断缩进，
+replay-ingress gauge 显示为 `Ingress Backpressure`、`Ingress Depth` 等标签；它们
+不放入 loss 组，也与 learner 时间线的 `Collector Wait` 语义不同。
 
 面板边框标题显示 `GPUs N`。多卡训练中只有 rank 0 持有终端与持久化 logger；learner
 指标和计时先在 rank 间取平均，再进入终端的两秒时间窗口。`Steps/s` 与 `Rows/s`
@@ -83,8 +92,7 @@ replay 行速率求和，因此两者都是整个训练任务的总吞吐。其�
 两列时间不能横向相加。只有 learner 列从 `Collector Wait` 到 `Other` 的行是互斥主线程
 阶段；实现以 `Other = max(Iter Wall - accounted, 0)` 补齐未命名区间。正常情况下它们合计
 等于 `Iter Wall`，每行百分比合计约为 100%（逐行取整可能略有误差）。
-终端不再按 1% 阈值隐藏适用于当前算法的阶段，0 ms 也保留，便于与 TensorBoard / W&B
-逐项对应。算法专有阶段不会跨算法占位或落盘；例如 `Replay Stage` 与 `Weight Publish` 只在
+算法专有阶段不会跨算法占位或落盘；例如 `Replay Stage` 与 `Weight Publish` 只在
 APPO 出现。
 
 ### Learner 主时间线
@@ -208,8 +216,8 @@ reader 遇到 canonical tag、canonical/legacy 混合或不支持的 metric sche
 
 ### Collector 自有时间线
 
-SAC / FlashSAC 每个 vectorized env tick 记录四个热路径互斥阶段，终端百分比使用
-这四项之和（collector cycle）作分母；该合计在内存中推导，不作为 backend chart 持久化：
+SAC / FlashSAC 每个 vectorized env tick 记录热路径互斥阶段，终端百分比使用这些
+阶段之和（collector cycle）作分母；该合计在内存中推导，不作为 backend chart 持久化：
 
 | 终端字段 | TensorBoard / W&B key | 含义 |
 | --- | --- | --- |
@@ -217,6 +225,12 @@ SAC / FlashSAC 每个 vectorized env tick 记录四个热路径互斥阶段，�
 | Learner Action Wait | `Perf/collector_learner_action_wait_ms` | request 发出后，等 learner 发布当前 tick action 的屏障墙钟 |
 | Env Step | `Perf/collector_env_step_ms` | `env.step()` 墙钟 |
 | Replay Write | `Perf/collector_replay_write_ms` | transition 后处理、打包并写入 bounded ingress |
+
+终端始终保留上表核心 cycle 行。`Inference Request`、`Transition Extract`、
+`Metrics Publish`，以及嵌套的 `Action Validate` / `Apply Action` /
+`Action+Backend` 明细属于安静诊断项：它们仍是 canonical TensorBoard / W&B 字段，
+但只有达到 collector cycle 的 1% 时才出现在终端。`Backend Step`、
+`Update State` 与 `Reset Done` 是嵌套诊断而非额外 cycle 切片，同样按该显著性规则显示。
 
 `Learner Action Wait` 特意不叫 “Inference Wait”：它不是纯 inference latency。如果 collector
 在 learner update 期间先完成 `Env Step + Replay Write` 并提交下一 request，这一项会包含
@@ -227,9 +241,8 @@ update 更早到达下一屏障。
 collector 活跃吞吐诊断（`num_envs / (Inference Request + Env Step + Replay Write)`，
 有意排除 `Learner Action Wait`）不再作为 backend chart 持久化；需要时可由 canonical
 collector 计时字段与 run 配置推导。终端 `Steps/s` 则报告同步 collector 的总吞吐，
-并持久化为 `Perf/total_fps`。`Env Step` 下缩进的 Backend Step /
-Update State / Reset Done 是父项的嵌套明细，不参与 cycle 求和，但百分比仍使用同一
-collector cycle 分母。
+并持久化为 `Perf/total_fps`。`Env Step` 下缩进的明细行是父项的嵌套诊断，不参与
+cycle 求和，但百分比仍使用同一 collector cycle 分母。
 
 APPO 使用不同的采集 contract，因此 collector 只上报：
 
