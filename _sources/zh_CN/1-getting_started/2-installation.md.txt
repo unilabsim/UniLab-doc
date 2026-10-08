@@ -215,12 +215,19 @@ ROCm 说明：
 - 切回默认 CUDA / macOS 配置档时，运行 `git restore -- pyproject.toml uv.lock`，然
   后重新执行 `make setup`；提交任何非 ROCm 依赖改动前先确认当前配置档。
 - 训练配置里的设备字段仍沿用 `cuda` 语义，不要改成 `rocm`。
+- 如果手工安装了 ROCm wheel，但项目仍使用默认依赖配置档，验证时使用
+  `uv run --no-sync`（或 `UV_NO_SYNC=1 make ...`）；自动同步会重新安装默认配置档的
+  CUDA wheel。
+- 安装 ROCm PyTorch 且 GPU 可用时，接受 `cuda` buffer 的 `HOST_BRIDGE` 后端会让
+  Manager/TorchEnv tensor 使用当前 GPU。MuJoCo 物理仿真仍在 CPU 上，通过 packed
+  传输连接 GPU 上的 observation、action、reward 与 reset。CUDA-only 物理后端仍不
+  支持 ROCm。见 {doc}`/adr/ADR-0012-sole-tensor-manager-and-scoped-backends`。
 - 从 PyPI 安装（不克隆仓库）时，`make sync-rocm` 不适用；先从 PyTorch ROCm 索引
   安装仓库验证过的 torch build，再安装 `unilab`。发布的依赖范围是
-  `torch>=2.8,<2.12`，pip 会保留已安装的 ROCm build，不会替换为 CUDA wheel：
+  `torch>=2.9,<2.15`，pip 会保留已安装的 ROCm build，不会替换为 CUDA wheel：
 
   ```bash
-  pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/rocm7.2
+  pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/rocm7.2
   pip install unilab
   ```
 

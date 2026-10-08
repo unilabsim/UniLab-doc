@@ -64,6 +64,13 @@ canonical in-process host-bridge implementation; it is not a test-only fallback.
 of the Manager runtime. Placement is derived from declared backend data plane and rank topology.
 No compatibility alias, dual-mode field, or hidden fallback is retained.
 
+For a `HOST_BRIDGE` backend, CPU-authoritative physics does not imply CPU Manager tensors.
+When PyTorch exposes an available GPU and the backend accepts its current `cuda` ordinal,
+the Manager uses that GPU, including ROCm PyTorch's `cuda` namespace. CPU-only capabilities
+or hosts without an available GPU retain CPU placement. `DEVICE_RESIDENT` adapters keep
+their own CUDA-only platform requirements; accepting HIP Torch buffers on a host bridge
+does not make those physics engines ROCm-compatible.
+
 ### Manager-owned RNG
 
 The Manager runtime owns one Torch RNG seeded from the resolved owner seed. Observation noise,

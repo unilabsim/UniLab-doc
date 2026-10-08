@@ -228,6 +228,7 @@ from mjlab.managers import RewardTermCfg
 def joint_error(env) -> torch.Tensor:
     return torch.square(env.joint_pos - env.target_joint_pos).sum(dim=1)
 
+
 term = RewardTermCfg(func=joint_error, weight=-1.0)
 ```
 
@@ -239,6 +240,7 @@ from unilab.managers import RewardTermCfg
 
 def joint_error(env) -> np.ndarray:
     return np.square(env.joint_pos - env.target_joint_pos).sum(axis=1)
+
 
 term = RewardTermCfg(func=joint_error, weight=-1.0)
 ```
