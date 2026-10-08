@@ -50,7 +50,7 @@ uv run train --algo sac --task g1_motion_tracking --sim mujoco training.use_amp=
 
 ```bash
 uv run eval --algo sac --task g1_motion_tracking --sim mujoco \
-  algo.load_run=/abs/path/to/logs/fast_sac/G1MotionTrackingSAC/2026-04-23_14-06-57_mujoco
+  algo.load_run=/abs/path/to/logs/sac/G1MotionTrackingSAC/2026-04-23_14-06-57_mujoco
 ```
 
 ## 动作文件

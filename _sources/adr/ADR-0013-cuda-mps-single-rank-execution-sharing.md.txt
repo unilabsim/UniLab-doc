@@ -27,7 +27,7 @@ fail closed，也没有可审计的 runtime evidence。
 - 新增共享 off-policy owner 设置
   `training.cuda_process_sharing: null | mps`，默认 `null` 保持现状。
 - 初始有效范围限定为 Linux、NVIDIA CUDA、`training.sim_backend=mjwarp`、单主机、
-  `world_size=1` 的 SAC/FastSAC/FlashSAC 共享路径。
+  `world_size=1` 的 SAC/FlashSAC 共享路径。
 - `mps` 是显式请求：所有前置条件在 env probe、learner construction 与 collector
   spawn 之前验证，失败时给出第一个未满足条件和启动既有 daemon 的命令，不 fallback。
 - rank-local 物理一致性按 GPU UUID 判断，而不是 CUDA ordinal。

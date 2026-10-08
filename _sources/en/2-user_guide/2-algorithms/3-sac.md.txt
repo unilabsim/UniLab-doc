@@ -3,7 +3,7 @@
 SAC runs through `src/unilab/scripts/train_sac.py`; FlashSAC has its own
 entrypoint and per-algorithm config tree. The main config is
 `src/unilab/conf/sac/config.yaml`, with the SAC algorithm defaults inlined there. The
-current log name is `fast_sac`.
+current log name is `sac`.
 
 ## Runtime Model
 
@@ -28,7 +28,7 @@ For the off-policy playback path (`src/unilab/scripts/train_sac.py` / CLI `--alg
 set `training.export_onnx=false` to skip `policy.onnx` export while still recording
 playback video. See {doc}`/en/1-getting_started/3-evaluation_and_playback`.
 
-- `algo.algo_log_name=fast_sac`
+- `algo.algo_log_name=sac`
 - `algo.num_envs=4096`
 - `algo.batch_size=8192` is the learner batch per update.
 - `algo.max_iterations=500`

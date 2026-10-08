@@ -27,7 +27,7 @@ uv run train --algo ppo --task go2_joystick_flat --sim mujoco
 | --- | --- | --- |
 | PPO | `logs/rsl_rl_ppo/<task>/` | `src/unilab/conf/ppo/config.yaml` |
 | APPO | `logs/appo/<task>/` | `src/unilab/conf/appo/config.yaml` |
-| SAC | `logs/fast_sac/<task>/` | `src/unilab/conf/sac/config.yaml` |
+| SAC | `logs/sac/<task>/` | `src/unilab/conf/sac/config.yaml` |
 | FlashSAC | `logs/flash_sac/<task>/` | `src/unilab/conf/flashsac/config.yaml` |
 
 单个 run 目录名为 `YYYY-MM-DD_HH-MM-SS_<sim_backend>`，例如
@@ -243,7 +243,7 @@ APPO 的三个值不是一组百分比分解：前两个是单步 EMA，`Rollout
 所以终端只显示 ms。backend 的活跃吞吐诊断 `(num_envs * steps_per_env) / Rollout Wall`
 同样不再持久化，可由上述字段推导。
 
-## FastSAC 双时间线
+## SAC 双时间线
 
 默认 `training.env_steps_per_sync=1`。下面的时序从 learner iteration `k` 开始；虚线横向
 消息是同步点，`par` 内两侧真实并行：

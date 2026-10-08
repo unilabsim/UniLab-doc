@@ -37,7 +37,7 @@ UniLab is built around five commitments.
 5. **Replay-based off-policy training gets its own acceleration path.** SAC and
    related methods reuse experience, allowing simulation data collection and
    learner updates to overlap instead of meeting at every update. UniLab's
-   FastSAC/FlashSAC results report **3–10× end-to-end training-efficiency gains**
+   SAC/FlashSAC results report **3–10× end-to-end training-efficiency gains**
    on representative evaluated configurations; see the [paper](https://arxiv.org/abs/2605.30313)
    for the hardware, tasks, and measurement scope. This is a runtime
    optimization, not a new SAC objective.

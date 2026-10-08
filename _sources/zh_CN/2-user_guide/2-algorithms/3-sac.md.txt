@@ -2,7 +2,7 @@
 
 SAC 通过 `src/unilab/scripts/train_sac.py` 运行；FlashSAC 有独立的入口与按算法
 划分的配置树。主配置为 `src/unilab/conf/sac/config.yaml`，SAC 算法的默认值内联在其中。
-当前的日志名称为 `fast_sac`。
+当前的日志名称为 `sac`。
 
 ## 运行模型
 
@@ -25,7 +25,7 @@ uv run train --algo sac --task g1_walk_flat --sim mujoco
 `training.export_onnx=false` 可在仍然录制回放视频的同时跳过 `policy.onnx` 导出。参
 见 {doc}`/zh_CN/1-getting_started/3-evaluation_and_playback`。
 
-- `algo.algo_log_name=fast_sac`
+- `algo.algo_log_name=sac`
 - `algo.num_envs=4096`
 - `algo.batch_size=8192` 是 learner 每次 update 的 batch。
 - `algo.max_iterations=500`

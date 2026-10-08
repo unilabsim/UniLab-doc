@@ -27,7 +27,7 @@ UniLab 围绕五项承诺构建：
    recommended。
 5. **为 replay-based off-policy 训练提供专门的加速路径。** SAC 及相关方法可以复用
    历史经验，使仿真数据采集与 learner update 能够重叠，而不必在每次更新时汇合。UniLab
-   的 FastSAC/FlashSAC 在代表性评估配置上报告了 **3–10 倍端到端训练效率提升**；硬件、
+   的 SAC/FlashSAC 在代表性评估配置上报告了 **3–10 倍端到端训练效率提升**；硬件、
    任务和测量范围请参阅[论文](https://arxiv.org/abs/2605.30313)。这是 runtime 优化，
    不是新的 SAC objective。
 

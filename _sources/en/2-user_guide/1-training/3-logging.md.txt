@@ -29,7 +29,7 @@ stack overrides `training.log_root` or `training.log_dir`:
 | --- | --- | --- |
 | PPO | `logs/rsl_rl_ppo/<task>/` | `src/unilab/conf/ppo/config.yaml` |
 | APPO | `logs/appo/<task>/` | `src/unilab/conf/appo/config.yaml` |
-| SAC | `logs/fast_sac/<task>/` | `src/unilab/conf/sac/config.yaml` |
+| SAC | `logs/sac/<task>/` | `src/unilab/conf/sac/config.yaml` |
 | FlashSAC | `logs/flash_sac/<task>/` | `src/unilab/conf/flashsac/config.yaml` |
 
 A run directory is named `YYYY-MM-DD_HH-MM-SS_<sim_backend>`, for example
@@ -271,7 +271,7 @@ Wall` is a whole-rollout total, so the terminal shows milliseconds only. The bac
 active-throughput diagnostic `(num_envs * steps_per_env) / Rollout Wall` is likewise
 no longer persisted and can be derived from the fields above.
 
-## FastSAC Dual Timeline
+## SAC Dual Timeline
 
 With the default `training.env_steps_per_sync=1`, this sequence starts at learner
 iteration `k`. Horizontal messages are synchronization points; the `par` branches are
