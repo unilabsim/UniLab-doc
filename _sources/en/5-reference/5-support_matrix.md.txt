@@ -86,16 +86,16 @@ This table is derived from UniSim's SDK-free public static inventory. It describ
 
 | Entrypoint | Task owner | MuJoCo | Motrix | Drake | mjwarp | Newton | SuperDex | Genesis |
 |------------|------------|---|---|---|---|---|---|---|
-| PPO (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | Registered | Configured | - | - | Configured | - |
-| PPO (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Registered | - | Tested | Registered | - | Configured |
-| PPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Registered | - | Registered | Registered | - | Registered |
+| PPO (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | Tested | Configured | - | - | Configured | - |
+| PPO (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Tested | - | Tested | Registered | - | Configured |
+| PPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | - | Registered | Registered | - | Registered |
 | APPO (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | Tested | Registered | - | - | Registered | - |
 | APPO (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Registered | - | Registered | Registered | - | Registered |
-| APPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Registered | - | Registered | Registered | - | Registered |
+| APPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | - | Registered | Registered | - | Registered |
 | SAC (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Tested | - | Tested | Tested | - | Tested |
-| SAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Registered | - | Configured | Registered | - | Configured |
+| SAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | - | Configured | Registered | - | Configured |
 | FlashSAC (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | Registered | Registered | - | - | Registered | - |
-| FlashSAC (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Registered | - | Configured | Registered | - | Registered |
+| FlashSAC (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Tested | - | Configured | Registered | - | Registered |
 | FlashSAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | - | Configured | Configured | - | Configured |
 
 ### Source Index
