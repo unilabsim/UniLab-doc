@@ -43,8 +43,7 @@ range in the task owner only after recording why that range is plausible.
 ## How UniLab structures DR
 
 Manager-Based tasks declare reset and interval randomization through
-`env.events` in their owner YAML, executed by the manager lifecycle. See
-`src/unilab/conf/sac/task/g1_wbt_obs/mujoco.yaml`.
+`env.events` in their owner YAML, executed by the manager lifecycle.
 
 The legacy task-level provider protocol has been removed. The capability
 boundary is described in
@@ -52,10 +51,9 @@ boundary is described in
 
 ## Recipe: starting ranges
 
-Use the selected owner YAML as the source of truth. The retained G1 WBT owner
-declares base mass, COM, PD gains, encoder bias, and interval push. This
-excerpt shows a PD-gain term; evaluate absolute gain ranges together with the
-robot's control settings.
+Use the selected owner YAML as the source of truth. This excerpt shows a
+PD-gain term; evaluate absolute gain ranges together with the robot's control
+settings.
 
 ```yaml
 env:

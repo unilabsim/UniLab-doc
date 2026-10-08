@@ -22,7 +22,7 @@ These three paths correspond to three lifecycle classes:
 ## Status Conclusions
 
 1. Reset/interval randomization consists of `events:` manager terms in the owner YAML, executed uniformly by the manager lifecycle.
-2. Manager-Based owners declare reset behavior through Hydra command/event terms. G1 motion reset perturbations belong to `MotionCommandCfg`, while WBT adds `EventTermCfg` reset and interval terms.
+2. Manager-Based owners declare reset behavior through Hydra command/event terms. G1 motion reset perturbations belong to `MotionCommandCfg`, while task owners add `EventTermCfg` reset and interval terms.
 3. `ResetRandomizationPayload` expresses curated reset terms; a backend must advertise every requested term and own its derived-quantity obligation.
 4. `MotrixBackend` currently supports `base_mass_delta`, `base_com_offset`, `kp`, `kd`, and interval push; and it requires all model actuators to be position actuators during initialization.
 5. Fixed mesh/tool identity is declared by `env.fixed_model_variants`; reset-time geometry fields remain behind backend capability declarations and never change that identity.
@@ -34,9 +34,6 @@ These three paths correspond to three lifecycle classes:
 | `Go2JoystickFlat` | Hydra `events:` terms | Yes: owner YAML declares reset events | root-state reset + `pd_gains` kp/kd | none | `src/unilab/conf/ppo/task/go2_joystick_flat/base.yaml` |
 | `G1WalkFlat` | Hydra `events:` terms | Yes: Hydra `EventTermCfg` + Manager-Based reset terms | root-state reset + kp/kd via `pd_gains` | none | `g1/manager_terms.py` |
 | `G1MotionTracking` | Hydra command term | Yes: Hydra `MotionCommandCfg` + Manager-Based command reset | motion frame, root pose/velocity, and joint-position sampling | none | `motion_tracking/common/manager_terms.py` |
-| `G1WBTObs` | Hydra `events:` terms | Yes: same motion command + Hydra `EventTermCfg` | motion reset plus mass/COM/PD/friction/encoder-bias events | interval velocity kick | `motion_tracking/g1/manager_terms.py` |
-| `AllegroInhandRotation` | Hydra `events:` terms | Yes: Hydra `EventTermCfg` + Manager-Based reset term | entity-scoped hand/ball reset | none | `allegro_inhand/manager_terms.py` |
-| `AllegroInhandRotationGrasp` | Hydra `events:` terms | Yes: reuses the rotation reset event + `RecorderTermCfg` | noisy hand reset + grasp collection | none | `allegro_inhand/grasp_gen.py` |
 
 ## Per-task Domain Randomization List
 
@@ -45,9 +42,6 @@ These three paths correspond to three lifecycle classes:
 | `Go2JoystickFlat` | base xy/yaw and base qvel via `reset_root_state_uniform`; command sampling; kp/kd via `pd_gains` | none | event terms declared and enabled by default in `src/unilab/conf/ppo/task/go2_joystick_flat/base.yaml` |
 | `G1WalkFlat` | base xy/yaw and base qvel via `reset_root_state_uniform`; command sampling with a planar dead zone; `gait_phase` sampling; kp/kd randomization via `pd_gains` | none | kp/kd enabled on mujoco owners by default; disabled on motrix/mjwarp owners |
 | `G1MotionTracking` | Motion-command frame sampling; root pose perturbation `x/y/z/roll/pitch/yaw`; root velocity perturbation `x/y/z/roll/pitch/yaw`; joint-position noise clipped through the public entity soft limits; action-manager state reset | none | `pose_range`, `velocity_range`, and `joint_position_range` have non-zero perturbations in the base owner |
-| `G1WBTObs` | Same motion reset plus base mass, base COM, PD gain, foot friction, and encoder-bias event terms | `push_by_setting_velocity` | The WBT owner explicitly enables all listed event terms; unsupported capabilities raise rather than fall back |
-| `AllegroInhandRotation` | Entity-scoped hand/ball reset; an explicitly configured grasp cache is sampled, otherwise `null` explicitly selects the model home pose; optional `joint_noise`, `ball_velocity_noise`, and `ball_z_offset` | none | owner YAML explicitly selects the home pose and zero reset noise; a configured missing or malformed cache fails closed |
-| `AllegroInhandRotationGrasp` | Reuses the rotation reset with `joint_noise=0.25`; Manager-Based termination checks fingertip distance, contact count, and ball height; recorder stores successful timeout rows | none | generates the 50k-row Allegro grasp cache and raises `RunComplete` after a successful save |
 
 ## Current DR Capabilities and Boundaries
 
@@ -56,7 +50,6 @@ rows and validates shapes; UniSim backends advertise and apply the curated
 payload. Task-specific reset sampling remains owned by command/event terms:
 
 - `G1MotionTracking` pose / velocity / joint noise is owned by its manager command.
-- Allegro grasp / object initial-state sampling is task-specific event logic.
 - Fixed model/tool identity is construction-time and never reset-time DR.
 
 A requested backend capability that is not advertised fails closed; there is no
@@ -74,13 +67,8 @@ early task unlearnable.
 ## Interval push Usage
 
 Manager-Based tasks configure interval push through the `env.events.push_robot`
-term. For example, the retained `g1_wbt_obs` owner uses
-`push_by_setting_velocity` with interval and per-axis velocity ranges.
-
-```bash
-uv run train --algo sac --task g1_wbt_obs --sim mujoco \
-  'env.events.push_robot.interval_range_s=[10.0,10.0]'
-```
+term using `push_by_setting_velocity` with an interval and per-axis velocity
+ranges.
 
 ## Fixed Model/Tool Variant Boundary
 

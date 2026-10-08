@@ -1,6 +1,6 @@
 # Tensor runtime
 
-SAC、FlashSAC 与 WarpSAC 会在探测环境或构造 learner 之前解析所有面向进程
+SAC 与 FlashSAC 会在探测环境或构造 learner 之前解析所有面向进程
 启动的 tensor-runtime 设置。owner YAML 中的值会被收敛为一个有边界的
 `TensorRuntimeSettings` 对象并传给 off-policy runner。因此，非法值、超出
 边界的数据以及显存预算不可能满足的组合，都会在 collector 或 learner 进程

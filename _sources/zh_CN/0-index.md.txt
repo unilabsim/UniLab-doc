@@ -148,7 +148,6 @@ recommendation 元数据。
 | --- | --- | --- |
 | Go2 joystick | PPO、FlashSAC | PPO 有已测试的 MuJoCo 与 Motrix 行。FlashSAC 有 `go2_joystick_flat` 的 MuJoCo owner YAML。 |
 | G1 reference locomotion / tracking | PPO、APPO、SAC | PPO、APPO、SAC 都为保留的 G1 任务提供了已提交的 MuJoCo 与 Motrix owner YAML。 |
-| Allegro in-hand | PPO、APPO | PPO 和 APPO 为 Allegro in-hand 任务提供了已提交的 MuJoCo 与 Motrix owner YAML。 |
 
 Unitree production 任务族由 `unitree_rl_unilab` 维护，不计入核心仓库证据。
 

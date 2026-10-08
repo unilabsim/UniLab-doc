@@ -8,7 +8,7 @@ persistent backend, which keeps each unsmoothed iteration value.
 
 This page first covers the log directory shared by all algorithms and the
 Manager-Based reward metric contract, then documents the off-policy terminal used by
-SAC / FlashSAC / WarpSAC and APPO. Persisted backend tags follow the canonical schema
+SAC / FlashSAC and APPO. Persisted backend tags follow the canonical schema
 owned by `uni_rl.logging.metric_schema`: millisecond timing fields end in `_ms`,
 while `Perf/learning_time`, `Perf/collection_time`, and `Perf/iteration_time` are
 seconds. A few terminal fields (`Other`, phase percentages, collector cycle total,
@@ -31,7 +31,6 @@ stack overrides `training.log_root` or `training.log_dir`:
 | APPO | `logs/appo/<task>/` | `src/unilab/conf/appo/config.yaml` |
 | SAC | `logs/fast_sac/<task>/` | `src/unilab/conf/sac/config.yaml` |
 | FlashSAC | `logs/flash_sac/<task>/` | `src/unilab/conf/flashsac/config.yaml` |
-| WarpSAC | `logs/warp_sac/<task>/` | `src/unilab/conf/warpsac/config.yaml` |
 
 A run directory is named `YYYY-MM-DD_HH-MM-SS_<sim_backend>`, for example
 `2026-03-09_18-30-00_mujoco`. Common artifacts include `run_config.json`,

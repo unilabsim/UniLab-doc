@@ -38,7 +38,7 @@ uv run eval --algo ppo --task g1_motion_tracking --sim mujoco --load-run -1
 ```
 
 Every field your hardware loop needs is declared in that owner's YAML. Widths
-differ per owner — two G1 examples:
+differ per owner:
 
 ```{list-table}
 :header-rows: 1
@@ -47,10 +47,6 @@ differ per owner — two G1 examples:
 * - Owner
   - Actor obs width
   - Notes
-* - `src/unilab/conf/sac/task/g1_wbt_obs/mujoco.yaml`
-  - 514
-  - No state estimation: `motion_anchor_pos_b` and `base_lin_vel` are set to
-    `null`, pelvis IMU, `history_length: 5` on the proprio terms.
 ```
 
 ::::{admonition} Read the width off the composed config, not off this table
@@ -64,9 +60,9 @@ loop assembles, that is a contract bug, not a hardware tuning problem.
 ## 2. Observation contract
 
 Term order and per-term history come from your own owner's
-`env.observations.actor.terms`. As a worked example, `g1_wbt_obs` declares the
-terms below; those carrying `history_length: 5` are flattened **oldest-first**
-within the term, and terms are concatenated in declaration order:
+`env.observations.actor.terms`. Terms carrying a `history_length` are
+flattened **oldest-first** within the term, and terms are concatenated in
+declaration order:
 
 ```{list-table}
 :header-rows: 1
@@ -92,8 +88,8 @@ within the term, and terms are concatenated in declaration order:
   - previous raw actor output
 ```
 
-The motion command contributes the reference joint position and velocity
-(`29 + 29`) ahead of the observation terms. Per-term oldest-first ordering is
+The motion command contributes the reference joint position and velocity ahead
+of the observation terms when declared. Per-term oldest-first ordering is
 guaranteed by the `ObservationManager` per-term history buffers
 (`tests/managers/test_observation_buffers_noise.py`); mirror that ordering
 on hardware or the policy reads a permuted vector.
@@ -103,9 +99,9 @@ on hardware or the policy reads a permuted vector.
 Map actor output as `action * scale + default_angles`, then clamp to the
 scene's joint range before the target reaches the motor driver.
 
-- `scale` is `env.actions.joint_pos.scale`. It may be a **scalar** (`2.0` for
-  `g1_wbt_obs`) or a **regex → value map** resolved per actuator. Unitree's
-  deploy owners map joint-name patterns to distinct values.
+- `scale` is `env.actions.joint_pos.scale`. It may be a **scalar** or a
+  **regex → value map** resolved per actuator. Unitree's deploy owners map
+  joint-name patterns to distinct values.
   Reproduce the owner's resolved per-actuator vector exactly — do not average a
   map, take one entry, or broadcast a scalar over a map owner.
 - `default_angles` follows from `use_default_offset: true`, i.e. the `stand`

@@ -18,22 +18,18 @@ runtime 执行。
 | CLI Task | Registered Env | 默认 motion | Owner Evidence |
 | --- | --- | --- | --- |
 | `g1_motion_tracking` | `G1MotionTracking` | `dance1_subject2_part.npz` | `src/unilab/conf/ppo/task/g1_motion_tracking/`, `src/unilab/conf/appo/task/g1_motion_tracking/` |
-| `x2_wall_flip_tracking` | `X2WallFlipTracking` | `tictacflip_6-3_g1format.npz` | `src/unilab/conf/ppo/task/x2_wall_flip_tracking/` |
-| `g1_box_tracking` | `G1BoxTracking` | `sub3_largebox_003_boxconverted.npz` | `src/unilab/conf/ppo/task/g1_box_tracking/` |
-| `g1_wbt_obs` | `G1WBTObs` | `dance1_subject2_part.npz` | `src/unilab/conf/sac/task/g1_wbt_obs/mujoco.yaml` |
 
-profile 差异留在 Hydra 中。保留的 G1 identity 使用共享 manager factory；X2 只在
-委托给该 factory 前增加一层冷路径 mesh resolver。Unitree 的 wall flip、climb、
-deploy 与 23-DoF motion production profile 现在位于 `unitree_rl_unilab`。
+profile 差异留在 Hydra 中。保留的 G1 identity 使用共享 manager factory。Unitree 的
+wall flip、climb、deploy 与 23-DoF motion production profile 位于
+`unitree_rl_unilab`。
 
 ## PPO 与 APPO
 
 PPO owner 迭代预算（`--sim mujoco` owner YAML）：`g1_motion_tracking` 为
-`algo.max_iterations=15000`，`x2_wall_flip_tracking` 为 `9500`。
+`algo.max_iterations=15000`。
 
 ```bash
 uv run train --algo ppo --task g1_motion_tracking --sim mujoco
-uv run train --algo ppo --task x2_wall_flip_tracking --sim mujoco
 uv run train --algo ppo --task g1_motion_tracking --sim mujoco
 uv run train --algo appo --task g1_motion_tracking --sim mujoco training.no_play=true
 uv run train --algo ppo --task g1_motion_tracking --sim mujoco \
@@ -43,21 +39,14 @@ uv run eval --algo ppo --task g1_motion_tracking --sim mujoco --load-run -1 \
   training.cam_tracking=true training.cam_tracking_env_idx=0
 ```
 
-## SAC WBT 路径
+## SAC motion 路径
 
 ```bash
 uv run train --algo sac --task g1_motion_tracking --sim mujoco training.use_amp=true
-uv run train --algo sac --task g1_wbt_obs --sim mujoco training.use_amp=true
 ```
 
-`g1_wbt_obs` owner 是与部署对齐的 off-policy 观测配置。actor 的 command 与 anchor
-orientation term 保持单步，`base_ang_vel`、`joint_pos`、`joint_vel` 和 `actions` term
-分别声明 `history_length: 5`。这些逐项历史由 `ObservationManager` 维护并展开；actor
-使用配置中的 encoder-biased joint-position term，critic 则保留 clean term。逐项最旧
-优先顺序由 `ObservationManager` 的逐项历史缓冲实现保证
-（`tests/managers/test_observation_buffers_noise.py`）；硬件侧契约见仿真到真机
-部署指南。当 Motrix sim2sim 回放需要引用其他日志根目录下的 checkpoint 时，用
-`uv run eval` 透传绝对路径：
+`g1_motion_tracking` owner 是与部署对齐的 off-policy 观测配置。当 Motrix sim2sim
+回放需要引用其他日志根目录下的 checkpoint 时，用 `uv run eval` 透传绝对路径：
 
 ```bash
 uv run eval --algo sac --task g1_motion_tracking --sim mujoco \

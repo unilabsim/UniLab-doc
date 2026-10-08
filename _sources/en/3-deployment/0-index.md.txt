@@ -17,7 +17,7 @@ backends, and source frameworks. Each tutorial follows the same shape:
 :link-type: doc
 :class-card: sd-shadow-md
 
-Prepare a trained policy for G1 / Go2 / Allegro bring-up with ONNX exports and
+Prepare a trained policy for G1 / Go2 bring-up with ONNX exports and
 deploy-side contract checks.
 :::
 
@@ -62,12 +62,6 @@ End-to-end pipeline + go/no-go checklist.
 :link: 1-sim_to_real/3-go2_locomotion
 :link-type: doc
 Go2 joystick-flat deployment.
-:::
-
-:::{grid-item-card} 🤚 Allegro in-hand
-:link: 1-sim_to_real/4-allegro_inhand
-:link-type: doc
-Cube rotation; friction + vision.
 :::
 
 :::{grid-item-card} 📦 ONNX export & runtime

@@ -15,7 +15,7 @@ orphan: true
 ## Context
 
 [Discussion #1541](https://github.com/Motphys/UniLab/discussions/1541)
-指出，legacy domain-randomization provider 与 SimToolReal 大量工具模型瓶颈有共同根因：
+指出，legacy domain-randomization provider 与大量工具模型瓶颈有共同根因：
 backend 缺少 per-env model identity / model-field indirection。因此 task 曾被迫在
 UniLab 侧编译多个 engine model，或在 reset 协议中扩展模型变更语义。
 
@@ -94,7 +94,7 @@ backend 名称、可选 package import、executor introspection 或异常降级�
 
 - 让 task config 直接持有或返回 `MjSpec`。拒绝原因：task YAML 变成 MuJoCo-specific，
   UniSim 难以保持 MJWarp 兼容，且 public plan 不再 pickle-safe。
-- 在 UniLab 为每个 env 编译完整 model。拒绝原因：这正是 SimToolReal 内存和冷启动
+- 在 UniLab 为每个 env 编译完整 model。拒绝原因：这正是大量工具模型内存和冷启动
   瓶颈，并把 engine realization 上移到错误 owner。
 - 在 reset provider 中切换 model identity。拒绝原因：破坏派生常量、CUDA graph 和
   playback 的生命周期假设，也会延长 legacy DR 协议共存。

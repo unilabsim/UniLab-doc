@@ -1,18 +1,14 @@
 # SuperDex Backend
 
 > SuperDex participates in the tensor-only Manager runtime as a packed CPU
-> `HOST_BRIDGE` backend. Its Go2 and FR3 owners remain **Configured** research
+> `HOST_BRIDGE` backend. Its Go2 owner remains a **Configured** research
 > profiles, not full-training or cross-platform production claims.
 
 
 SuperDex is an optional CPU physics adapter owned by `unisim.backend.superdex`.
-The initial UniLab owner is the fixed-base `FR3JointTarget` task:
-`src/unilab/conf/ppo/task/fr3_joint_target/superdex.yaml`. It uses seven torque
-actions, 21 observation values, selected tensor joint-state resets, and
-`TorchEnv`. Its support level is **Configured**; bounded rollout or short
-training checks do not establish full-training performance or platform support.
-The implementation is tracked in [#1534](https://github.com/Motphys/UniLab/issues/1534)
-under [roadmap #1533](https://github.com/Motphys/UniLab/issues/1533).
+The checked-in owner is `go2_joystick_flat/superdex`. Its support level is
+**Configured**; bounded rollout or short training checks do not establish
+full-training performance or platform support.
 
 ## Installation
 
@@ -20,10 +16,7 @@ SuperDex Physics/Robotics 1.0.0 is published as Python wheels and is an
 optional UniLab extra; no native source build is required. The wheels carry
 the native batch executor and support CPython 3.12/3.13 on Linux x86_64 only;
 on other platforms the extra is empty and the CLI reports a targeted runtime
-diagnostic. CPU physics does not require CUDA. The FR3 owner has no record
-(video) playback — the `.superdex_bot` asset carries no MJCF visual model — so
-play defaults to the native interactive viewer (`play_render_mode=interactive`
-with `play_env_num=1`); use `training.play_render_mode=none` for headless runs.
+diagnostic. CPU physics does not require CUDA.
 
 ```bash
 # Source checkout (default Python 3.13; wheels support CPython 3.12/3.13):
@@ -42,19 +35,7 @@ are a temporary unilabsim build (`superdex-physics-uni` /
 the `superdex-physics` / `superdex-robotics` wheels, UniSim switches the
 package names and UniLab needs no change.
 
-Native FR3 assets are hosted on Hugging Face
-([unilabsim/unilab-robots](https://huggingface.co/datasets/unilabsim/unilab-robots)),
-like the other robot mesh assets; the wheels do not carry robot binaries. The
-asset hub registers `bots/arms/fr3_v2/fr3_v2.superdex_bot` and downloads the
-snapshot into `src/unilab/assets/` on first use, checking its collision SDF,
-render files, `LICENSE` and `NOTICE` before constructing physics. To pre-fetch
-the assets (e.g. for CI or offline prep):
-
-```bash
-uv run unilab-pull-assets --robot fr3_v2
-```
-
-To audit a local `project_superdex` checkout instead, set
+To audit a local `project_superdex` checkout, set
 `SUPERDEX_ASSETS_PATH=/absolute/path/to/project_superdex/assets`, or set
 `env.superdex_assets_root=/absolute/path/to/project_superdex/assets` to
 override it for a specific owner invocation. An explicit root takes precedence
@@ -64,20 +45,6 @@ A local source build is only needed when changing the SuperDex engine itself:
 `bash scripts/tools/setup_superdex_env.sh` clones the integration branch,
 builds the native extensions and links the local UniSim/UniLab checkouts
 editable. Regular use does not need it.
-
-## Run the FR3 Task
-
-```bash
-uv run --no-sync train --algo ppo --task fr3_joint_target --sim superdex \
-  algo.max_iterations=2 algo.num_steps_per_env=16 \
-  algo.algorithm.num_learning_epochs=1
-```
-
-The target joint positions, rewards, reset ranges and action scales live in the
-task's `base.yaml`. The torque bounds `[20,20,20,20,5,5,5]` Nm are an explicit
-research profile, not rated hardware limits. `superdex_effort_limits` declares
-the same bounds at the native backend boundary. The SDK remains single-threaded;
-the native scene executor below owns all supported CPU parallelism.
 
 ## Run the Go2 Task
 
@@ -213,17 +180,6 @@ through the production playback session and executes 64 SuperDex control steps
 without a renderer. It checks finite values and interface compatibility; a
 two-iteration checkpoint is not expected to walk reliably.
 
-```bash
-uv run --no-sync pytest tests/assets/test_superdex_assets.py \
-  tests/envs/test_fr3_superdex.py tests/test_cli_runtime_requirements.py -q
-```
-
-The optional native tests require the SDK and the FR3 assets (downloaded from
-Hugging Face on demand, or provided through `SUPERDEX_ASSETS_PATH`); they cover
-finite rollout data, selected reset isolation, immediate observation refresh
-and a spawned `EnvFactory`. Missing runtime/assets produce an explicit skip;
-such a run is not native validation. The base asset/config tests need no native
-asset checkout.
 
 Engine conversion and physics live in UniSim; asset registration, Hydra and task
 terms remain in UniLab. See

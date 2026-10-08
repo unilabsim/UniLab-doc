@@ -22,8 +22,7 @@
 - Motrix 需要 `motrix` extra，提供 CPU-authoritative packed HOST_BRIDGE；当前
   canonical 支持范围为 SAC `g1_walk_flat` 和 FlashSAC `g1_motion_tracking`。
 - SuperDex 在 CPython 3.12/3.13 Linux x86_64 上需要 `superdex` extra，提供
-  CPU-authoritative packed HOST_BRIDGE；当前范围为 Go2 与 FR3 configured
-  research owner。
+  CPU-authoritative packed HOST_BRIDGE；当前范围为 Go2 configured research owner。
 - Drake 需要本地编译的 DrakeUni batch extension。其 scoped PPO
   `go2_joystick_flat` owner 使用 CPU physics 与 packed HOST_BRIDGE
   lifecycle；在 backend contract 补齐前，浮动根重置与 reset randomization

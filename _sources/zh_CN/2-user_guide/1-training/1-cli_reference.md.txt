@@ -11,7 +11,6 @@ Hydra 组合。
 | APPO | `uv run train --algo appo --task <task> --sim <backend>` | `src/unilab/scripts/train_appo.py` |
 | SAC | `uv run train --algo sac --task <task> --sim <backend>` | `src/unilab/scripts/train_sac.py` |
 | FlashSAC | `uv run train --algo flashsac --task <task> --sim <backend>` | `src/unilab/scripts/train_flashsac.py` |
-| WarpSAC | `uv run train --algo warpsac --task <task> --sim <backend>` | `src/unilab/scripts/train_warpsac.py` |
 
 示例：
 
@@ -102,13 +101,10 @@ rollout 一个环境。
 
 ```bash
 uv run demo dance
-uv run demo wallflip
-uv run demo boxtracking
-uv run demo inhandgrasp
 uv run demo dance --refresh --device cpu
 ```
 
-可用的 demo：`teaser`、`dance`、`wallflip`、`boxtracking`、`inhandgrasp`。
+可用的 demo：`teaser`、`dance`。
 每个 demo 在首次运行时会从 `unilabsim/unilab-checkpoints` 这个 Hugging Face
 数据集拉取预训练检查点，并缓存到 `src/unilab/assets/checkpoints/<demo>/model_0.pt`。
 传入 `--refresh` 可重新下载。

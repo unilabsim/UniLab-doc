@@ -1,6 +1,6 @@
 # `unilab.tasks.motion_tracking`
 
-Whole-body motion-tracking tasks for G1 and X2 robots.
+Whole-body motion-tracking tasks for G1 robots.
 
 ```{eval-rst}
 .. autosummary::
@@ -10,5 +10,4 @@ Whole-body motion-tracking tasks for G1 and X2 robots.
 
    unilab.tasks.motion_tracking.common
    unilab.tasks.motion_tracking.g1
-   unilab.tasks.motion_tracking.x2
 ```

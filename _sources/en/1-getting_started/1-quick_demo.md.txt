@@ -42,9 +42,8 @@ Run a pre-trained policy before changing any task configuration:
 uv run demo dance
 ```
 
-Available demo names are `teaser`, `dance`, `wallflip`, `boxtracking`,
-and `inhandgrasp`. Use `uv run demo --help` for device and refresh
-options.
+Available demo names are `teaser` and `dance`. Use `uv run demo --help` for
+device and refresh options.
 
 ## Train A Task
 
@@ -73,14 +72,6 @@ community mirror before running training, eval, or demo commands:
 
 ```bash
 export HF_ENDPOINT=https://hf-mirror.com
-```
-
-X2 robot meshes auto-download from Hugging Face (`unilabsim/unilab-robots`) into
-`src/unilab/assets/robots/x2/meshes/` on first run; no manual step is needed. To
-pre-fetch them:
-
-```bash
-uv run unilab-pull-assets --robot x2
 ```
 
 On macOS, the CLI routes Motrix interactive playback through `mxpython` when

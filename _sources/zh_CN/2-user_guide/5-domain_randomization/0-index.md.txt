@@ -30,9 +30,6 @@ Manager-Based event term 是唯一 DR 声明路径：
 | `Go2JoystickFlat` | Hydra `events:` term | 是：owner YAML 声明 reset event | root-state reset + `pd_gains` kp/kd | 无 | `src/unilab/conf/ppo/task/go2_joystick_flat/base.yaml` |
 | `G1WalkFlat` | Hydra `events:` term | 是：Hydra `EventTermCfg` + Manager-Based reset term | root-state reset + 经 `pd_gains` 的 kp/kd | 无 | `g1/manager_terms.py` |
 | `G1MotionTracking` | Hydra command term | 是：Hydra `MotionCommandCfg` + Manager-Based command reset | motion frame、root pose/velocity 与 joint-position 采样 | 无 | `motion_tracking/common/manager_terms.py` |
-| `G1WBTObs` | Hydra `events:` term | 是：同一 motion command + Hydra `EventTermCfg` | motion reset 加 mass/COM/PD/friction/encoder-bias event | interval velocity kick | `motion_tracking/g1/manager_terms.py` |
-| `AllegroInhandRotation` | Hydra `events:` term | 是：Hydra `EventTermCfg` + Manager-Based reset term | entity 范围的手/球 reset | 无 | `allegro_inhand/manager_terms.py` |
-| `AllegroInhandRotationGrasp` | Hydra `events:` term | 是：复用 rotation reset event + `RecorderTermCfg` | 带噪声的手部 reset + grasp 收集 | 无 | `allegro_inhand/grasp_gen.py` |
 
 ## 各任务域随机化清单
 
@@ -41,9 +38,6 @@ Manager-Based event term 是唯一 DR 声明路径：
 | `Go2JoystickFlat` | 经 `reset_root_state_uniform` 的 base xy/yaw 与 base qvel；command 采样；经 `pd_gains` 的 kp/kd | 无 | event term 在 `src/unilab/conf/ppo/task/go2_joystick_flat/base.yaml` 中默认声明并启用 |
 | `G1WalkFlat` | 经 `reset_root_state_uniform` 的 base xy/yaw 与 base qvel；带平面死区的 command 采样；`gait_phase` 采样；经 `pd_gains` 的 kp/kd 随机化 | 无 | mujoco owner 默认启用 kp/kd；motrix/mjwarp owner 默认禁用 |
 | `G1MotionTracking` | Motion-command frame 采样；root 位姿扰动 `x/y/z/roll/pitch/yaw`；root 速度扰动 `x/y/z/roll/pitch/yaw`；通过 public entity soft limit clip 的关节位置噪声；action-manager 状态 reset | 无 | base owner 中 `pose_range`、`velocity_range` 与 `joint_position_range` 默认有非零扰动 |
-| `G1WBTObs` | 同一 motion reset 加 base mass、base COM、PD gain、足端摩擦和 encoder-bias event term | `push_by_setting_velocity` | WBT owner 显式启用上述全部 event term；能力不支持时直接报错，不回退 |
-| `AllegroInhandRotation` | entity 范围的手/球 reset；显式配置 grasp cache 时进行采样，否则以 `null` 显式选择模型 home pose；可选 `joint_noise`、`ball_velocity_noise` 与 `ball_z_offset` | 无 | owner YAML 显式选择 home pose 与零 reset 噪声；配置的 cache 缺失或格式错误时 fail-closed |
-| `AllegroInhandRotationGrasp` | 复用 rotation reset 并设置 `joint_noise=0.25`；Manager-Based termination 检查指尖距离、接触数和球高度；recorder 保存成功 timeout rows | 无 | 生成 5 万行 Allegro grasp cache，成功保存后抛出 `RunComplete` |
 
 ## 当前 DR 的能力与边界
 
@@ -52,7 +46,6 @@ shape；UniSim backend 声明并应用 curated payload。task-specific reset 采
 command/event term 拥有：
 
 - `G1MotionTracking` 的 pose / velocity / joint noise 归 manager command 所有。
-- Allegro grasp / object 初始状态采样是 task-specific event logic。
 - 固定 model/tool identity 是 construction-time，不是 reset-time DR。
 
 未显式声明支持的后端能力会 fail closed；不存在过滤或静默回退。
@@ -66,13 +59,8 @@ fail closed。建议从较小倾斜范围开始，避免早期训练任务不可
 
 ## Interval push 用法
 
-Manager-Based 任务通过 `env.events.push_robot` term 配置周期推扰。例如，
-保留的 `g1_wbt_obs` owner 使用 `push_by_setting_velocity`，并按轴声明速度范围。
-
-```bash
-uv run train --algo sac --task g1_wbt_obs --sim mujoco \
-  'env.events.push_robot.interval_range_s=[10.0,10.0]'
-```
+Manager-Based 任务通过 `env.events.push_robot` term 配置周期推扰，使用
+`push_by_setting_velocity`，并按轴声明速度范围。
 
 ## 固定 Model/Tool Variant 边界
 

@@ -42,4 +42,4 @@
 - Env 状态契约：`src/unilab/base/torch_env.py`
 - 场景配置：`src/unilab/base/scene.py`
 - 现有任务示例：`src/unilab/tasks/locomotion/go2/joystick.py`、
-  `src/unilab/tasks/manipulation/allegro_inhand/rotation.py`
+  `src/unilab/tasks/motion_tracking/g1/manager_terms.py`

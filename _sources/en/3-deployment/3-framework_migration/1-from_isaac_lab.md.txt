@@ -151,13 +151,10 @@ uv run train --algo ppo --task <task> --sim mujoco
 Do not add a task-specific training-script branch, environment factory, runner,
 or IPC path.
 
-Two maintainer-approved factory wrappers are the only registered exceptions to
+One maintainer-approved factory wrapper is the only registered exception to
 the generic-factory rule: `make_g1_walk_env`
 (`src/unilab/tasks/locomotion/g1/manager_terms.py`) constructs the
 `G1WalkManagerBasedEnv` subclass that owns the G1 walk manager-based runtime,
-and `make_x2_wall_flip_env`
-(`src/unilab/tasks/motion_tracking/x2/__init__.py`) resolves untracked X2
-meshes on the cold path before delegating to `make_manager_based_rl_env`.
 Every other Compatible task registers `make_manager_based_rl_env` directly.
 
 ### 6. Validate near each adaptation

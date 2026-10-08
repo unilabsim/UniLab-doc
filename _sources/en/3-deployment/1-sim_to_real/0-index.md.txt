@@ -55,12 +55,6 @@ Motion-tracking deployment notes for the G1 path.
 Go2 joystick-flat deployment notes.
 :::
 
-:::{grid-item-card} Allegro in-hand
-:link: 4-allegro_inhand
-:link-type: doc
-In-hand manipulation deployment checks.
-:::
-
 ::::
 
 ```{toctree}
@@ -69,7 +63,6 @@ In-hand manipulation deployment checks.
 1-overview
 2-g1_whole_body
 3-go2_locomotion
-4-allegro_inhand
 5-onnx_runtime
 6-domain_randomization
 7-safety_layers

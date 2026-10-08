@@ -40,7 +40,7 @@ flowchart LR
 | ONNX export | Training playback scripts + deploy helpers | {doc}`5-onnx_runtime` |
 | Latency / obs lag | Task config flags and deploy-side logs | {doc}`8-latency_budget` |
 | Safety layer | Hardware-side clamp / fallback | {doc}`7-safety_layers` |
-| Robot bringup | Robot-specific guides | {doc}`2-g1_whole_body`, {doc}`3-go2_locomotion`, {doc}`4-allegro_inhand` |
+| Robot bringup | Robot-specific guides | {doc}`2-g1_whole_body`, {doc}`3-go2_locomotion` |
 
 ## What you should have before starting
 
@@ -96,13 +96,6 @@ Humanoid motion tracking deployment, joint clamp ranges, IMU alignment.
 :link-type: doc
 
 Joystick-flat policies on Go2.
-:::
-
-:::{grid-item-card} ✋ Allegro in-hand
-:link: 4-allegro_inhand
-:link-type: doc
-
-Dexterous cube reorientation, tactile-free deployment, grasp generator.
 :::
 
 ::::

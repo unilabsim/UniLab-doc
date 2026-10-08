@@ -1,6 +1,6 @@
 # Tensor runtime
 
-SAC, FlashSAC, and WarpSAC resolve their spawn-facing tensor-runtime settings
+SAC and FlashSAC resolve their spawn-facing tensor-runtime settings
 before probing the environment or constructing a learner. The owner YAML values
 are collected into one bounded `TensorRuntimeSettings` object and passed to the
 off-policy runner. Invalid values, unsupported bounds, and impossible memory

@@ -42,4 +42,4 @@ Start from the contracts: {doc}`../2-contracts/1-env_contract`,
 - Env state contract: `src/unilab/base/torch_env.py`
 - Scene config: `src/unilab/base/scene.py`
 - Existing task examples: `src/unilab/tasks/locomotion/go2/joystick.py`,
-  `src/unilab/tasks/manipulation/allegro_inhand/rotation.py`
+  `src/unilab/tasks/motion_tracking/g1/manager_terms.py`

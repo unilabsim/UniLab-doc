@@ -54,12 +54,6 @@ G1 路线的运动跟踪部署说明。
 Go2 joystick-flat 部署说明。
 :::
 
-:::{grid-item-card} Allegro 手内操作
-:link: 4-allegro_inhand
-:link-type: doc
-手内操作部署检查。
-:::
-
 ::::
 
 ```{toctree}
@@ -68,7 +62,6 @@ Go2 joystick-flat 部署说明。
 1-overview
 2-g1_whole_body
 3-go2_locomotion
-4-allegro_inhand
 5-onnx_runtime
 6-domain_randomization
 7-safety_layers

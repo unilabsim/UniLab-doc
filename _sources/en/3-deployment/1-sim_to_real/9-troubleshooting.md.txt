@@ -35,14 +35,6 @@ Almost always one of:
    against the owner's `env.observations.actor.terms` — term order first, then
    per-term history ordering.
 
-## Cube drops in Allegro inhand
-
-| Likely cause | Check | Fix |
-|---|---|---|
-| Friction mismatch | Real cube vs sim μ | Sweep friction DR wider, retrain |
-| Grasp distribution mismatch | Log operator grip poses | Augment grasp generator |
-| Pose estimator latency | Measure vision pipeline ms | Add observation lag DR |
-
 ## Policy succeeds in MuJoCo but fails in Motrix (or vice versa)
 
 That's a **sim-to-sim** problem, not sim-to-real. See

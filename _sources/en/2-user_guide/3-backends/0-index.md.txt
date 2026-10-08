@@ -26,7 +26,7 @@ provided.
   FlashSAC `g1_motion_tracking`.
 - SuperDex requires the `superdex` extra on CPython 3.12/3.13 Linux x86_64 and
   provides a CPU-authoritative packed HOST_BRIDGE; the current scope is the
-  configured Go2 and FR3 research owners.
+  configured Go2 research owner.
 - Drake requires the locally built DrakeUni batch extension. Its scoped PPO
   `go2_joystick_flat` owner uses CPU physics and the packed HOST_BRIDGE
   lifecycle; floating-root and reset-randomization events remain disabled until

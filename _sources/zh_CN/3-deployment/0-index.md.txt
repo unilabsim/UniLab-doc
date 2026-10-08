@@ -17,7 +17,7 @@
 :link-type: doc
 :class-card: sd-shadow-md
 
-为 G1 / Go2 / Allegro 上机准备训练好的策略，包含 ONNX 导出与部署侧契约检查。
+为 G1 / Go2 上机准备训练好的策略，包含 ONNX 导出与部署侧契约检查。
 :::
 
 :::{grid-item-card} 🔀 仿真 → 仿真
@@ -61,12 +61,6 @@
 :link: 1-sim_to_real/3-go2_locomotion
 :link-type: doc
 Go2 joystick-flat 部署。
-:::
-
-:::{grid-item-card} 🤚 Allegro 手内操作
-:link: 1-sim_to_real/4-allegro_inhand
-:link-type: doc
-方块旋转；摩擦 + 视觉。
 :::
 
 :::{grid-item-card} 📦 ONNX 导出与运行时

@@ -21,13 +21,8 @@ Backend 支持通过 `unisim.backend.base` 显式声明。所选 backend 未声�
 
 ## Interval Push
 
-Manager-Based 任务通过 `env.events.push_robot` term 配置周期推扰。例如，
-保留的 `g1_wbt_obs` owner 使用 `push_by_setting_velocity`，并按轴声明速度范围。
-
-```bash
-uv run train --algo sac --task g1_wbt_obs --sim mujoco \
-  'env.events.push_robot.interval_range_s=[10.0,10.0]'
-```
+Manager-Based 任务通过 `env.events.push_robot` term 配置周期推扰，使用
+`push_by_setting_velocity`，并按轴声明速度范围。
 
 ## Owner 本地默认值
 

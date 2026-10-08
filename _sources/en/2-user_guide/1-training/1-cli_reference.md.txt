@@ -11,7 +11,6 @@ keeps the lower-level scripts available for debugging Hydra composition.
 | APPO | `uv run train --algo appo --task <task> --sim <backend>` | `src/unilab/scripts/train_appo.py` |
 | SAC | `uv run train --algo sac --task <task> --sim <backend>` | `src/unilab/scripts/train_sac.py` |
 | FlashSAC | `uv run train --algo flashsac --task <task> --sim <backend>` | `src/unilab/scripts/train_flashsac.py` |
-| WarpSAC | `uv run train --algo warpsac --task <task> --sim <backend>` | `src/unilab/scripts/train_warpsac.py` |
 
 Examples:
 
@@ -109,13 +108,10 @@ dependency; the `viser.*` config group (`viser.port`, `viser.max_envs`,
 
 ```bash
 uv run demo dance
-uv run demo wallflip
-uv run demo boxtracking
-uv run demo inhandgrasp
 uv run demo dance --refresh --device cpu
 ```
 
-Available demos: `teaser`, `dance`, `wallflip`, `boxtracking`, `inhandgrasp`.
+Available demos: `teaser`, `dance`.
 Each demo fetches a pre-trained checkpoint from the
 `unilabsim/unilab-checkpoints` Hugging Face dataset on first run and caches it
 under `src/unilab/assets/checkpoints/<demo>/model_0.pt`. Pass `--refresh` to

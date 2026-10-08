@@ -9,7 +9,6 @@
 | APPO | 异步 on-policy | `src/unilab/scripts/train_appo.py` | `src/unilab/conf/appo/config.yaml` |
 | SAC | off-policy | `src/unilab/scripts/train_sac.py` | `src/unilab/conf/sac/config.yaml` |
 | FlashSAC | off-policy | `src/unilab/scripts/train_flashsac.py` | `src/unilab/conf/flashsac/config.yaml` |
-| WarpSAC | off-policy | `src/unilab/scripts/train_warpsac.py` | `src/unilab/conf/warpsac/config.yaml` |
 
 ```{toctree}
 :hidden:
@@ -18,5 +17,4 @@
 2-appo
 3-sac
 4-flash_sac
-5-warpsac
 ```

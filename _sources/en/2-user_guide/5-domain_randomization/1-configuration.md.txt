@@ -24,13 +24,8 @@ term that calls `randomize_physics_scene_gravity`.
 ## Interval Push
 
 Manager-Based tasks configure interval push through the `env.events.push_robot`
-term. For example, the retained `g1_wbt_obs` owner uses
-`push_by_setting_velocity` with an interval and per-axis velocity ranges.
-
-```bash
-uv run train --algo sac --task g1_wbt_obs --sim mujoco \
-  'env.events.push_robot.interval_range_s=[10.0,10.0]'
-```
+term using `push_by_setting_velocity` with an interval and per-axis velocity
+ranges.
 
 ## Owner-Local Defaults
 

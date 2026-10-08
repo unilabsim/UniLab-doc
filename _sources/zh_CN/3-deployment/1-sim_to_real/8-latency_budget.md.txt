@@ -8,8 +8,8 @@
 | 面 | 仓库证据 | 它覆盖什么 |
 | --- | --- | --- |
 | 单步动作延迟 | task owner 中 Manager action term 的 `simulate_action_latency` 声明 | 执行上一步动作而非当前动作。 |
-| G1 WBT 观测历史 | `src/unilab/conf/sac/task/g1_wbt_obs/mujoco.yaml` 中逐 term 的 `history_length` | 为 `base_ang_vel`、`joint_pos`、`joint_vel` 与 `actions` 提供逐项历史。 |
-| 观测历史顺序 | `ObservationManager` 逐项历史缓冲（`tests/managers/test_observation_buffers_noise.py`） | G1 WBT actor 观测按逐项最旧优先展平。 |
+| 观测历史 | task owner 中逐 term 的 `history_length` 声明 | 为选定观测项提供逐项历史。 |
+| 观测历史顺序 | `ObservationManager` 逐项历史缓冲（`tests/managers/test_observation_buffers_noise.py`） | actor 观测按逐项最旧优先展平。 |
 
 ## 动作延迟
 
@@ -23,14 +23,10 @@ env:
       simulate_action_latency: true
 ```
 
-已签入的 G1 WBT owner 在 `src/unilab/conf/sac/task/g1_wbt_obs/mujoco.yaml` 中启用了
-该开关。
-
 ## 观测滞后与历史
 
-观测宽度是所声明 actor 各项 `dim * history_length` 之和，硬件运行时不允许猜测。对
-G1 WBT owner，`history_length: 5` 让每个本体感受项携带 5 步历史并按最旧优先展平，
-而参考项保持单步。完整的分项顺序见 {doc}`2-g1_whole_body`。
+观测宽度是所声明 actor 各项 `dim * history_length` 之和，硬件运行时不允许猜测。
+带 `history_length` 的项在项内按最旧优先展平，其他项保持单步。
 
 除非训练 owner 这样做了，否则不要让指令/参考项滞后。
 

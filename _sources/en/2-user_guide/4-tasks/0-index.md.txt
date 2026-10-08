@@ -15,13 +15,7 @@ Go2 and G1 core reference owners; Unitree production variants are downstream.
 :::{grid-item-card} Motion tracking
 :link: 2-motion_tracking
 :link-type: doc
-G1/X2 motion-tracking reference profiles.
-:::
-
-:::{grid-item-card} Manipulation
-:link: 3-manipulation
-:link-type: doc
-Allegro in-hand rotation and grasp generation.
+G1 motion-tracking reference profiles.
 :::
 
 ::::
@@ -31,5 +25,4 @@ Allegro in-hand rotation and grasp generation.
 
 1-locomotion
 2-motion_tracking
-3-manipulation
 ```

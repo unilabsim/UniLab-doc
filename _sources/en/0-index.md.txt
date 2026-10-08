@@ -155,7 +155,6 @@ committed benchmark manifest or separate recommendation metadata.
 | --- | --- | --- |
 | Go2 joystick | PPO, FlashSAC | PPO has tested MuJoCo and Motrix rows. FlashSAC has MuJoCo owner YAMLs for `go2_joystick_flat`. |
 | G1 reference locomotion / tracking | PPO, APPO, SAC | PPO, APPO, and SAC include committed MuJoCo and Motrix owner YAMLs for retained G1 tasks. |
-| Allegro in-hand | PPO, APPO | PPO and APPO have committed MuJoCo and Motrix owner YAMLs for Allegro in-hand tasks. |
 
 Unitree production task families are maintained in `unitree_rl_unilab` and are
 not counted as core repository evidence.

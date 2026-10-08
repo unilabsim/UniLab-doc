@@ -1,8 +1,8 @@
 # Motion Tracking
 
 G1 motion tracking tasks live under `src/unilab/tasks/motion_tracking/` and are
-selected through task owner YAMLs in `src/unilab/conf/ppo/`, `src/unilab/conf/appo/`, and selected
-off-policy paths.
+selected through task owner YAMLs in `src/unilab/conf/ppo/`, `src/unilab/conf/appo/`,
+and selected off-policy paths.
 
 > **Motion assets moved to Hugging Face.** The `.npz` clips are no longer shipped
 > in the repository. On first use `MotionLoader`
@@ -20,23 +20,18 @@ configuration entry point; the selected owner is materialized into the shared
 | CLI Task | Registered Env | Default Motion | Owner Evidence |
 | --- | --- | --- | --- |
 | `g1_motion_tracking` | `G1MotionTracking` | `dance1_subject2_part.npz` | `src/unilab/conf/ppo/task/g1_motion_tracking/`, `src/unilab/conf/appo/task/g1_motion_tracking/` |
-| `x2_wall_flip_tracking` | `X2WallFlipTracking` | `tictacflip_6-3_g1format.npz` | `src/unilab/conf/ppo/task/x2_wall_flip_tracking/` |
-| `g1_box_tracking` | `G1BoxTracking` | `sub3_largebox_003_boxconverted.npz` | `src/unilab/conf/ppo/task/g1_box_tracking/` |
-| `g1_wbt_obs` | `G1WBTObs` | `dance1_subject2_part.npz` | `src/unilab/conf/sac/task/g1_wbt_obs/mujoco.yaml` |
 
 Profile differences remain in Hydra. The retained G1 identities use the shared
-manager factory; X2 adds only a cold-path mesh resolver before delegating to
-that factory. Unitree production wall-flip, climb, deploy, and 23-DoF motion
-profiles now live in `unitree_rl_unilab`.
+manager factory. Unitree production wall-flip, climb, deploy, and 23-DoF motion
+profiles live in `unitree_rl_unilab`.
 
 ## PPO And APPO
 
-PPO owner iteration budgets (the `--sim mujoco` owner YAMLs): `g1_motion_tracking`
-runs `algo.max_iterations=15000` and `x2_wall_flip_tracking` runs `9500`.
+PPO owner iteration budget (the `--sim mujoco` owner YAML):
+`g1_motion_tracking` runs `algo.max_iterations=15000`.
 
 ```bash
 uv run train --algo ppo --task g1_motion_tracking --sim mujoco
-uv run train --algo ppo --task x2_wall_flip_tracking --sim mujoco
 uv run train --algo ppo --task g1_motion_tracking --sim mujoco
 uv run train --algo appo --task g1_motion_tracking --sim mujoco training.no_play=true
 uv run train --algo ppo --task g1_motion_tracking --sim mujoco \
@@ -46,23 +41,15 @@ uv run eval --algo ppo --task g1_motion_tracking --sim mujoco --load-run -1 \
   training.cam_tracking=true training.cam_tracking_env_idx=0
 ```
 
-## SAC WBT Path
+## SAC Motion Path
 
 ```bash
 uv run train --algo sac --task g1_motion_tracking --sim mujoco training.use_amp=true
-uv run train --algo sac --task g1_wbt_obs --sim mujoco training.use_amp=true
 ```
 
-The `g1_wbt_obs` owner is the deploy-aligned off-policy observation profile. Its
-actor keeps the command and anchor-orientation terms at one step while the
-`base_ang_vel`, `joint_pos`, `joint_vel`, and `actions` terms declare
-`history_length: 5`. `ObservationManager` owns and flattens those per-term
-histories; the actor uses the configured encoder-biased joint-position term while
-the critic keeps the clean term. Per-term oldest-first ordering is guaranteed by
-the `ObservationManager` per-term history buffers
-(`tests/managers/test_observation_buffers_noise.py`); the hardware-side contract is
-documented in the sim-to-real deployment guide. When a Motrix sim2sim replay needs
-a checkpoint from another log root, pass the absolute path through `uv run eval`:
+The `g1_motion_tracking` owner is the deploy-aligned off-policy observation
+profile. When a Motrix sim2sim replay needs a checkpoint from another log root,
+pass the absolute path through `uv run eval`:
 
 ```bash
 uv run eval --algo sac --task g1_motion_tracking --sim mujoco \

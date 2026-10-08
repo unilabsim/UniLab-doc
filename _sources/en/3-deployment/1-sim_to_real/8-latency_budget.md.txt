@@ -9,8 +9,8 @@ budgets as robot-specific measurements, not UniLab defaults.
 | Surface | Repo evidence | What it covers |
 | --- | --- | --- |
 | One-step action delay | Manager action term `simulate_action_latency` declarations in task owners | Executes the previous action instead of the current action. |
-| G1 WBT observation history | Per-term `history_length` in `src/unilab/conf/sac/task/g1_wbt_obs/mujoco.yaml` | Per-term history for `base_ang_vel`, `joint_pos`, `joint_vel`, and `actions`. |
-| Obs history ordering | `ObservationManager` per-term history buffers (`tests/managers/test_observation_buffers_noise.py`) | Per-term oldest-first flatten for the G1 WBT actor obs. |
+| Observation history | Per-term `history_length` declarations in task owners | Per-term history for selected observation terms. |
+| Obs history ordering | `ObservationManager` per-term history buffers (`tests/managers/test_observation_buffers_noise.py`) | Per-term oldest-first flatten for actor observations. |
 
 ## Action Latency
 
@@ -25,16 +25,12 @@ env:
       simulate_action_latency: true
 ```
 
-The checked-in G1 WBT owner enables this flag in
-`src/unilab/conf/sac/task/g1_wbt_obs/mujoco.yaml`.
-
 ## Observation Lag And History
 
 Observation width is the sum of `dim * history_length` over the declared actor
-terms, not something a hardware runtime may guess. For the G1 WBT owner,
-`history_length: 5` gives each proprioceptive term a 5-step history flattened
-oldest-first, while reference terms stay single-step. See
-{doc}`2-g1_whole_body` for the full term order.
+terms, not something a hardware runtime may guess. Terms carrying
+`history_length` are flattened oldest-first within each term while other terms
+stay single-step.
 
 Do not lag command/reference terms unless the training owner did so.
 

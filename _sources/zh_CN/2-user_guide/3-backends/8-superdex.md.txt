@@ -1,27 +1,20 @@
 # SuperDex 后端
 
 > SuperDex 已作为 packed CPU `HOST_BRIDGE` 后端加入 tensor-only Manager
-> runtime。Go2 与 FR3 owner 仍是 **Configured** 研究配置，不构成完整训练或
+> runtime。Go2 owner 仍是 **Configured** 研究配置，不构成完整训练或
 > 跨平台生产支持声明。
 
 
-SuperDex 是由 `unisim.backend.superdex` 拥有的可选 CPU 物理后端。UniLab 首个
-owner 为固定基 `FR3JointTarget`，配置位于
-`src/unilab/conf/ppo/task/fr3_joint_target/superdex.yaml`。任务使用 7 维力矩动作、
-21 维观测、selected tensor 关节 reset 和 `TorchEnv`。当前支持等级为 **Configured**；
+SuperDex 是由 `unisim.backend.superdex` 拥有的可选 CPU 物理后端。当前签入的
+owner 为 `go2_joystick_flat/superdex`。当前支持等级为 **Configured**；
 短 rollout 或少量训练迭代不能证明完整训练效果、性能或跨平台支持。
-实施见 [#1534](https://github.com/Motphys/UniLab/issues/1534)，所属
-roadmap 为 [#1533](https://github.com/Motphys/UniLab/issues/1533)。
 
 ## 安装
 
 SuperDex Physics/Robotics 1.0.0 已发布 Python wheel，是 UniLab 的 optional
 extra，不再需要源码编译 native extension。wheel 携带 native batch executor，
 仅支持 CPython 3.12/3.13 的 Linux x86_64；其他平台上该 extra 为空，CLI 会给出
-针对性的运行时诊断。CPU 物理不需要 CUDA。FR3 owner 没有 record（视频）回放——
-`.superdex_bot` 资产没有 MJCF visual model——play 默认走 native interactive
-viewer（`play_render_mode=interactive`，`play_env_num=1`）；无显示环境下使用
-`training.play_render_mode=none`。
+针对性的运行时诊断。CPU 物理不需要 CUDA。
 
 ```bash
 # 源码 checkout（默认 Python 3.13；wheel 支持 CPython 3.12/3.13）：
@@ -38,17 +31,6 @@ unilabsim 构建（`superdex-physics-uni`/`superdex-robotics-uni`）；上游
 project_superdex 发布正式 `superdex-physics`/`superdex-robotics` wheel 后，
 UniSim 会切换包名，UniLab 侧无需改动。
 
-FR3 原生资产与其他机器人 mesh 资产一样托管在 Hugging Face
-（[unilabsim/unilab-robots](https://huggingface.co/datasets/unilabsim/unilab-robots)），
-wheel 不携带机器人二进制。asset hub 注册
-`bots/arms/fr3_v2/fr3_v2.superdex_bot`，首次使用时自动把快照下载到
-`src/unilab/assets/`，并在物理构造前验证 collision SDF、render、`LICENSE` 和
-`NOTICE`。需要预拉取（如 CI 或离线准备）时：
-
-```bash
-uv run unilab-pull-assets --robot fr3_v2
-```
-
 若要审计本地 `project_superdex` checkout，可设置
 `SUPERDEX_ASSETS_PATH=/absolute/path/to/project_superdex/assets`；单次运行也可通过
 `env.superdex_assets_root=/absolute/path/to/project_superdex/assets` 覆盖。显式
@@ -57,19 +39,6 @@ root 优先于 Hugging Face 下载，且不会触发下载。
 只有修改 SuperDex 引擎源码本身时才需要本地源码构建：
 `bash scripts/tools/setup_superdex_env.sh` 会 clone integration branch、编译
 native extension 并以 editable 方式链接本地 UniSim/UniLab；常规使用不需要它。
-
-## 运行 FR3 任务
-
-```bash
-uv run --no-sync train --algo ppo --task fr3_joint_target --sim superdex \
-  algo.max_iterations=2 algo.num_steps_per_env=16 \
-  algo.algorithm.num_learning_epochs=1
-```
-
-目标关节角、reward、reset 范围和动作缩放由任务 `base.yaml` 声明。力矩上限
-`[20,20,20,20,5,5,5]` Nm 是显式研究配置，不是硬件额定值；
-`superdex_effort_limits` 在 native backend 边界声明同样的上限。SDK 固定为单线程；
-下面的 native scene executor 是唯一支持的 CPU 并行层。
 
 ## 运行 Go2 任务
 
@@ -183,16 +152,6 @@ uv run --no-sync pytest tests/envs/test_go2_superdex.py -q
 测试在构造 env 前验证来源 `run_config.json`，检查修改动作语义时确实拒绝，随后
 通过 production playback session 加载真实策略，无渲染执行 64 个 SuperDex 控制步。
 它验证有限数值和接口兼容性；只训练两轮的 checkpoint 不以可靠行走为验收标准。
-
-```bash
-uv run --no-sync pytest tests/assets/test_superdex_assets.py \
-  tests/envs/test_fr3_superdex.py tests/test_cli_runtime_requirements.py -q
-```
-
-原生测试要求 SDK 和 FR3 资产（按需从 Hugging Face 下载，或通过
-`SUPERDEX_ASSETS_PATH` 提供），覆盖有限数值 rollout、局部 reset 隔离、即时观测
-刷新及 spawn `EnvFactory`。缺失 SDK/资产会明确 skip，不能将 skip 记为原生验证
-通过。基础资产和配置测试不依赖原生资产 checkout。
 
 引擎转换与物理由 UniSim 拥有；资产注册、Hydra 与任务 term 由 UniLab 拥有。
 相关约束见 {doc}`/adr/ADR-0007-unisim-extraction-boundary`、

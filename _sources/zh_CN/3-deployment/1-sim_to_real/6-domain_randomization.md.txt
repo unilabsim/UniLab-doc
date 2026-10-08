@@ -41,16 +41,14 @@
 ## UniLab 如何组织 DR
 
 Manager-Based 任务在 owner YAML 的 `env.events` 中声明 reset 与 interval
-随机化，由 manager 生命周期执行。示例见
-`src/unilab/conf/sac/task/g1_wbt_obs/mujoco.yaml`。
+随机化，由 manager 生命周期执行。
 
 legacy 任务级 provider 协议已移除。能力边界见
 {doc}`../../4-developer_guide/2-contracts/4-dr_contract`。
 
 ## 配方：起始范围
 
-以所选 owner YAML 为准。保留的 G1 WBT owner 声明基座质量、质心、PD 增益、
-编码器偏置和周期推扰。以下是一个 PD 增益片段；绝对增益范围应与机器人的
+以所选 owner YAML 为准。以下是一个 PD 增益片段；绝对增益范围应与机器人的
 控制参数一起评估。
 
 ```yaml

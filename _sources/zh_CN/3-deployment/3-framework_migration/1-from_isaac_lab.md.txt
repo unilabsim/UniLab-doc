@@ -133,12 +133,10 @@ uv run train --algo ppo --task <task> --sim mujoco
 
 不要增加 task-specific 训练脚本分支、env factory、runner 或 IPC 路径。
 
-generic factory 规则只有两个 maintainer 批准的已注册例外：
+generic factory 规则只有一个 maintainer 批准的已注册例外：
 `make_g1_walk_env`（`src/unilab/tasks/locomotion/g1/manager_terms.py`）构造
-`G1WalkManagerBasedEnv` 子类，承载 G1 walk 的 manager-based 生产 runtime；
-`make_x2_wall_flip_env`
-（`src/unilab/tasks/motion_tracking/x2/__init__.py`）在冷路径解析未跟踪的 X2
-mesh，然后委托给 `make_manager_based_rl_env`。其余所有 Compatible task 都直接注册
+`G1WalkManagerBasedEnv` 子类，承载 G1 walk 的 manager-based 生产 runtime。其余所有
+Compatible task 都直接注册
 `make_manager_based_rl_env`。
 
 ### 6. 在适配风险附近验证

@@ -15,13 +15,7 @@ Go2 与 G1 核心参考 owner；Unitree production 变体在下游。
 :::{grid-item-card} 动作追踪
 :link: 2-motion_tracking
 :link-type: doc
-G1/X2 motion-tracking 参考配置。
-:::
-
-:::{grid-item-card} 操作
-:link: 3-manipulation
-:link-type: doc
-Allegro 手内旋转与抓取生成。
+G1 motion-tracking 参考配置。
 :::
 
 ::::
@@ -31,5 +25,4 @@ Allegro 手内旋转与抓取生成。
 
 1-locomotion
 2-motion_tracking
-3-manipulation
 ```

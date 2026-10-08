@@ -34,8 +34,7 @@ uv run eval --algo ppo --task g1_motion_tracking --sim mujoco --load-run -1 \
 uv run eval --algo ppo --task g1_motion_tracking --sim mujoco --load-run -1
 ```
 
-硬件回路需要的每个字段都在该 owner 的 YAML 中声明。宽度随 owner 而异——两个 G1
-示例：
+硬件回路需要的每个字段都在该 owner 的 YAML 中声明。宽度随 owner 而异：
 
 ```{list-table}
 :header-rows: 1
@@ -44,10 +43,6 @@ uv run eval --algo ppo --task g1_motion_tracking --sim mujoco --load-run -1
 * - Owner
   - Actor 观测宽度
   - 说明
-* - `src/unilab/conf/sac/task/g1_wbt_obs/mujoco.yaml`
-  - 514
-  - 无状态估计：`motion_anchor_pos_b` 与 `base_lin_vel` 置为 `null`，使用
-    pelvis IMU，proprio 项带 `history_length: 5`。
 ```
 
 ::::{admonition} 观测宽度应从 composed config 读取，而不是照抄本表
@@ -59,9 +54,8 @@ Actor 观测宽度是 `env.observations.actor.terms` 下各项 `dim * history_le
 
 ## 2. 观测契约
 
-分项顺序与逐项历史来自你所用 owner 自己的 `env.observations.actor.terms`。以
-`g1_wbt_obs` 为例，它声明了如下项；带 `history_length: 5` 的项在项内按**最旧优先**
-展平，各项再按声明顺序拼接：
+分项顺序与逐项历史来自你所用 owner 自己的 `env.observations.actor.terms`。带
+`history_length` 的项在项内按**最旧优先**展平，各项再按声明顺序拼接：
 
 ```{list-table}
 :header-rows: 1
@@ -87,7 +81,7 @@ Actor 观测宽度是 `env.observations.actor.terms` 下各项 `dim * history_le
   - 上一步的原始 actor 输出
 ```
 
-motion command 在观测项之前贡献参考关节位置与速度（`29 + 29`）。逐项的最旧优先
+声明时，motion command 在观测项之前贡献参考关节位置与速度。逐项的最旧优先
 顺序由 `ObservationManager` 的逐项历史缓冲实现保证
 （`tests/managers/test_observation_buffers_noise.py`）；硬件侧必须镜像该顺序，
 否则策略读到的是被置换过的向量。
@@ -97,8 +91,8 @@ motion command 在观测项之前贡献参考关节位置与速度（`29 + 29`�
 将 actor 输出映射为 `action * scale + default_angles`，然后在目标到达电机驱动器
 之前钳制到场景的关节范围内。
 
-- `scale` 即 `env.actions.joint_pos.scale`。它可能是**标量**（`g1_wbt_obs` 为
-  `2.0`），也可能是按 actuator 解析的**正则 → 数值映射**（Unitree deploy owner
+- `scale` 即 `env.actions.joint_pos.scale`。它可能是**标量**，也可能是按
+  actuator 解析的**正则 → 数值映射**（Unitree deploy owner
   把关节名模式映射到不同数值）。必须原样复现 owner
   解析后的逐 actuator 向量——不要对映射取平均、取其中一项，也不要把标量广播到
   映射型 owner 上。
