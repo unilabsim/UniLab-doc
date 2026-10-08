@@ -23,9 +23,9 @@ configuration entry point; the selected owner is materialized into the shared
 
 Profile differences remain in Hydra: PPO/APPO, SAC, and FlashSAC all compose
 the registered `G1MotionTracking` identity, while algorithm-specific
-observation, DR, tensor-runtime, and reward-pack declarations stay in their
-owner YAML. Unitree production wall-flip, climb, deploy, and 23-DoF motion
-profiles live in `unitree_rl_unilab`.
+observation, DR, and tensor-runtime declarations stay in their owner YAML.
+Unitree production wall-flip, climb, deploy, and 23-DoF motion profiles live in
+`unitree_rl_unilab`.
 
 ## PPO And APPO
 

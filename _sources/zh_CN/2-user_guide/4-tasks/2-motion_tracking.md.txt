@@ -20,9 +20,9 @@ runtime 执行。
 | `g1_motion_tracking` | `G1MotionTracking` | `dance1_subject2_part.npz` | `src/unilab/conf/ppo/task/g1_motion_tracking/`, `src/unilab/conf/appo/task/g1_motion_tracking/` |
 
 profile 差异留在 Hydra 中：PPO/APPO、SAC 与 FlashSAC 都组合注册的
-`G1MotionTracking` identity，而算法专属的 observation、DR、tensor runtime 与
-reward-pack 声明保留在各自 owner YAML。Unitree 的 wall flip、climb、deploy 与
-23-DoF motion production profile 位于
+`G1MotionTracking` identity，而算法专属的 observation、DR 与 tensor runtime
+声明保留在各自 owner YAML。Unitree 的 wall flip、climb、deploy 与 23-DoF
+motion production profile 位于
 `unitree_rl_unilab`。
 
 ## PPO 与 APPO
