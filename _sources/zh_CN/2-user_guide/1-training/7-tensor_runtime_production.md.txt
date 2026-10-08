@@ -102,10 +102,23 @@ UniLab 提供显式的用户自有生命周期命令，但训练路径仍不会�
 
 ```bash
 uv run uni-cumps start
-eval "$(uv run uni-cumps env)"
 uv run uni-cumps doctor
 uv run uni-cumps stop
 ```
+
+`start` 后，设置 `training.cuda_process_sharing=mps` 的 trainer 会自动选择
+覆盖该 GPU 的唯一 live UniLab-recorded daemon。Shell 集成变为可选：
+
+```bash
+uv run uni-cumps start
+uv run --extra mjwarp train --algo flashsac \
+  --task g1_motion_tracking --sim mjwarp \
+  training.cuda_process_sharing=mps
+```
+
+调用方显式提供的 `CUDA_MPS_PIPE_DIRECTORY` 仍然优先。若没有匹配的 live
+daemon，训练会在 environment/learner/collector 构造前 fail closed，并指向
+`uni-cumps start`。
 
 默认参数：
 

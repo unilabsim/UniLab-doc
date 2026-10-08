@@ -562,6 +562,7 @@
 <span class="n">_NAME_PATTERN</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;^[a-z0-9][a-z0-9-]{0,63}$&quot;</span><span class="p">)</span>
 <span class="n">_DEFAULT_CONTROL_COMMAND</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;nvidia-cuda-mps-control&quot;</span><span class="p">,</span> <span class="s2">&quot;-d&quot;</span><span class="p">)</span>
 <span class="n">_QUIT_COMMAND</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;nvidia-cuda-mps-control&quot;</span><span class="p">,)</span>
+<span class="n">_SERVER_LIST_QUERY_COMMAND</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;nvidia-cuda-mps-control&quot;</span><span class="p">,)</span>
 <span class="n">_MAX_CONTROL_SOCKET_BYTES</span> <span class="o">=</span> <span class="mi">95</span>
 <span class="n">_INERT_CONTROL_ARTIFACTS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;control_lock&quot;</span><span class="p">,</span> <span class="s2">&quot;log&quot;</span><span class="p">)</span>
 <span class="n">_GPU_QUERY_COMMAND</span> <span class="o">=</span> <span class="p">(</span>
@@ -745,6 +746,9 @@
         <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;MIG device </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2"> is not supported by uni-cumps yet; select a physical GPU UUID.&quot;</span>
         <span class="p">)</span>
+    <span class="c1"># Torch properties commonly expose the bare UUID without NVIDIA&#39;s GPU- tag.</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">uuid</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;GPU-&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">uuid</span><span class="p">)</span> <span class="o">==</span> <span class="mi">36</span> <span class="ow">and</span> <span class="n">uuid</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="mi">4</span><span class="p">:</span>
+        <span class="n">uuid</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;GPU-</span><span class="si">{</span><span class="n">uuid</span><span class="si">}</span><span class="s2">&quot;</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">uuid</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;GPU-&quot;</span><span class="p">):</span>
         <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid NVIDIA GPU </span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">; expected a GPU-&lt;id&gt; UUID.&quot;</span><span class="p">)</span>
     <span class="n">raw_uuid</span> <span class="o">=</span> <span class="n">uuid</span><span class="p">[</span><span class="mi">4</span><span class="p">:]</span>
@@ -1061,6 +1065,41 @@
             <span class="k">return</span> <span class="kc">True</span>
         <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.05</span><span class="p">)</span>
     <span class="k">return</span> <span class="kc">False</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_wait_for_control_query</span><span class="p">(</span>
+    <span class="n">environment</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+    <span class="n">run_command</span><span class="p">:</span> <span class="n">RunCommand</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">5.0</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="n">deadline</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span> <span class="o">+</span> <span class="n">timeout</span>
+    <span class="k">while</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">deadline</span><span class="p">:</span>
+        <span class="n">remaining</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">deadline</span> <span class="o">-</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">())</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">_run_command</span><span class="p">(</span>
+                <span class="n">run_command</span><span class="p">,</span>
+                <span class="n">_SERVER_LIST_QUERY_COMMAND</span><span class="p">,</span>
+                <span class="nb">input</span><span class="o">=</span><span class="s2">&quot;get_server_list</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="n">timeout</span><span class="o">=</span><span class="n">remaining</span><span class="p">,</span>
+                <span class="n">env</span><span class="o">=</span><span class="n">environment</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="n">CudaMpsCliError</span><span class="p">:</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="mf">0.05</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">deadline</span> <span class="o">-</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">())))</span>
+            <span class="k">continue</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="kc">False</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_stop_unrecorded_control</span><span class="p">(</span>
+    <span class="n">environment</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+    <span class="n">run_command</span><span class="p">:</span> <span class="n">RunCommand</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">_run_command</span><span class="p">(</span><span class="n">run_command</span><span class="p">,</span> <span class="n">_QUIT_COMMAND</span><span class="p">,</span> <span class="nb">input</span><span class="o">=</span><span class="s2">&quot;quit</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">environment</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">CudaMpsCliError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="kc">True</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_remove_inert_control_artifacts</span><span class="p">(</span><span class="n">pipe_directory</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -1419,6 +1458,18 @@
             <span class="sa">f</span><span class="s2">&quot;MPS control did not create a usable control pipe at </span><span class="si">{</span><span class="n">control</span><span class="si">}</span><span class="s2">. &quot;</span>
             <span class="s2">&quot;Inspect CUDA_MPS_LOG_DIRECTORY and the host deployment.&quot;</span>
         <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">_wait_for_control_query</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">run_command</span><span class="p">):</span>
+        <span class="n">stopped</span> <span class="o">=</span> <span class="n">_stop_unrecorded_control</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">run_command</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">using_default_runtime</span><span class="p">:</span>
+            <span class="n">_remove_orphan_default_control_sockets</span><span class="p">(</span><span class="n">pipe_directory</span><span class="p">)</span>
+        <span class="n">tail</span> <span class="o">=</span> <span class="n">_control_log_tail</span><span class="p">(</span><span class="n">log_directory</span><span class="p">)</span>
+        <span class="n">detail</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot; Control log tail:</span><span class="se">\n</span><span class="si">{</span><span class="n">tail</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">tail</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">stopped</span><span class="p">:</span>
+            <span class="n">detail</span> <span class="o">+=</span> <span class="s2">&quot; The launched control daemon may still be running.&quot;</span>
+        <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span>
+            <span class="s2">&quot;MPS control created a pipe but did not answer a readiness query. &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;Inspect CUDA_MPS_LOG_DIRECTORY and the host deployment.</span><span class="si">{</span><span class="n">detail</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
     <span class="n">process_identity</span> <span class="o">=</span> <span class="n">_control_daemon_identity</span><span class="p">(</span><span class="n">pipe_directory</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">process_identity</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span>
@@ -1463,6 +1514,41 @@
         <span class="s2">&quot;CUDA_MPS_PIPE_DIRECTORY&quot;</span><span class="p">:</span> <span class="n">daemon</span><span class="o">.</span><span class="n">pipe_directory</span><span class="p">,</span>
         <span class="s2">&quot;CUDA_MPS_LOG_DIRECTORY&quot;</span><span class="p">:</span> <span class="n">daemon</span><span class="o">.</span><span class="n">log_directory</span><span class="p">,</span>
     <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="select_environment_for_gpu">
+<a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.cuda_mps_cli.select_environment_for_gpu.html#unilab.training.cuda_mps_cli.select_environment_for_gpu">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">select_environment_for_gpu</span><span class="p">(</span>
+    <span class="n">gpu_uuid</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">root</span><span class="p">:</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">proc_stat</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="n">_proc_stat</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Select the sole live user-owned daemon environment for one GPU.</span>
+
+<span class="sd">    This is launcher-facing data only. It does not mutate the current process,</span>
+<span class="sd">    start a daemon, stop a daemon, or provide stop authority.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">canonical</span> <span class="o">=</span> <span class="n">_canonical_uuid</span><span class="p">(</span><span class="n">gpu_uuid</span><span class="p">)</span>
+    <span class="n">matching</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">daemon</span>
+        <span class="k">for</span> <span class="n">daemon</span> <span class="ow">in</span> <span class="n">list_daemon_records</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">canonical</span> <span class="ow">in</span> <span class="n">daemon</span><span class="o">.</span><span class="n">gpu_uuids</span> <span class="ow">and</span> <span class="n">daemon_process_is_live</span><span class="p">(</span><span class="n">daemon</span><span class="p">,</span> <span class="n">proc_stat</span><span class="o">=</span><span class="n">proc_stat</span><span class="p">)</span>
+    <span class="p">]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">matching</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;No live UniLab-recorded CUDA MPS daemon covers GPU </span><span class="si">{</span><span class="n">canonical</span><span class="si">}</span><span class="s2">. &quot;</span>
+            <span class="s2">&quot;Run `uni-cumps start` first or set CUDA_MPS_PIPE_DIRECTORY explicitly.&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">matching</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">daemon</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">daemon</span> <span class="ow">in</span> <span class="n">matching</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Multiple live UniLab-recorded daemons cover GPU </span><span class="si">{</span><span class="n">canonical</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">names</span><span class="si">}</span><span class="s2">. &quot;</span>
+            <span class="s2">&quot;Set CUDA_MPS_PIPE_DIRECTORY to the intended daemon explicitly.&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">environment_for_daemon</span><span class="p">(</span><span class="n">matching</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span></div>
 
 
 

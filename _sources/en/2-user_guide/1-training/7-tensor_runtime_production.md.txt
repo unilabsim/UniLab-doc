@@ -107,10 +107,24 @@ On a single-GPU host, the defaults are already complete:
 
 ```bash
 uv run uni-cumps start
-eval "$(uv run uni-cumps env)"
 uv run uni-cumps doctor
 uv run uni-cumps stop
 ```
+
+After `start`, a trainer request using `training.cuda_process_sharing=mps`
+selects the sole live UniLab-recorded daemon covering its GPU. Shell
+integration is optional:
+
+```bash
+uv run uni-cumps start
+uv run --extra mjwarp train --algo flashsac \
+  --task g1_motion_tracking --sim mjwarp \
+  training.cuda_process_sharing=mps
+```
+
+An explicit `CUDA_MPS_PIPE_DIRECTORY` in the caller environment still takes
+precedence. If no matching live daemon exists, training fails closed before
+environment/learner/collector construction and points to `uni-cumps start`.
 
 Default values:
 
