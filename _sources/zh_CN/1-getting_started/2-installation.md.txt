@@ -7,8 +7,6 @@
 - Python `>=3.10,<3.14`，来自 `pyproject.toml`。
 - `uv`，用于依赖同步和命令执行。
 - Git 和 `curl`，用于克隆仓库及下载 runtime asset。
-- `cmake`，构建 Drake 原生 batch extension 时需要。Drake setup 脚本使用 CMake
-  和 C++ 工具链。
 - 使用 `mujoco` extra 时：MuJoCo 物理后端运行在 `mjbatch` 原生 batch 引擎上，
   当前从钉住的集成 fork（`unilabsim/mjbatch`）源码构建。uv 以隔离构建
   （scikit-build-core + nanobind）编译该 git 源码，需要 C++17 工具链和
@@ -38,46 +36,28 @@ cd UniLab
 uv python install 3.13
 ```
 
-UniLab 支持 Python `3.10` 到 `3.13`；主环境推荐使用 `3.13`。IsaacGym 和 IsaacSim
-在下方使用各自独立的 worker Python 版本。
-
-如果计划使用 Drake，还需要在主机上安装 CMake：
-
-```bash
-# macOS：
-brew install cmake
-
-# Ubuntu / Debian：
-# sudo apt-get install cmake
-```
+UniLab 支持 Python `3.10` 到 `3.13`；主环境推荐使用 `3.13`。issue #1811
+期间，外部 worker 后端不属于 scoped Manager runtime。
 
 选择一条核心安装路径：
 
 ```bash
-# 完整默认环境：MuJoCo + Motrix，并安装 shell 自动补全。
+# 完整默认环境：MuJoCo + uni_rl，并安装 shell 自动补全。
 make setup
-
-# 运行第一次 Motrix demo 的最快路径。
-# make setup-motrix
 ```
 
-`make setup` 会运行 `uv sync --extra mujoco --extra motrix --extra uni_rl` 并安装 shell 自动补全。
-`make setup-motrix` 会运行 `uv sync --extra motrix` 并安装相同的补全条目。
-两条路径只选择一条。如果 `make` 不可用，可运行对应的底层命令：
+`make setup` 会运行 `uv sync --extra mujoco --extra uni_rl` 并安装 shell 自动
+补全。如果无法使用 `make`，可运行对应的底层命令：
 
 ```bash
-# 完整默认环境：
-uv sync --extra mujoco --extra motrix --extra uni_rl
+uv sync --extra mujoco --extra uni_rl
 uv run --no-sync unilab-complete install
-
-# 仅 Motrix：
-# uv sync --extra motrix && uv run --no-sync unilab-complete install
 ```
 
 ## conda 与 pip
 
-当前推荐路径仍然是源码仓库内的 `make setup` / `make setup-motrix`（或 `uv`）工作
-流。conda 可以作为外层 Python、CUDA 或系统库的隔离环境，但进入环境后仍建议继续使
+推荐路径是源码仓库内的 `make setup`（或 `uv`）工作流。conda 可以作为外层
+Python、CUDA 或系统库的隔离环境，但进入环境后仍建议继续使
 用本仓库的 `make` / `uv` 命令：
 
 ```bash
@@ -86,10 +66,10 @@ conda activate unilab
 pip install uv
 git clone https://github.com/unilabsim/UniLab.git
 cd UniLab
-make setup-motrix
+make setup
 ```
 
-如果不需要 Motrix，可使用 `uv sync --extra mujoco`；ROCm / XPU 仍走下方专用的 `make` 路径。
+ROCm / XPU 仍走下方专用的 `make` 路径。
 
 从源码 checkout 使用 pip 时，这是备用路径。请先安装 package，再显式添加所需 runtime：
 
@@ -99,9 +79,6 @@ pip install -e .
 
 # wheel 风格的常规安装（去掉 -e）：
 # pip install .
-
-# 需要 Motrix 时（解析 unisim-core motrix extra 固定的 motrixsim runtime）：
-pip install "unisim-core[motrix]"
 
 # 需要 MuJoCo 时（解析钉住的 mjbatch 集成 fork，针对 mujoco==3.11.0 构建）：
 pip install "mujoco~=3.11.0" "mjbatch @ git+https://github.com/unilabsim/mjbatch.git@cf4a83d"
@@ -113,8 +90,7 @@ editable install 会指向源码 checkout；常规安装会把 package 和任务
 `mujoco==3.11.0` 构建；MJWarp、Genesis、平台相关 torch index、ROCm / XPU
 profile 请优先使用上面的 uv 路径。机器人 mesh 和纹理不会打进 wheel，而是在 cold path 从
 `unilabsim/unilab-robots` 数据集下载。请确保安装位置可写，或从源码 checkout 使用
-`uv run unilab-pull-assets` 预拉取。isaacgym / isaacsim 后端仍假设
-源码 checkout；外部后端请使用下方专用安装页。
+`uv run unilab-pull-assets` 预拉取。
 
 ## 运行时 Asset
 
@@ -132,55 +108,43 @@ Hugging Face endpoint 无法访问时，可设置 `HF_ENDPOINT=https://hf-mirror
 
 ## 后端 Extras
 
-基础 package 会安装公开的 `unisim-core` contract；具体仿真器的依赖保持为可选项。
-单后端环境请根据所用后端选择一条路径；如果要比较多个进程内后端，请在一条 `uv sync`
-命令中组合对应 extras，外部 worker 脚本仍需单独执行：
-
-例如，本地对比环境可以一次安装 MuJoCo、Motrix、MJWarp 和 Genesis：
+当前 tensor-only Manager runtime 暴露五个生产后端（`mujoco`、`mjwarp`、
+`genesis`、`newton`、`motrix`），另有一个 scoped Drake owner。各自的仿真依赖
+均为可选。
 
 ```bash
-uv sync --extra mujoco --extra motrix --extra mjwarp --extra genesis
-```
-
-`mujoco`、`mjwarp` 和 `newton` 三个 extra 共享同一条 MuJoCo 3.11 /
-MuJoCo-Warp 3.11 / Warp 1.16 版本线，可以组合进同一个环境。`newton`
-extra 已包含 Newton 原生 ViewerGL 渲染依赖（离线 record + 交互式）：
-
-```bash
-uv sync --extra mujoco --extra mjwarp --extra newton
+# 一次安装全部 scoped 后端。
+uv sync --extra mujoco --extra mjwarp --extra genesis --extra newton --extra motrix
 ```
 
 | 后端 | 安装路径 | 重要前置条件 |
 | --- | --- | --- |
 | MuJoCo | `make setup` 或 `uv sync --extra mujoco` | 从源码构建钉住的 `mjbatch` fork（绑定 `mujoco==3.11.0`）；在预编译 wheel 可用之前（roadmap 待定事项）需要 C++17 工具链和 Python 开发头文件 |
-| Motrix | `make setup-motrix` 或 `uv sync --extra motrix` | 从固定版本 Python package 安装 Motrix runtime |
-| MJWarp | `uv sync --extra mujoco --extra mjwarp` | NVIDIA CUDA 和显式 CUDA process device |
+| MJWarp | `uv sync --extra mujoco --extra mjwarp` | NVIDIA CUDA；单 GPU 主机默认使用当前 CUDA 设备，多卡拓扑仍需显式配置 |
 | Genesis | `uv sync --extra genesis` | 已验证路径使用 Linux x86_64、NVIDIA GPU 及固定版本 torch/Genesis |
-| Newton | `uv sync --extra newton` | NVIDIA CUDA；可与 `mujoco` / `mjwarp` extra 组合进同一环境 |
-| SuperDex | `uv sync --extra superdex` | 已发布 wheel 仅支持 Linux x86_64、CPython 3.12/3.13；FR3 资产首次使用时自动从 Hugging Face 下载（`SUPERDEX_ASSETS_PATH` 可指定本地 checkout 覆盖） |
-| Drake | `make setup-drake` | C++20、Eigen/fmt/spdlog，以及已有 Drake prefix 或脚本下载路径 |
-| IsaacGym | `bash scripts/tools/setup_isaacgym_env.sh` | Linux x86_64、NVIDIA driver 和独立 Python 3.8 worker 环境 |
-| IsaacSim | `bash scripts/tools/setup_isaacsim_env.sh` | Linux x86_64、NVIDIA CUDA、独立 Python 3.11 worker 和 Kit EULA 接受 |
+| Newton | `uv sync --extra newton` | Linux CUDA，并钉定 newton / MuJoCo-Warp / Warp 版本 |
+| Motrix | `uv sync --extra motrix` | CPU-authoritative MotrixSim 与 packed Torch HOST_BRIDGE 传输 |
+| Drake | `make setup-drake` | 本地 Drake C++ 前缀与 DrakeUni native batch extension；当前 scoped 到 PPO `go2_joystick_flat` |
 
-Drake、IsaacGym 和 IsaacSim 的 setup 脚本会将外部 runtime 安装到仓库之外，并且可以
-安全重复运行；它们不会把外部仿真器装进 UniLab 主环境。runtime 变量、渲染器要求和
-验证命令见各后端页面：
+`isaacgym`、`isaacsim` 与 `superdex` 适配器在 issue #1811 期间由
+`unisim-core` 暂时搁置。它们的 extras 和历史后端页面不构成生产支持声明；
+在提供新的 capability、parity 与支持矩阵证据之前，UniLab train/eval CLI
+会直接拒绝这些后端。
+
+runtime 变量、渲染器要求和验证命令见 scoped 后端页面：
 
 - {doc}`MuJoCo <../2-user_guide/3-backends/1-mujoco>`
-- {doc}`Motrix <../2-user_guide/3-backends/2-motrix>`
 - {doc}`MJWarp <../2-user_guide/3-backends/0-index>`
 - {doc}`Genesis <../2-user_guide/3-backends/5-genesis>`
-- {doc}`Drake <../2-user_guide/3-backends/6-drake>`
 - {doc}`Newton <../2-user_guide/3-backends/7-newton>`
-- {doc}`SuperDex <../2-user_guide/3-backends/8-superdex>`
-- {doc}`IsaacGym <../2-user_guide/3-backends/3-isaacgym>`
-- {doc}`IsaacSim <../2-user_guide/3-backends/4-isaacsim>`
+- {doc}`Motrix <../2-user_guide/3-backends/2-motrix>`
+- {doc}`Drake <../2-user_guide/3-backends/6-drake>`
 
 ## 算法 Extras
 
 PPO 训练与回放直接运行在 `rsl-rl-lib` 之上，基础 package 已包含该依赖。可选的
 `uni_rl` extra 提供 `uni_rl` runtime（`unilab-rl`），仅 APPO、off-policy
-算法（SAC）以及多卡数据并行 PPO（`training.devices` 配置多项）需要：
+算法（SAC）以及多卡数据并行 PPO（`CUDA_VISIBLE_DEVICES` 配置多项）需要：
 
 ```bash
 uv sync --extra uni_rl
@@ -222,9 +186,8 @@ fork 的构建在编译期钉住 `mujoco==3.11.0`，因此隔离构建总是针�
 Linux CUDA 和 macOS 使用默认的 `pyproject.toml`。默认的 Linux torch
 wheel 来源是在 `pyproject.toml` 中配置的 PyTorch `cu130` 索引。
 
-在 Apple Silicon macOS 上，`make setup-motrix` 是最短的交互式路径。CLI 会在需要时
-通过 `mxpython` 路由 Motrix 回放；MuJoCo 回放使用官方 MuJoCo wheel 自带的
-`mjpython` application。可用时 Torch 会自动选择 `mps` device；为保持配置可移植，
+在 Apple Silicon macOS 上，使用 `make setup` 安装 MuJoCo 训练路径。MuJoCo 回放
+使用官方 MuJoCo wheel 自带的 `mjpython` application。可用时 Torch 会自动选择 `mps` device；为保持配置可移植，
 没有 CUDA 时，`cuda` alias 会解析到 MPS。
 
 在 Windows 上，如果没有 GNU `make` 和 Bash，请使用上面的直接 `uv sync` 命令。
@@ -241,7 +204,7 @@ make sync-xpu
 ```
 
 `make sync-rocm` 会将 `pyproject.rocm.toml` 复制为 `pyproject.toml` 并同步
-ROCm 配置档。`make sync-xpu` 会同步 Motrix 依赖但不安装默认的 torch 包，然后通过 `uv pip` 安装 XPU 版本的 torch wheel。
+ROCm 配置档。`make sync-xpu` 会同步 scoped 后端依赖但不安装默认的 torch 包，然后通过 `uv pip` 安装 XPU 版本的 torch wheel。
 
 ROCm 说明：
 
@@ -250,8 +213,7 @@ ROCm 说明：
 - 它会把 `pyproject.rocm.toml` / `uv.rocm.lock` 激活为当前的 `pyproject.toml` /
   `uv.lock`，因此之后可以直接运行裸 `uv run ...`。
 - 切回默认 CUDA / macOS 配置档时，运行 `git restore -- pyproject.toml uv.lock`，然
-  后重新执行 `make setup-motrix`（或 `uv sync --extra motrix`）；提交任何非 ROCm
-  依赖改动前先确认当前配置档。
+  后重新执行 `make setup`；提交任何非 ROCm 依赖改动前先确认当前配置档。
 - 训练配置里的设备字段仍沿用 `cuda` 语义，不要改成 `rocm`。
 - 从 PyPI 安装（不克隆仓库）时，`make sync-rocm` 不适用；先从 PyTorch ROCm 索引
   安装仓库验证过的 torch build，再安装 `unilab`。发布的依赖范围是
@@ -274,7 +236,7 @@ Intel XPU 说明：
 
 ```bash
 export UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-uv sync --extra mujoco --extra motrix --extra uni_rl \
+uv sync --extra mujoco --extra uni_rl \
   --index-url https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
@@ -284,15 +246,6 @@ uv sync --extra mujoco --extra motrix --extra uni_rl \
 
 ```bash
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco \
-  algo.max_iterations=1 \
-  algo.num_envs=16 \
-  training.no_play=true
-```
-
-对于 Motrix，请先安装相应 extra，然后通过 `--sim` 切换：
-
-```bash
-uv run train --algo ppo --task go2_joystick_flat --sim motrix \
   algo.max_iterations=1 \
   algo.num_envs=16 \
   training.no_play=true

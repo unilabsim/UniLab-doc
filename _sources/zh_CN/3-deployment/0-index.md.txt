@@ -156,7 +156,7 @@ GPU 常驻 → CPU + 共享内存。
 :::{grid-item-card} 来自 **Legged Gym**
 :link: 3-framework_migration/2-from_legged_gym
 :link-type: doc
-基于类的环境 → NpEnv。
+基于类的环境 → Manager-Based TorchEnv。
 :::
 
 :::{grid-item-card} 来自 **rsl_rl**

@@ -5,7 +5,7 @@ in this reference, read this one.
 
 | Symbol | Role |
 |---|---|
-| `NpEnv` / `NpEnvState` | The env contract every task implements |
+| `TorchEnv` / `TorchEnvState` | The sole environment and state contract |
 | `SimBackend` | Abstract backend interface (MuJoCo / Motrix implement it) |
 | `Registry` | Task / backend / algorithm registration and lookup |
 | `Scene` | Cold-path scene materialization |
@@ -24,7 +24,7 @@ in this reference, read this one.
 ## Selected detail
 
 ```{eval-rst}
-.. autoclass:: unilab.base.np_env.NpEnv
+.. autoclass:: unilab.base.torch_env.TorchEnv
    :members:
    :show-inheritance:
    :member-order: bysource

@@ -11,7 +11,7 @@ For `go2_joystick_flat`, the MuJoCo and Motrix owners agree on every guarded fie
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco
 
 # 2) Replay the same checkpoint across backends in Motrix — the guard passes, playback runs
-uv run eval  --algo ppo --task go2_joystick_flat --sim motrix --load-run -1
+uv run eval  --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
 ```
 
 ## How the guard chain works

@@ -7,7 +7,7 @@ RSL-RL PPO directly (`unilab.rl` adapts the env to
 ## What you gain by moving inside UniLab
 
 1. **Env contract.** RSL-RL leaves env structure to you. UniLab's
-   `unilab.base.np_env.NpEnv` standardizes obs/info/reset
+   `unilab.base.torch_env.TorchEnv` standardizes obs/info/reset
    signatures, makes parallelism and resets less error-prone.
 2. **Task owners.** Hydra-based config compose, plus the registry-driven
    backend / task / algo selection. No more bespoke train scripts per

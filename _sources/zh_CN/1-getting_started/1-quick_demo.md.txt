@@ -18,13 +18,13 @@ cd UniLab
 
 ```bash
 # Linux CUDA 或 macOS
-make setup-motrix
+make setup
 
 # 不安装 shell 自动补全：
-# uv sync --extra motrix
+# uv sync --extra mujoco --extra uni_rl
 
 # 如果未安装 make：
-# uv sync --extra motrix && uv run --no-sync unilab-complete install
+# uv sync --extra mujoco --extra uni_rl && uv run --no-sync unilab-complete install
 
 # Linux AMD / ROCm
 # make sync-rocm
@@ -60,12 +60,12 @@ uv run unilab-pull-assets --robot x2
 ## 训练与评估
 
 ```bash
-uv run train --algo ppo --task go2_joystick_flat --sim motrix
+uv run train --algo ppo --task go2_joystick_flat --sim mujoco
 
-uv run eval --algo ppo --task go2_joystick_flat --sim motrix --load-run -1
+uv run eval --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
 
 # 面向 Linux/服务器运行的 Motrix 无头（headless）视频导出
-uv run eval --algo ppo --task go2_joystick_flat --sim motrix \
+uv run eval --algo ppo --task go2_joystick_flat --sim mujoco \
   --load-run -1 --render-mode record
 ```
 
@@ -81,7 +81,7 @@ uv run eval --algo ppo --task go2_joystick_flat --sim motrix \
 对于 CI 风格的本地检查，保持相同的 CLI 路由，并在各标志之后追加 Hydra 覆盖项（override）：
 
 ```bash
-uv run train --algo ppo --task go2_joystick_flat --sim motrix \
+uv run train --algo ppo --task go2_joystick_flat --sim mujoco \
   algo.max_iterations=1 \
   algo.num_envs=16 \
   training.no_play=true

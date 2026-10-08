@@ -21,7 +21,7 @@
    `critic`；wrapper 和 learner 都信任这些维度。
 6. 把 reset 与 step 语义保留在 env owner 层：
    `reset(env_indices)` 返回 `(obs_dict, info_dict)`，而 `step(actions)`
-   返回 `NpEnvState`。
+   返回 `TorchEnvState`。
 7. 在相关 config 根目录下添加 owner YAML，例如
    `src/unilab/conf/ppo/task/<task>/<backend>.yaml`，off-policy 算法则为
    `src/unilab/conf/<algo>/task/<task>/<backend>.yaml`。
@@ -32,14 +32,14 @@
 
 - Registry 与 config 形状：`tests/base/test_registry.py`、
   `tests/config/test_config_system.py`
-- Env observation/reset 行为：`tests/base/test_np_env.py` 以及
+- Env observation/reset 行为：`tests/base/test_torch_env.py` 以及
   `tests/envs/` 下最接近的特定任务测试
 - 脚本组合：`tests/scripts/test_train_script_configs.py`
 
 ## 仓库内证据
 
 - Registry API：`src/unilab/base/registry.py`
-- Env 状态契约：`src/unilab/base/np_env.py`
+- Env 状态契约：`src/unilab/base/torch_env.py`
 - 场景配置：`src/unilab/base/scene.py`
 - 现有任务示例：`src/unilab/tasks/locomotion/go2/joystick.py`、
   `src/unilab/tasks/manipulation/allegro_inhand/rotation.py`

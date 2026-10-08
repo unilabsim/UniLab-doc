@@ -8,7 +8,7 @@
 
 ```bash
 uv run train --algo ppo --task allegro_inhand --sim mujoco
-uv run train --algo ppo --task allegro_inhand --sim motrix training.no_play=true
+uv run train --algo ppo --task allegro_inhand --sim mujoco training.no_play=true
 ```
 
 ## 平台平衡
@@ -22,5 +22,5 @@ uv run train --algo ppo --task allegro_inhand --sim motrix training.no_play=true
 但其刚性闭环求解器在负载下尚不稳定，暂不能稳定训练。
 
 ```bash
-uv run train --algo ppo --task stewart_balance --sim motrix training.no_play=true
+uv run train --algo ppo --task stewart_balance --sim mujoco training.no_play=true
 ```

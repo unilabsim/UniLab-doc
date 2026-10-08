@@ -39,7 +39,7 @@ Bootstrap 导入与 env/backend 注册。
 :::{grid-item-card} Manager-Based API
 :link: 6-manager_based_api
 :link-type: doc
-社区 manager 语义、NumPy runtime 与 fail-closed 边界。
+社区 manager 语义、tensor runtime 与 fail-closed 边界。
 :::
 
 ::::

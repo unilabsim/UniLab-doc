@@ -157,7 +157,7 @@ GPU-resident → CPU + shared-mem.
 :::{grid-item-card} From **Legged Gym**
 :link: 3-framework_migration/2-from_legged_gym
 :link-type: doc
-Class-based env → NpEnv.
+Class-based env → Manager-Based TorchEnv.
 :::
 
 :::{grid-item-card} From **rsl_rl**

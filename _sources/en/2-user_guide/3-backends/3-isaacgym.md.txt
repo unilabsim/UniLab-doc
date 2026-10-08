@@ -1,5 +1,8 @@
 # IsaacGym Backend
 
+> **IsaacGym is temporarily shelved.** This adapter is outside the tensor-only Manager runtime during #1811 and is not a production support claim. The train/eval CLI rejects it until new capability, parity, and support-matrix evidence is provided.
+
+
 IsaacGym (NVIDIA Preview 4) is an end-of-life GPU physics simulator from NVIDIA
 that only supports Python 3.6-3.8. The UniLab main environment requires
 Python >= 3.10, so IsaacGym cannot be installed into it; it is used through an

@@ -1,7 +1,7 @@
 # Domain Randomization Contract
 
 Manager-Based event terms are the sole UniLab DR lifecycle. There is no task
-provider protocol and `NpEnv` no longer carries a DR manager.
+provider protocol and the environment does not carry a DR manager.
 
 ## Lifecycle
 

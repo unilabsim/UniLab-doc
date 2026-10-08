@@ -1,7 +1,7 @@
 # 从 Isaac Lab 迁移
 
 把 Isaac Lab Manager-Based task 迁入 UniLab 时，应保留 manager 与 term 结构，只在各自
-owner 边界适配配置、数值执行和场景访问；不要把 task 重写成单体 `NpEnv` 子类。
+owner 边界适配配置、数值执行和场景访问；不要把 task 重写成单体 environment 子类。
 
 这是基于源码的兼容迁移，不代表任意 Isaac Lab task 都能不修改直接运行。目标路径是：
 
@@ -10,7 +10,7 @@ Hydra owner YAML
   -> plain ManagerBasedRlEnvCfg
   -> Registry + make_manager_based_rl_env
   -> NumPy/SimBackend runtime 上的 ManagerBasedRlEnv
-  -> 交给现有 training 和 IPC 路径的 NpEnvState
+  -> 交给现有 training 和 IPC 路径的 TorchEnvState
 ```
 
 ## 兼容边界

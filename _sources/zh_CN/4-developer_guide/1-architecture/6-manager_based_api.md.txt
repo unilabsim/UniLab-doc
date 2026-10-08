@@ -1,10 +1,12 @@
 # Manager-Based API
 
-UniLab 采用“社区兼容 API + UniLab NumPy runtime”：manager-facing 模块、term cfg、
+UniLab 采用“社区兼容 API + UniLab Torch runtime”：manager-facing 模块、term cfg、
 function/class term、生命周期和顺序语义以固定的 mjlab 1.6.0 source 为基线；数值实现使用
-NumPy，并保留现有 `NpEnvState`、Hydra owner YAML、`SimBackend`、registry 与 IPC contract。
+Torch，并保留现有 `TorchEnvState`、Hydra owner YAML、`SimBackend`、registry 与 IPC contract。
 
-完整决策、兼容矩阵和机械迁移示例见
+当前 tensor-runtime 决策见
+{doc}`/adr/ADR-0011-torch-only-manager-based-runtime`；已被取代的兼容矩阵和机械迁移
+示例仅作为历史背景保留在
 {doc}`/adr/ADR-0006-community-manager-api-on-numpy-runtime`。
 
 ## 不变量
@@ -15,8 +17,8 @@ NumPy，并保留现有 `NpEnvState`、Hydra owner YAML、`SimBackend`、registr
   物化为 plain typed cfg，Python 不保留 task config mirror。
 - 未知字段、无法解析的 target/callable、抽象或错误 cfg 类型直接报错；DictConfig 和解析
   不进入 reset/step，scripts 不解释 task 业务规则。
-- manager buffer、term return、env ID 和 entity view 使用 `np.ndarray` / `slice`，core 不依赖
-  Torch、Warp、runner、learner 或 IPC。
+- manager carrier、term return、env ID 和 entity view 使用 Torch tensor（仅未迁移 term
+  保留显式 NumPy host boundary），core 不依赖 Warp、runner、learner 或 IPC。
 - `SceneEntityCfg` 在冷路径通过 base scene/entity facade 解析；facade 只调用正式
   `SimBackend` contract，热路径复用缓存 ID/view。
 - named-sensor observation term 在构造时通过 `EntityScene.bind_sensor_data(...)` 绑定

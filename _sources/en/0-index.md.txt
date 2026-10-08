@@ -52,7 +52,7 @@ new environment class.
 
 :::{grid-item-card} Backend choice stays in config
 Move between current and future physics adapters with CLI flags such as
-`--task go2_joystick_flat --sim motrix`; the CLI composes the matching owner
+`--task go2_joystick_flat --sim mujoco`; the CLI composes the matching owner
 YAML under `src/unilab/conf/`.
 :::
 
@@ -70,9 +70,9 @@ to you.
 curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/unilabsim/UniLab.git
 cd UniLab
-uv sync --extra motrix
+uv sync --extra mujoco --extra uni_rl
 uv run demo dance
-uv run train --algo ppo --task go2_joystick_flat --sim motrix \
+uv run train --algo ppo --task go2_joystick_flat --sim mujoco \
   algo.max_iterations=1 algo.num_envs=16 training.no_play=true
 ```
 
@@ -134,7 +134,7 @@ flowchart LR
   cli["uv run train/eval<br/>--algo --task --sim"] --> owner["Task owner YAML<br/>src/unilab/conf/*/task/..."]
   cli --> script["Thin script routing<br/>src/unilab/scripts/train_*.py"]
   owner --> registry["Registry bootstrap<br/>src/unilab/base/registry.py"]
-  registry --> env["NpEnv contract<br/>obs dict + info dict"]
+  registry --> env["TorchEnv contract<br/>tensor obs dict + info dict"]
   env --> backend["SimBackend<br/>unisim-core adapters"]
   env --> factory["EnvFactory contract"]
   factory --> runtime["Runner / IPC<br/>unilab-rl async runtime"]

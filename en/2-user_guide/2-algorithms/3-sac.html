@@ -230,8 +230,10 @@
 <li class="toctree-l3"><a class="reference internal" href="../1-training/1-cli_reference.html">CLI Reference</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/2-hydra_config.html">Hydra Config</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/3-logging.html">Logging</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../1-training/4-tensor_runtime.html">Tensor runtime</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/5-resume_and_checkpoints.html">Resume And Checkpoints</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/6-docker.html">Docker</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../1-training/7-tensor_runtime_production.html">Tensor Runtime Production Guide</a></li>
 </ul>
 </li>
 <li class="toctree-l2 current has-children"><a class="reference internal" href="0-index.html">Algorithms</a><input aria-label="Toggle navigation of Algorithms" checked="" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
@@ -244,12 +246,9 @@
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../3-backends/0-index.html">Simulation Backends</a><input aria-label="Toggle navigation of Simulation Backends" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l3"><a class="reference internal" href="../3-backends/1-mujoco.html">MuJoCo Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../3-backends/2-motrix.html">Motrix Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../3-backends/3-isaacgym.html">IsaacGym Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../3-backends/4-isaacsim.html">IsaacSim Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../3-backends/5-genesis.html">Genesis Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../3-backends/6-drake.html">Drake Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../3-backends/7-newton.html">Newton Backend</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../3-backends/2-motrix.html">Motrix Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../3-backends/8-superdex.html">SuperDex Backend</a></li>
 </ul>
 </li>
@@ -338,6 +337,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/5-contributing_workflow.html">Collaboration Workflow</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/6-agent_quick_reference.html">Agent Quick Reference</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/7-motion_assets.html">Motion Asset Migration (Hugging Face)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/8-tensor_runtime_production.html">Tensor Runtime Productionization</a></li>
 </ul>
 </li><li class="toctree-l1 has-children"><a class="reference internal" href="../../5-reference/0-index.html">Reference</a><input aria-label="Toggle navigation of Reference" class="toctree-checkbox" id="toctree-checkbox-19" name="toctree-checkbox-19" role="switch" type="checkbox"/><label for="toctree-checkbox-19"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../5-reference/1-api/0-index.html">API Reference</a></li>
@@ -465,16 +465,12 @@ collectors exchange observations and actions through shared memory and do not ow
 </section>
 <section id="single-node-multi-gpu-device-placement">
 <h2>Single-node multi-GPU device placement<a class="headerlink" href="#single-node-multi-gpu-device-placement" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">training.devices</span></code> assigns rank i’s learner to <code class="docutils literal notranslate"><span class="pre">cuda:devices[i]</span></code>; each rank owns one
-collector. For mjwarp, the rank process and its collector process explicitly bind Warp’s
-default/current device to that same learner device before probe or production environment
-materialization. The collector therefore does not fall back to Warp’s fresh-process default
-of <code class="docutils literal notranslate"><span class="pre">cuda:0</span></code>. The local binding is recorded as <code class="docutils literal notranslate"><span class="pre">collector_backend_device</span></code> in the runtime
-manifest.</p>
-<p>IsaacGym, IsaacSim, and Genesis receive the rank-selected simulator device
-through the environment override as well. Off-policy collectors use the
-parent’s visible CUDA indices; Genesis binds its process-wide session before
-initialization.</p>
+<p><code class="docutils literal notranslate"><span class="pre">CUDA_VISIBLE_DEVICES</span></code> is the sole GPU topology source. Each parent entry maps to one
+rank, and within that rank the learner, collector, inference ring, replay ingress, and
+backend payload all use the same physical GPU as local <code class="docutils literal notranslate"><span class="pre">cuda:0</span></code>. Off-policy collectors
+never consume another rank’s device or a parent-global CUDA ordinal.</p>
+<p>IsaacGym, IsaacSim, and Genesis receive the rank-local simulator ordinal through the
+environment override. Genesis binds its process-wide session before initialization.</p>
 <p>MuJoCo has a committed multi-GPU scaling benchmark. The mjwarp per-rank placement contract is
 covered by <code class="docutils literal notranslate"><span class="pre">tests/base/backend/test_process_device.py</span></code> and the off-policy runner/worker unit
 tests; the repository does not currently contain an mjwarp multi-GPU throughput or convergence

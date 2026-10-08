@@ -21,7 +21,7 @@ primitives under `uni_rl.ipc` (unilab-rl repo) and `uni_rl` (unilab-rl repo).
 | Layer | Paths | Owns |
 | --- | --- | --- |
 | Backend | `unisim.backend` | `SimBackend`, physics state, optional capabilities |
-| Env | `src/unilab/envs/`, `src/unilab/base/np_env.py` | MDP semantics, observation, reward, reset |
+| Env | `src/unilab/envs/`, `src/unilab/base/torch_env.py` | MDP semantics, observation, reward, reset |
 | Config and registry | `src/unilab/conf/`, `src/unilab/base/registry.py`, `src/unilab/structured_configs.py` | Schema, owner YAMLs, env/backend registration |
 | Algorithms and IPC | `uni_rl` (unilab-rl repo), `uni_rl.ipc` (unilab-rl repo) | Learners, runners, buffers, weight sync |
 | Scripts | `scripts/`, `src/unilab/cli.py` | Thin assembly and CLI routing |
@@ -59,7 +59,7 @@ validation at the boundary a change actually touched.
 | --- | --- |
 | Docs only | `uv run pytest tests/scripts/test_check_docs.py -q`, plus manually verify every support claim against the repo |
 | Hydra / task / reward config | `make test` (`tests/config/`, `tests/scripts/`) |
-| Env contract / observation | `make test` (`tests/base/test_np_env.py` and env tests) plus a 1-iteration smoke run |
+| Env contract / observation | `make test` (`tests/base/test_torch_env.py` and env tests) plus a 1-iteration smoke run |
 | Runner / IPC | `make test`; add `make test-slow` when needed |
 | Backend path | the matching backend smoke run, plus a slow test when needed |
 | Training entrypoint | the relevant tests plus a 1-iteration smoke run |
@@ -82,7 +82,7 @@ Use `make test` for the fast path and `make test-all` (`make check`,
 - `src/unilab/scripts/train_appo.py`
 - `src/unilab/scripts/train_sac.py`
 - `src/unilab/scripts/train_flashsac.py`
-- `src/unilab/base/np_env.py`
+- `src/unilab/base/torch_env.py`
 - `unisim.backend.base`
 - `src/unilab/base/registry.py`
 - `uni_rl.ipc.async_runner` (unilab-rl repo)

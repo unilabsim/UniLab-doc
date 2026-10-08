@@ -22,7 +22,7 @@ off-policy 算法则使用异步 runner、共享缓冲区，以及位于 `uni_rl
 | 层 | 路径 | 拥有 |
 | --- | --- | --- |
 | Backend | `unisim.backend` | `SimBackend`、物理状态、可选能力 |
-| Env | `src/unilab/envs/`、`src/unilab/base/np_env.py` | MDP 语义、观测、奖励、reset |
+| Env | `src/unilab/envs/`、`src/unilab/base/torch_env.py` | MDP 语义、观测、奖励、reset |
 | Config 与 registry | `src/unilab/conf/`、`src/unilab/base/registry.py`、`src/unilab/structured_configs.py` | Schema、owner YAML、env/backend 注册 |
 | 算法与 IPC | `uni_rl` (unilab-rl repo)、`uni_rl.ipc` (unilab-rl repo) | Learner、runner、buffer、权重同步 |
 | Scripts | `scripts/`、`src/unilab/cli.py` | 轻量装配与 CLI 路由 |
@@ -54,7 +54,7 @@ off-policy 算法则使用异步 runner、共享缓冲区，以及位于 `uni_rl
 | --- | --- |
 | 仅文档 | `uv run pytest tests/scripts/test_check_docs.py -q`，并逐条对照仓库手动核对 support claim |
 | Hydra / task / reward 配置 | `make test`（`tests/config/`、`tests/scripts/`） |
-| Env contract / 观测 | `make test`（`tests/base/test_np_env.py` 与 env 测试）加 1 iteration smoke run |
+| Env contract / 观测 | `make test`（`tests/base/test_torch_env.py` 与 env 测试）加 1 iteration smoke run |
 | Runner / IPC | `make test`；必要时补 `make test-slow` |
 | Backend 路径 | 对应 backend 的 smoke run，必要时补 slow test |
 | 训练入口 | 相关测试加 1 iteration smoke run |
@@ -76,7 +76,7 @@ off-policy 算法则使用异步 runner、共享缓冲区，以及位于 `uni_rl
 - `src/unilab/scripts/train_appo.py`
 - `src/unilab/scripts/train_sac.py`
 - `src/unilab/scripts/train_flashsac.py`
-- `src/unilab/base/np_env.py`
+- `src/unilab/base/torch_env.py`
 - `unisim.backend.base`
 - `src/unilab/base/registry.py`
 - `uni_rl.ipc.async_runner` (unilab-rl repo)

@@ -30,7 +30,7 @@ UniLab 将运行时 contract、配置、训练脚本和文档分置于不同的 
 
 ```bash
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco
-uv run train --algo ppo --task go2_joystick_flat --sim motrix
+uv run train --algo ppo --task go2_joystick_flat --sim mujoco
 uv run train --algo sac --task g1_walk_flat --sim mujoco
 ```
 

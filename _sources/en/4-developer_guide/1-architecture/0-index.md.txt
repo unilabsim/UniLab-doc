@@ -39,7 +39,7 @@ Bootstrap imports and env/backend registration.
 :::{grid-item-card} Manager-Based API
 :link: 6-manager_based_api
 :link-type: doc
-Community manager semantics, NumPy runtime, and fail-closed boundaries.
+Community manager semantics, tensor runtime, and fail-closed boundaries.
 :::
 
 ::::

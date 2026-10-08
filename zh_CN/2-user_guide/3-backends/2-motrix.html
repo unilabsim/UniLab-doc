@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="IsaacGym 后端" href="3-isaacgym.html"><link rel="prev" title="MuJoCo 后端" href="1-mujoco.html">
+<link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="SuperDex 后端" href="8-superdex.html"><link rel="prev" title="Newton 后端" href="7-newton.html">
         <link rel="canonical" href="https://unilabsim.github.io/UniLab-doc/zh_CN/2-user_guide/3-backends/2-motrix.html">
 
     <!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
@@ -230,8 +230,10 @@
 <li class="toctree-l3"><a class="reference internal" href="../1-training/1-cli_reference.html">CLI 参考</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/2-hydra_config.html">Hydra 配置</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/3-logging.html">日志</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../1-training/4-tensor_runtime.html">Tensor runtime</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/5-resume_and_checkpoints.html">续训与检查点</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/6-docker.html">Docker</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../1-training/7-tensor_runtime_production.html">Tensor Runtime 生产指南</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../2-algorithms/0-index.html">算法</a><input aria-label="Toggle navigation of 算法" class="toctree-checkbox" id="toctree-checkbox-24" name="toctree-checkbox-24" role="switch" type="checkbox"/><label for="toctree-checkbox-24"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -244,12 +246,9 @@
 </li>
 <li class="toctree-l2 current has-children"><a class="reference internal" href="0-index.html">仿真后端</a><input aria-label="Toggle navigation of 仿真后端" checked="" class="toctree-checkbox" id="toctree-checkbox-25" name="toctree-checkbox-25" role="switch" type="checkbox"/><label for="toctree-checkbox-25"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
 <li class="toctree-l3"><a class="reference internal" href="1-mujoco.html">MuJoCo 后端</a></li>
-<li class="toctree-l3 current current-page"><a class="current reference internal" href="#">Motrix 后端</a></li>
-<li class="toctree-l3"><a class="reference internal" href="3-isaacgym.html">IsaacGym 后端</a></li>
-<li class="toctree-l3"><a class="reference internal" href="4-isaacsim.html">IsaacSim 后端</a></li>
 <li class="toctree-l3"><a class="reference internal" href="5-genesis.html">Genesis 后端</a></li>
-<li class="toctree-l3"><a class="reference internal" href="6-drake.html">Drake 后端</a></li>
 <li class="toctree-l3"><a class="reference internal" href="7-newton.html">Newton 后端</a></li>
+<li class="toctree-l3 current current-page"><a class="current reference internal" href="#">Motrix 后端</a></li>
 <li class="toctree-l3"><a class="reference internal" href="8-superdex.html">SuperDex 后端</a></li>
 </ul>
 </li>
@@ -338,6 +337,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/5-contributing_workflow.html">协作工作流</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/6-agent_quick_reference.html">Agent 速查</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/7-motion_assets.html">Motion 资产迁移指南（Hugging Face）</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/8-tensor_runtime_production.html">Tensor Runtime 生产化</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/9-sim2sim_contract_status.html">Sim2Sim 跨后端任务契约状态</a></li>
 </ul>
 </li><li class="toctree-l1 has-children"><a class="reference internal" href="../../5-reference/0-index.html">参考</a><input aria-label="Toggle navigation of 参考" class="toctree-checkbox" id="toctree-checkbox-38" name="toctree-checkbox-38" role="switch" type="checkbox"/><label for="toctree-checkbox-38"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -425,29 +425,49 @@
 <p>Motrix 是一个可选后端，通过 <code class="docutils literal notranslate"><span class="pre">motrix</span></code> extra 安装。该 extra 委托给
 <code class="docutils literal notranslate"><span class="pre">unisim-core[motrix]</span></code>，runtime 版本固定在 UniSim 的 <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>
 中，适配层位于 <code class="docutils literal notranslate"><span class="pre">unisim.backend.motrix</span></code> 下。</p>
+<p>Motrix 是 CPU-authoritative packed HOST_BRIDGE 后端。issue #2054 将其恢复
+进 tensor-only Manager runtime，但范围仅限两个 canonical workload：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>--extra<span class="w"> </span>motrix<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>motrix
+uv<span class="w"> </span>run<span class="w"> </span>--extra<span class="w"> </span>motrix<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>flashsac<span class="w"> </span>--task<span class="w"> </span>g1_motion_tracking<span class="w"> </span>--sim<span class="w"> </span>motrix
+</pre></div>
+</div>
+<p>其他 Motrix owner 仍不在支持范围内，也不构成生产支持声明。</p>
+<p>public tensor lifecycle 提供：</p>
+<ul class="simple">
+<li><p>persistent packed control D2H；</p></li>
+<li><p>persistent packed selected-reset D2H；</p></li>
+<li><p>persistent packed full state/sensor H2D；</p></li>
+<li><p>persistent packed selected-row reset publication H2D。</p></li>
+</ul>
+<p>每个 phase 都可通过 transfer plan 的 diagnostic counter 计数。没有隐藏的
+task-side NumPy reset composer；unsupported reset randomization 和 fixed
+variants 一律 fail closed。</p>
 <section id="id1">
 <h2>安装<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>motrix
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">setup-motrix</span></code> 会执行相同的依赖同步，并安装 shell 自动补全。</p>
+<p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">setup</span></code> 会执行相同的依赖同步，并安装 shell 自动补全。</p>
 </section>
 <section id="id2">
 <h2>何时使用<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p>task owner 以 <code class="docutils literal notranslate"><span class="pre">src/unilab/conf/.../&lt;task&gt;/motrix.yaml</span></code> 形式存在。</p></li>
-<li><p>你想要 Motrix 原生交互式回放；该后端提供原生交互式渲染器和视频录制能力。</p></li>
+<li><p>workload 是上述两个 canonical owner 之一。</p></li>
+<li><p>需要 CPU-authoritative packed HOST_BRIDGE 对比/参考路径。</p></li>
 <li><p>所生成的支持矩阵将你的 entrypoint/task/backend 组合标记为 configured 或 tested。</p></li>
 </ul>
 </section>
 <section id="id3">
 <h2>命令<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_joystick_flat<span class="w"> </span>--sim<span class="w"> </span>motrix<span class="w"> </span>training.no_play<span class="o">=</span><span class="nb">true</span>
-uv<span class="w"> </span>run<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_joystick_flat<span class="w"> </span>--sim<span class="w"> </span>motrix<span class="w"> </span>--load-run<span class="w"> </span>-1<span class="w"> </span>--render-mode<span class="w"> </span>record
-</pre></div>
-</div>
 <p>使用 <code class="docutils literal notranslate"><span class="pre">--render-mode</span> <span class="pre">record</span></code> 进行无头的仅视频回放。后端选择请保留在
 <code class="docutils literal notranslate"><span class="pre">--sim</span> <span class="pre">motrix</span></code> 中，而不要单独 override <code class="docutils literal notranslate"><span class="pre">training.sim_backend</span></code>。</p>
+</section>
+<section id="id4">
+<h2>性能边界<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<p>MotrixSim native CPU physics 比 mjbatch 慢，也不要求完全对标。issue #2054
+在 canonical control cycle 的实测中，Motrix 约为 MuJoCo/mjbatch 的 53%；
+显式 D2H/H2D 总计约 0.1 ms，剩余差距几乎全部来自 native <code class="docutils literal notranslate"><span class="pre">step_n</span></code>。unisim
+#340 已移除 selected read 中可避免的 full-batch 计算。</p>
 </section>
 <section id="cpu">
 <h2>CPU 亲和性<a class="headerlink" href="#cpu" title="Link to this heading">¶</a></h2>
@@ -467,23 +487,23 @@ CPU-id 列表。该列表以 <code class="docutils literal notranslate"><span cl
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="3-isaacgym.html">
+          <a class="next-page" href="8-superdex.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">IsaacGym 后端</div>
+                <div class="title">SuperDex 后端</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="1-mujoco.html">
+          <a class="prev-page" href="7-newton.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">MuJoCo 后端</div>
+                <div class="title">Newton 后端</div>
                 
               </div>
             </a>
@@ -524,6 +544,7 @@ CPU-id 列表。该列表以 <code class="docutils literal notranslate"><span cl
 <li><a class="reference internal" href="#id1">安装</a></li>
 <li><a class="reference internal" href="#id2">何时使用</a></li>
 <li><a class="reference internal" href="#id3">命令</a></li>
+<li><a class="reference internal" href="#id4">性能边界</a></li>
 <li><a class="reference internal" href="#cpu">CPU 亲和性</a></li>
 </ul>
 </li>

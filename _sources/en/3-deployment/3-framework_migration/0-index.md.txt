@@ -15,7 +15,7 @@ Keep Manager-Based terms while adapting Hydra config, NumPy execution, and scene
 :::{grid-item-card} From Legged Gym
 :link: 2-from_legged_gym
 :link-type: doc
-Move class-based environments into the `NpEnv` contract.
+Move class-based environments into the Manager-Based `TorchEnv` contract.
 :::
 
 :::{grid-item-card} From RSL-RL

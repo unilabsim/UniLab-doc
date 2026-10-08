@@ -21,7 +21,7 @@ Start from the contracts: {doc}`../2-contracts/1-env_contract`,
    `critic`; wrappers and learners trust these dimensions.
 6. Keep reset and step semantics at the env owner layer:
    `reset(env_indices)` returns `(obs_dict, info_dict)`, and `step(actions)`
-   returns `NpEnvState`.
+   returns `TorchEnvState`.
 7. Add owner YAMLs under the relevant config root, such as
    `src/unilab/conf/ppo/task/<task>/<backend>.yaml` or, for an off-policy algorithm,
    `src/unilab/conf/<algo>/task/<task>/<backend>.yaml`.
@@ -32,14 +32,14 @@ Start from the contracts: {doc}`../2-contracts/1-env_contract`,
 
 - Registry and config shape: `tests/base/test_registry.py`,
   `tests/config/test_config_system.py`
-- Env observation/reset behavior: `tests/base/test_np_env.py` and the nearest
+- Env observation/reset behavior: `tests/base/test_torch_env.py` and the nearest
   task-specific tests under `tests/envs/`
 - Script composition: `tests/scripts/test_train_script_configs.py`
 
 ## Evidence In Repo
 
 - Registry API: `src/unilab/base/registry.py`
-- Env state contract: `src/unilab/base/np_env.py`
+- Env state contract: `src/unilab/base/torch_env.py`
 - Scene config: `src/unilab/base/scene.py`
 - Existing task examples: `src/unilab/tasks/locomotion/go2/joystick.py`,
   `src/unilab/tasks/manipulation/allegro_inhand/rotation.py`

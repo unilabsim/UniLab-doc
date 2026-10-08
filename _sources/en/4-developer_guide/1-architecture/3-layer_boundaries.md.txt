@@ -9,7 +9,7 @@ standard is {doc}`/zh_CN/4-developer_guide/0-index`.
 | Layer | Owner paths | Owns |
 | --- | --- | --- |
 | L0 Backend | `unisim.backend` | Physics backend abstraction, backend-owned scene materialization, backend capabilities. |
-| L1 Env | `src/unilab/envs/`, `src/unilab/base/np_env.py` | MDP semantics, observations, rewards, reset logic, backend-to-task adaptation. |
+| L1 Env | `src/unilab/envs/`, `src/unilab/base/torch_env.py` | MDP semantics, observations, rewards, reset logic, backend-to-task adaptation. |
 | L2 Config and Registry | `src/unilab/conf/`, `src/unilab/structured_configs.py`, `src/unilab/base/registry.py`, `src/unilab/training/reward.py` | Hydra composition, owner YAML identity, env/reward registration. |
 | L3 Algo and IPC | `uni_rl` (unilab-rl repo), `uni_rl.ipc` (unilab-rl repo) | Learners, runners, collectors, replay and rollout buffers, weight sync. |
 | L4 Scripts | `scripts/` | Entrypoint assembly only. |
@@ -31,7 +31,7 @@ standard is {doc}`/zh_CN/4-developer_guide/0-index`.
 
 - Architecture contract: {doc}`/adr/ADR-0001-runtime-model-and-layer-boundaries`
 - Backend boundary: `unisim.backend.base`
-- Env state contract: `src/unilab/base/np_env.py`
+- Env state contract: `src/unilab/base/torch_env.py`
 - Registry construction path: `src/unilab/base/registry.py`
 - Training entrypoints: `src/unilab/scripts/train_rsl_rl.py`,
   `src/unilab/scripts/train_appo.py`, `src/unilab/scripts/train_sac.py`,

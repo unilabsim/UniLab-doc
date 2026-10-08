@@ -1,5 +1,8 @@
 # IsaacGym 后端
 
+> **IsaacGym 暂时搁置。** 该适配器在 #1811 期间不属于 tensor-only Manager runtime，也不构成生产支持声明。在提供新的 capability、parity 与支持矩阵证据之前，train/eval CLI 会直接拒绝该后端。
+
+
 IsaacGym（NVIDIA Preview 4）是 NVIDIA 已停止维护（EOL）的 GPU 物理仿真器，
 只支持 Python 3.6–3.8。UniLab 主环境要求 Python >= 3.10，因此 IsaacGym 不能
 装进主环境，必须通过外部独立的 Python 3.8 环境使用；仓库内一律通过环境变量

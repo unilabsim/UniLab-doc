@@ -6,11 +6,11 @@ orphan: true
 
 语言: 简体中文
 
-- Status: Accepted
+- Status: Superseded
 - Date: 2026-08-17
 - Owners: Env / Config / Backend maintainers
 - Supersedes: None
-- Superseded by: None
+- Superseded by: [ADR-0011](ADR-0011-torch-only-manager-based-runtime.md)
 
 ## Context
 

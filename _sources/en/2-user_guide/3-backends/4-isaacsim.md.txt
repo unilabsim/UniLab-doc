@@ -1,5 +1,8 @@
 # IsaacSim Backend
 
+> **IsaacSim is temporarily shelved.** This adapter is outside the tensor-only Manager runtime during #1811 and is not a production support claim. The train/eval CLI rejects it until new capability, parity, and support-matrix evidence is provided.
+
+
 UniLab's `isaacsim` backend runs IsaacSim 5.1.0 and IsaacLab v2.3.0 in a
 dedicated Python 3.11 worker process. The host process keeps the regular
 `SimBackend` NumPy contract; pipe messages carry lifecycle commands and shared

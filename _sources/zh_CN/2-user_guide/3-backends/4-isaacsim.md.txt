@@ -1,5 +1,8 @@
 # IsaacSim 后端
 
+> **IsaacSim 暂时搁置。** 该适配器在 #1811 期间不属于 tensor-only Manager runtime，也不构成生产支持声明。在提供新的 capability、parity 与支持矩阵证据之前，train/eval CLI 会直接拒绝该后端。
+
+
 UniLab 的 `isaacsim` 后端在独立的 Python 3.11 worker 进程中运行 IsaacSim
 5.1.0 和 IsaacLab v2.3.0。主进程保留标准 `SimBackend` NumPy contract；管道
 传输生命周期命令，共享内存传输批量状态。当前支持边界是已注册 G1 flat

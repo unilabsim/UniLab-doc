@@ -1,5 +1,10 @@
 # Drake Backend
 
+> **Scoped runtime support.** Drake currently has one Manager-runtime owner:
+> PPO `go2_joystick_flat`. The page is not a broader production support claim.
+> Task support remains governed by the generated support matrix.
+
+
 Drake is an experimental CPU batch backend. UniLab still owns the task,
 reward, observations, and training loop. Rendering uses MuJoCo's native
 renderer: Drake advances physics and MuJoCo only draws the current state. The
@@ -92,9 +97,10 @@ uv run train --algo ppo --task go2_joystick_flat --sim drake
 ```
 
 This uses the Drake owner configuration (`1024` environments, `151` iterations,
-and CPU training because Drake exposes float64 NumPy buffers). The Drake owner
-also uses the scene keyframe reset; floating-root randomization is not exposed
-by the current backend contract.
+and CPU training because Drake exposes a CPU-authoritative packed host bridge).
+The Drake owner uses the scene default/keyframe reset. Floating-root
+randomization and PD reset randomization are not exposed by the current backend
+contract.
 
 On Apple Silicon macOS, this command completed all 151 iterations locally
 (Drake 1.56.0, Python 3.13, 1024 environments) in about 254 seconds.

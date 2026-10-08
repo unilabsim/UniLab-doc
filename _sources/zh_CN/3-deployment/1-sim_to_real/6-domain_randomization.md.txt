@@ -75,7 +75,7 @@ env:
 训练之后，在配置中扫动 DR 范围的同时，对照同一后端 owner YAML 回放检查点：
 
 ```bash
-uv run eval --algo ppo --task go2_joystick_flat --sim motrix --load-run -1
+uv run eval --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
 ```
 
 为每个扫动点记录奖励分量与任务成功指标。一次陡降或奖励分量的不连续，就是 DR 范围

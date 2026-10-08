@@ -11,7 +11,7 @@
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco
 
 # 2) Motrix 跨后端回放同一个 checkpoint —— 守卫校验通过，正常播放
-uv run eval  --algo ppo --task go2_joystick_flat --sim motrix --load-run -1
+uv run eval  --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
 ```
 
 ## 生效链路

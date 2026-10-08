@@ -8,20 +8,19 @@ architecture details live in {doc}`1-architecture/1-overview`.
 Install dependencies for your platform. The setup targets also install the
 optional simulator extras used by the repository's checks:
 
-- macOS (MPS, PyPI torch wheel): `make setup-motrix` (or `uv sync --extra mujoco`)
+- macOS (MPS, PyPI torch wheel): `make setup` (or `uv sync --extra mujoco`)
 - Linux with NVIDIA (PyTorch cu130 wheel): `make setup`
 - Linux AMD / ROCm: `make sync-rocm`, then run commands with `uv run ...`. To
   return to the default CUDA / macOS profile, `git restore -- pyproject.toml
   uv.lock` and re-run `make setup`.
 - Linux Intel XPU: `make sync-xpu`
 - If you prefer direct uv commands, the full default setup is
-  `uv sync --extra mujoco --extra motrix`; use `--extra mujoco` or
-  `--extra motrix` for a single backend.
+  `uv sync --extra mujoco --extra uni_rl`; use `uv sync --extra mujoco` for a
+  MuJoCo-only environment.
 
 ```bash
 # Choose one core setup path:
 make setup
-# make setup-motrix
 make sync-rocm
 make sync-xpu
 ```

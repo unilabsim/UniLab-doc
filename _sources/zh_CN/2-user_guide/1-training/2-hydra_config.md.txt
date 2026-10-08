@@ -15,7 +15,7 @@ reward、scene 以及 task 专属运行时字段的身份标识。
 
 ```bash
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco
-uv run train --algo ppo --task go2_joystick_flat --sim motrix
+uv run train --algo ppo --task go2_joystick_flat --sim mujoco
 uv run train --algo sac --task g1_walk_flat --sim mujoco
 ```
 

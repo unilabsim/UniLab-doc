@@ -2,7 +2,7 @@
 
 PPO has a NaN guard under `training.nan_guard` in `src/unilab/conf/ppo/config.yaml`,
 enabled by default to match APPO and off-policy. When active,
-`src/unilab/scripts/train_rsl_rl.py` installs `NanGuard`, checks observation dicts and
+`src/unilab/scripts/train_rsl_rl.py` installs `TensorNanGuard`, checks tensor observation groups and
 rewards, and writes a `.npz` dump plus model metadata when it detects NaN/Inf
 values.
 
@@ -15,4 +15,4 @@ uv run train --algo ppo --task go2_joystick_flat --sim mujoco \
 The viewer implementation is `src/unilab/utils/nan_viz.py`, registered as the
 `unilab-viz-nan` console entry. It replays a dump path and lets you select the
 environment index. Dump format and round-trip loading are covered by
-`tests/test_nan_guard.py`.
+`tests/training/test_tensor_diagnostics.py`.

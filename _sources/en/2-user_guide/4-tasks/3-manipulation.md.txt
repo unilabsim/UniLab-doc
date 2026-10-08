@@ -8,7 +8,7 @@ Manipulation tasks live in `src/unilab/tasks/manipulation/`.
 
 ```bash
 uv run train --algo ppo --task allegro_inhand --sim mujoco
-uv run train --algo ppo --task allegro_inhand --sim motrix training.no_play=true
+uv run train --algo ppo --task allegro_inhand --sim mujoco training.no_play=true
 ```
 
 ## Platform Balancing
@@ -25,5 +25,5 @@ mujoco owner constructs and steps, but its stiff closed-loop solver is not yet
 training-stable under load.
 
 ```bash
-uv run train --algo ppo --task stewart_balance --sim motrix training.no_play=true
+uv run train --algo ppo --task stewart_balance --sim mujoco training.no_play=true
 ```

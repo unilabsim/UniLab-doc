@@ -154,8 +154,58 @@ canonical tag（权威定义：`uni_rl.logging.metric_schema`，完整迁移表�
 行数）、`perf/collector_active_steps_per_sec`（可由 collector 计时与 run 配置推导）、
 `perf/collector_cycle_ms`、`perf/learner_*_pct`、`timing/learner_other_ms` 与
 `perf/learner_pipeline_ms`——它们都可以从上面的 canonical 字段推导，或本来就是仅终端
-显示的推导值。提取工具 `scripts/benchmark/rl/extract_offpolicy_metrics.py` 两种 schema
-都认，优先使用 canonical tag 并换算单位。
+显示的推导值。提取工具 `scripts/benchmark/rl/extract_offpolicy_metrics.py` 默认只读取
+schema-v1 canonical tag；`metric_schema_version` 缺失或不支持时直接失败。
+
+### Schema 版本与兼容策略
+
+Metric 元数据与 runtime manifest 是两个独立版本命名空间。生产端权威定义位于
+`uni_rl.logging.metric_schema` 与 `uni_rl.logging.runtime_manifest_schema`：
+
+| 命名空间 | 当前值 | 存储位置 |
+| --- | ---: | --- |
+| TensorBoard / W&B metric schema | `metric_schema_version = 1` | `run_summary.json` 顶层 |
+| Runtime 进程 / 设备 / IPC manifest | `runtime_manifest.schema_version = 1` | 内嵌 runtime manifest |
+| 长时间 soak 监控 artifact | `schema_version = "0.3.0"` | soak JSON artifact |
+
+三个值刻意相互独立：soak 监控 artifact 升级不代表 metric 语义变化，metric schema
+升级也不会让所有 runtime-manifest 字段失效。当前 soak monitor 只接受 metric schema 1、
+runtime-manifest schema 1 与 soak artifact `0.3.0`。
+
+Runtime-manifest v1 冻结 UniLab 已经消费的公开配置与生命周期字段：inference ring
+容量、collector metric interval、`collector_backend_device`、inference-flight 计数、
+replay-ingress 计数/耗时，以及存在该预算时的 CUDA inference IPC event 数。
+`collector_backend_device` 在 completed manifest 中必填；只有 backend 本身不需要加速器
+绑定时才允许为 `null`。`inference_flight.max_*` 与
+`replay_ingress.high_water_occupancy` 的窗口语义不同：inference 最大值是相对上一次
+成功发布的 collector report，replay-ingress high-water 是整个 run 的累计高水位。
+未列入稳定契约的字段（包括 `runtime_manifest.shutdown`）在 v1 中都是实验性诊断。
+
+Soak artifact `0.3.0` 顶层新增两个异常 shutdown 字段。通过时
+`failure_classification` 必须为 `null`，且 `shutdown.classification` 必须是
+`normal_completion`；`owner` 与 `phase` 必须是非空字符串，cleanup 不能报错。
+失败时，有效的 producer 分类（`learner_failure`、`collector_failure`、
+`backend_worker_failure`、`timeout/stale_tick`、`external_cancellation`、
+`unknown_failure`）优先，因为它能标识发起 owner；否则 UniLab 记录 monitor
+分类（例如 `timeout/stale_tick` 或 `resource_leak`）。顶层
+`shutdown` 在 producer 可用时保存原始 host-only
+`runtime_manifest.shutdown` mapping；teardown 无法生成诊断时为 `null`。
+Producer shutdown snapshot 是 best-effort：它只追加到原始 soak failure
+reason 之后，绝不替换原始错误。runtime-manifest v1 的 `shutdown` mapping
+仍保持 opaque，因此该 soak artifact 契约不会把 producer 自有诊断扩展变成
+稳定字段。
+
+同一 schema major version 内，生产端可以伴随 schema、测试和文档更新增加可选字段。
+稳定字段不能改名、删除、改变类型、单位或 null 语义；若必须变化，需要提升 schema
+version。下游消费者遇到缺失或不支持的版本时拒绝猜测，直接失败。
+
+历史 event 文件不可修改。唯一批准的兼容路径是
+`extract_offpolicy_metrics.py --legacy-unversioned`。该模式只接受已识别的
+pre-schema legacy tag，要求不存在 canonical tag 或 schema stamp，并且不能作为
+未来未打版本日志的 fallback。可执行的 DP scaling benchmark 会生成并覆盖当前
+run，因此只消费 schema-v1 canonical tag，不提供 historical mode。默认 metric
+reader 遇到 canonical tag、canonical/legacy 混合或不支持的 metric schema version
+都会 fail closed。
 
 ### Collector 自有时间线
 

@@ -43,7 +43,7 @@ Roadmap #1428 将统一物理层拆到 GitHub 仓库 `unilabsim/unisim`。PyPI d
 
 UniLab owns：
 
-- Hydra owner YAML、task/env/manager lifecycle、`NpEnvState`、reward/observation/termination；
+- Hydra owner YAML、task/env/manager lifecycle、`TorchEnvState`、reward/observation/termination；
 - runner、learner、checkpoint、sim2sim、robot asset registry、task XML/scene composition；
 - 将 task-owned scene、DR、dtype/config 翻译为 UniSim 输入的 adapter layer。
 

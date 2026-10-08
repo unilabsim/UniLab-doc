@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="SuperDex Backend" href="8-superdex.html"><link rel="prev" title="Drake Backend" href="6-drake.html">
+<link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html"><link rel="next" title="Motrix Backend" href="2-motrix.html"><link rel="prev" title="Genesis Backend" href="5-genesis.html">
         <link rel="canonical" href="https://unilabsim.github.io/UniLab-doc/en/2-user_guide/3-backends/7-newton.html">
 
     <!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
@@ -230,8 +230,10 @@
 <li class="toctree-l3"><a class="reference internal" href="../1-training/1-cli_reference.html">CLI Reference</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/2-hydra_config.html">Hydra Config</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/3-logging.html">Logging</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../1-training/4-tensor_runtime.html">Tensor runtime</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/5-resume_and_checkpoints.html">Resume And Checkpoints</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/6-docker.html">Docker</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../1-training/7-tensor_runtime_production.html">Tensor Runtime Production Guide</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../2-algorithms/0-index.html">Algorithms</a><input aria-label="Toggle navigation of Algorithms" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -244,12 +246,9 @@
 </li>
 <li class="toctree-l2 current has-children"><a class="reference internal" href="0-index.html">Simulation Backends</a><input aria-label="Toggle navigation of Simulation Backends" checked="" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
 <li class="toctree-l3"><a class="reference internal" href="1-mujoco.html">MuJoCo Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="2-motrix.html">Motrix Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="3-isaacgym.html">IsaacGym Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="4-isaacsim.html">IsaacSim Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="5-genesis.html">Genesis Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="6-drake.html">Drake Backend</a></li>
 <li class="toctree-l3 current current-page"><a class="current reference internal" href="#">Newton Backend</a></li>
+<li class="toctree-l3"><a class="reference internal" href="2-motrix.html">Motrix Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="8-superdex.html">SuperDex Backend</a></li>
 </ul>
 </li>
@@ -338,6 +337,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/5-contributing_workflow.html">Collaboration Workflow</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/6-agent_quick_reference.html">Agent Quick Reference</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/7-motion_assets.html">Motion Asset Migration (Hugging Face)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/8-tensor_runtime_production.html">Tensor Runtime Productionization</a></li>
 </ul>
 </li><li class="toctree-l1 has-children"><a class="reference internal" href="../../5-reference/0-index.html">Reference</a><input aria-label="Toggle navigation of Reference" class="toctree-checkbox" id="toctree-checkbox-19" name="toctree-checkbox-19" role="switch" type="checkbox"/><label for="toctree-checkbox-19"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../5-reference/1-api/0-index.html">API Reference</a></li>
@@ -424,40 +424,27 @@
 <p><a class="reference external" href="https://github.com/newton-physics/newton">Newton</a> (PyPI distribution
 <code class="docutils literal notranslate"><span class="pre">newton</span></code>, pinned to 1.5.1) is a GPU physics simulator built on Warp that
 UniLab runs <strong>in-process</strong>: <code class="docutils literal notranslate"><span class="pre">unisim.backend.newton.NewtonBackend</span></code> serves the
-standard <code class="docutils literal notranslate"><span class="pre">SimBackend</span></code> NumPy contract on top of it, so physics shares the
-training process with the learner — no worker subprocess, no IPC.</p>
-<p>Current status: Newton is wired at the owner/config boundary (UniLab PR
-<a class="reference external" href="https://github.com/unilabsim/UniLab/pull/1511">#1511</a>; the adapter lives in
-the unisim repository as <code class="docutils literal notranslate"><span class="pre">unisim.backend.newton</span></code>). <code class="docutils literal notranslate"><span class="pre">g1_walk_flat</span></code> ships PPO
-and SAC owner configs
-(<code class="docutils literal notranslate"><span class="pre">src/unilab/conf/{ppo,sac}/task/g1_walk_flat/newton.yaml</span></code>, with <code class="docutils literal notranslate"><span class="pre">G1WalkFlat</span></code>
-registered for the <code class="docutils literal notranslate"><span class="pre">newton</span></code> backend), and the cross-backend contract audit
-(<code class="docutils literal notranslate"><span class="pre">scripts/audit_sim2sim_contracts.py</span></code>) covers the mujoco/newton pair in both
-algo trees (verdict TRANSFERABLE). Support levels: SAC is <strong>Tested</strong> — a
-full 5000-iteration training completed on 2026-09-06 on an RTX 4090 /
-torch 2.8.0+cu128 / newton 1.5.1 / mujoco-warp 3.11 (reward/mean 6.68 →
-242.3, episode length → 983, ~43k steps/s, 4m25s wall), with playback
-validated on <code class="docutils literal notranslate"><span class="pre">model_5000.pt</span></code>: native ViewerGL offscreen record (800-frame
-1280x720 mp4) and an interactive ViewerGL window smoke on a live X
-display; PPO remains <strong>Configured</strong>
-(evidence limited to the owner configs, compose/contract checks, and
-fail-closed runtime/import boundaries; no training or playback claim yet).</p>
-<p>Multi-GPU data parallelism (issue
-<a class="reference external" href="https://github.com/unilabsim/UniLab/issues/1512">#1512</a>): verified on
-2026-09-06 on 2x NVIDIA RTX 6000D (Blackwell) / torch 2.8.0+cu128 /
-newton 1.5.1 / mujoco-warp 3.11 — PPO torchrun DP=2 and SAC
-DpRankSupervisor DP=2 (<code class="docutils literal notranslate"><span class="pre">training.devices=[0,1]</span></code>) training smokes both
-complete, and <code class="docutils literal notranslate"><span class="pre">nvidia-smi</span></code> sampling confirms each rank’s learner and
-collector sim processes land on their own physical GPU with no cross-GPU
-leakage; single-GPU PPO/SAC regressions pass alongside. Newton/Warp follows
-standard CUDA device semantics, so no <code class="docutils literal notranslate"><span class="pre">CUDA_VISIBLE_DEVICES</span></code> pinning (the
-Genesis quirk) is needed; the rank-local device reaches spawn collectors as
-a <code class="docutils literal notranslate"><span class="pre">newton_device=&quot;cuda:N&quot;</span></code> env override, and uni_rl’s collector-side
-process binding is injection-based — UniLab injects
-<code class="docutils literal notranslate"><span class="pre">bind_backend_process_device_for_backend</span></code>, which covers both mjwarp and
-newton — while SAC handles learner-owned warmup before collector startup and
-cold materialization through the collector-ready handshake instead of using a
-collector tick timeout.</p>
+tensor lane of the public <code class="docutils literal notranslate"><span class="pre">SimBackend</span></code> contract on top of it, so physics
+shares the training process with the learner — no worker subprocess, no IPC.</p>
+<p>Current status: issue #2048 restores Newton to the tensor-only Manager runtime
+for exactly two canonical workloads:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>newton
+uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>flashsac<span class="w"> </span>--task<span class="w"> </span>g1_motion_tracking<span class="w"> </span>--sim<span class="w"> </span>newton
+</pre></div>
+</div>
+<p>The owner configurations are
+<code class="docutils literal notranslate"><span class="pre">src/unilab/conf/sac/task/g1_walk_flat/newton.yaml</span></code> and
+<code class="docutils literal notranslate"><span class="pre">src/unilab/conf/flashsac/task/g1_motion_tracking/newton.yaml</span></code>. Other Newton
+owners remain out of scope and do not constitute production support claims.
+The public tensor lane exposes device-resident state views, frame/contact
+sensors, state widths, tensor stepping, and authoritative selected-reset
+publication. Reset randomization that Newton does not support stays explicitly
+disabled in the owners; it never falls back to a host composer.</p>
+<p>Newton/Warp follows standard CUDA device semantics, so single-GPU runs do not
+need <code class="docutils literal notranslate"><span class="pre">CUDA_VISIBLE_DEVICES</span></code> pinning. In multi-GPU topology, the rank-local
+device reaches spawn collectors as a <code class="docutils literal notranslate"><span class="pre">newton_device=&quot;cuda:N&quot;</span></code> override, and
+uni_rl’s collector process binding is injection-based; UniLab injects
+<code class="docutils literal notranslate"><span class="pre">bind_backend_process_device_for_backend</span></code>, which covers MJWarp and Newton.</p>
 <section id="installation">
 <h2>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h2>
 <p>The Newton runtime is an optional extra, pinning Newton 1.5.1 with the
@@ -489,56 +476,43 @@ device is not a validated support lane.</p></li>
 <p>After installation, the unisim repository provides
 <code class="docutils literal notranslate"><span class="pre">scripts/check_newton_runtime.py</span></code> as a metadata-only probe (pass <code class="docutils literal notranslate"><span class="pre">--import</span></code>
 to import the native runtime explicitly). On the UniLab side a missing Newton
-runtime is not silent: the top-level CLI checks the <code class="docutils literal notranslate"><span class="pre">newton</span></code>, <code class="docutils literal notranslate"><span class="pre">mujoco_warp</span></code>,
-<code class="docutils literal notranslate"><span class="pre">mujoco</span></code>, and <code class="docutils literal notranslate"><span class="pre">warp</span></code> modules before training and fails closed with an
-install hint (<code class="docutils literal notranslate"><span class="pre">_check_runtime_requirements</span></code> in <code class="docutils literal notranslate"><span class="pre">src/unilab/cli.py</span></code>).</p>
+runtime is not silent: the top-level CLI checks the <code class="docutils literal notranslate"><span class="pre">newton</span></code> module before
+training and fails closed with an install hint
+(<code class="docutils literal notranslate"><span class="pre">_check_runtime_requirements</span></code> in <code class="docutils literal notranslate"><span class="pre">src/unilab/cli.py</span></code>).</p>
 </section>
 <section id="training-and-evaluation">
 <h2>Training and Evaluation<a class="headerlink" href="#training-and-evaluation" title="Link to this heading">¶</a></h2>
-<p>Training selects the newton owner through the canonical CLI:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># PPO</span>
-uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>newton
-
-<span class="c1"># SAC</span>
-uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>newton
-</pre></div>
-</div>
+<p>The canonical tensor-runtime commands above select the Newton owner. Other
+historical owner paths remain out of scope until separately enabled.</p>
 <p>Newton/MuJoCo-Warp 3.11 owns explicit device and storage capacities, exposed
 as <code class="docutils literal notranslate"><span class="pre">env.*</span></code> fields in the owner YAML:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">newton_device</span></code>: the owner’s <code class="docutils literal notranslate"><span class="pre">null</span></code> default is intentional — the process
-device binder (<code class="docutils literal notranslate"><span class="pre">src/unilab/base/process_device.py</span></code>) injects the rank-local
-CUDA device before materialization. An explicit value must be a non-empty
-CUDA device string.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">newton_device</span></code>: explicit backend CUDA placement. The single-device owners
+use <code class="docutils literal notranslate"><span class="pre">cuda:0</span></code>; multi-GPU training overrides this cold-path field from rank
+topology.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">newton_nconmax</span></code> / <code class="docutils literal notranslate"><span class="pre">newton_njmax</span></code>: explicit capacity bounds (320 / 512 in
-the g1 owner). The adapter calibrates solver counts on the cold path and
-raises an explicit capacity error when a bound is too small; it never
-silently truncates constraints.</p></li>
+the canonical G1 owners). The adapter calibrates solver counts on the cold
+path and raises an explicit capacity error when a bound is too small; it
+never silently truncates constraints.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">newton_capacity_check_steps</span></code>: how often capacity is checked (default 1).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">newton_use_cuda_graph</span></code>: CUDA graph replay (default <code class="docutils literal notranslate"><span class="pre">true</span></code>). A graph-capable
 UniSim runtime captures both Newton state parities after cold capacity
 calibration; ineligible CUDA drivers or capture failures warn and fall back
-to eager execution.</p></li>
+to eager execution.
+Runtime evidence must report the diagnostic’s actual <code class="docutils literal notranslate"><span class="pre">enabled</span></code> state rather
+than infer it from the request.</p></li>
 </ul>
 </section>
 <section id="playback-and-rendering">
 <h2>Playback and Rendering<a class="headerlink" href="#playback-and-rendering" title="Link to this heading">¶</a></h2>
-<p>The Newton backend renders natively through the upstream
-<code class="docutils literal notranslate"><span class="pre">newton.viewer.ViewerGL</span></code> (included in the <code class="docutils literal notranslate"><span class="pre">newton</span></code> extra,
-<code class="docutils literal notranslate"><span class="pre">pyglet&gt;=2.1.6,&lt;3</span></code> + <code class="docutils literal notranslate"><span class="pre">imgui-bundle&gt;=1.92.0</span></code>). The owner inherits the base config’s
-<code class="docutils literal notranslate"><span class="pre">training.play_render_mode:</span> <span class="pre">auto</span></code>: with a display, <code class="docutils literal notranslate"><span class="pre">auto</span></code> resolves to
-<code class="docutils literal notranslate"><span class="pre">interactive</span></code> (the ViewerGL window); without one it resolves to <code class="docutils literal notranslate"><span class="pre">record</span></code>
-(<code class="docutils literal notranslate"><span class="pre">ViewerGL(headless=True)</span></code> offscreen rendering to mp4). If an installation is
-incomplete, <code class="docutils literal notranslate"><span class="pre">record</span></code> falls back to the MuJoCo offline snapshot renderer while
-<code class="docutils literal notranslate"><span class="pre">interactive</span></code> fails closed; a normal <code class="docutils literal notranslate"><span class="pre">newton</span></code> install always selects the
-native renderer. Headless offscreen rendering still needs an OpenGL
-context: set <code class="docutils literal notranslate"><span class="pre">PYOPENGL_PLATFORM=egl</span></code> on display-less Linux hosts and
+<p>The canonical owners select <code class="docutils literal notranslate"><span class="pre">training.play_render_mode:</span> <span class="pre">record</span></code>. Newton renders
+through the upstream <code class="docutils literal notranslate"><span class="pre">newton.viewer.ViewerGL</span></code> included in the <code class="docutils literal notranslate"><span class="pre">newton</span></code> extra;
+if that installation is incomplete, record falls back to the MuJoCo snapshot
+renderer. Headless offscreen rendering still needs an OpenGL context: set
+<code class="docutils literal notranslate"><span class="pre">PYOPENGL_PLATFORM=egl</span></code> on display-less Linux hosts and
 <code class="docutils literal notranslate"><span class="pre">PYOPENGL_PLATFORM=glx</span></code> under Wayland.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>newton<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--load-run<span class="w"> </span>&lt;run_dir_name&gt;<span class="w"> </span>--render-mode<span class="w"> </span>record
-
-uv<span class="w"> </span>run<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>newton<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--load-run<span class="w"> </span>&lt;run_dir_name&gt;<span class="w"> </span>--render-mode<span class="w"> </span>record
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>newton<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--load-run<span class="w"> </span>&lt;run_dir_name&gt;<span class="w"> </span>--render-mode<span class="w"> </span>record
 </pre></div>
 </div>
 </section>
@@ -567,23 +541,23 @@ of the same task transfer across backends.</p>
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="8-superdex.html">
+          <a class="next-page" href="2-motrix.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">SuperDex Backend</div>
+                <div class="title">Motrix Backend</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="6-drake.html">
+          <a class="prev-page" href="5-genesis.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">Drake Backend</div>
+                <div class="title">Genesis Backend</div>
                 
               </div>
             </a>

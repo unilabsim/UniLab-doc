@@ -19,11 +19,12 @@ orphan: true
 | [ADR-0003 Task Owner And Config Compose Contract](ADR-0003-task-owner-and-config-compose-contract.md) | Config owner | Accepted |
 | [ADR-0004 Registry Bootstrap Contract](ADR-0004-registry-bootstrap-contract.md) | Registry bootstrap | Accepted |
 | [ADR-0005 Unified Obs Critic Env And IPC Contract](ADR-0005-unified-obs-critic-env-and-ipc-contract.md) | Observation / IPC | Accepted |
-| [ADR-0006 Community Manager API On NumPy Runtime](ADR-0006-community-manager-api-on-numpy-runtime.md) | Manager API / NumPy runtime | Accepted |
+| [ADR-0006 Community Manager API On NumPy Runtime](ADR-0006-community-manager-api-on-numpy-runtime.md) | Manager API / NumPy runtime | Superseded |
 | [ADR-0007 UniSim Extraction Boundary](ADR-0007-unisim-extraction-boundary.md) | Physics package extraction | Accepted |
 | [ADR-0008 Debug Overlay Primitive Contract And Playback Session](ADR-0008-debug-overlay-primitive-contract-and-playback-session.md) | Debug overlay / playback session | Accepted |
 | [ADR-0009 SuperDex Native C++ Scene Batch Executor](ADR-0009-superdex-persistent-cpu-workers.md) | Backend CPU scene execution | Accepted |
 | [ADR-0010 Fixed Model Variant Ownership Boundary](ADR-0010-fixed-model-variant-ownership-boundary.md) | Fixed variants / cross-repository boundary | Proposed |
+| [ADR-0011 Torch-Only Manager-Based Runtime](ADR-0011-torch-only-manager-based-runtime.md) | Manager runtime / tensor lifecycle | Accepted |
 
 ## ADR Governance
 

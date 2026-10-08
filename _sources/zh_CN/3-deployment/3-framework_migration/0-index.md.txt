@@ -14,7 +14,7 @@
 :::{grid-item-card} 从 Legged Gym 迁移
 :link: 2-from_legged_gym
 :link-type: doc
-把基于类的环境迁移到 `NpEnv` contract。
+把基于类的环境迁移到 Manager-Based `TorchEnv` contract。
 :::
 
 :::{grid-item-card} 从 RSL-RL 迁移

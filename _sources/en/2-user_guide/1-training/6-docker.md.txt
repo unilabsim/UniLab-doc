@@ -1,10 +1,11 @@
 # Docker
 
 The checked-in `Dockerfile` is the Linux NVIDIA/CUDA container path. It installs
-UniLab runtime dependencies, the MuJoCo and Motrix physics backend extras, and
-dev/test tooling; training inside the container supports both `--sim mujoco`
-and `--sim motrix`. macOS Docker is not a primary path, and ROCm uses a
-separate image (see below) rather than this CUDA `Dockerfile`.
+the repository's dev/test tooling plus the scoped MuJoCo and MJWarp backend
+extras. Training inside the container supports the current tensor Manager
+runtimes: `--sim mujoco` and `--sim mjwarp`. macOS Docker is not a primary
+path, and ROCm uses a separate image (see below) rather than this CUDA
+`Dockerfile`.
 
 ## Build
 
@@ -39,12 +40,12 @@ Putting `.venv` in a named volume keeps the container's virtual environment from
 overwriting the host repository directory, and leaves the host `uv` workflow
 clean when you switch back to it.
 
-Inside the container, use the same commands as the host workflow; both physics
-backends are available:
+Inside the container, use the same commands as the host workflow; both scoped
+physics backends are available:
 
 ```bash
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco
-uv run train --algo ppo --task go2_joystick_flat --sim motrix
+uv run train --algo sac --task g1_motion_tracking --sim mjwarp
 ```
 
 Evaluation and playback work the same way inside the container; `--load-run -1`

@@ -12,7 +12,7 @@ deployment path.
 | `RolloutMemory` | `uni_rl.ipc.rollout_ring_buffer` |
 | `ReplayMemory` | `uni_rl.ipc.replay_buffer` |
 | `Trainer` | `unilab.training.run` |
-| `Wrapper` for env | `NpEnv` subclassing |
+| `Wrapper` for env | `TorchEnv` subclassing |
 
 ## What to expect
 
@@ -22,11 +22,11 @@ deployment path.
   collector + learner pair connected by shared memory. See
   {doc}`../../4-developer_guide/2-contracts/5-runner_lifecycle`.
 - **Different env interface.** skrl tolerates many env styles. UniLab
-  insists on `NpEnv` + dict obs.
+  insists on `TorchEnv` + tensor dict obs.
 
 ## Migration checklist
 
 1. Decide which UniLab algorithm best matches your skrl agent.
-2. Port the env into `NpEnv` form.
+2. Port the env into `TorchEnv` form.
 3. Convert hyperparameter YAML into Hydra groups under `src/unilab/conf/<algo>/<task>/`.
 4. Validate reward parity.

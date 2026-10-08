@@ -23,8 +23,8 @@ read this section on the live site.
 :::{grid-item-card} 🧱 `unilab.base`
 :link: base/index
 :link-type: doc
-The contracts everything else depends on: `NpEnv`, `SimBackend`, `Registry`,
-`Scene`.
+The contracts everything else depends on: `TorchEnv`, `SimBackend`,
+`Registry`, and `Scene`.
 :::
 
 :::{grid-item-card} 🧪 `unilab.envs`

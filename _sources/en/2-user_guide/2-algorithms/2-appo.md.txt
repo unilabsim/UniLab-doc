@@ -10,7 +10,7 @@ fields.
 
 ```bash
 uv run train --algo appo --task go2_joystick_flat --sim mujoco
-uv run train --algo appo --task g1_motion_tracking --sim motrix training.no_play=true
+uv run train --algo appo --task g1_motion_tracking --sim mujoco training.no_play=true
 ```
 
 ## Common Overrides

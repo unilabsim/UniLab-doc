@@ -14,7 +14,7 @@ Unitree G1 人形机器人（29 自由度变体）。关节顺序来自任务 ow
 
 ```bash
 # Replay the policy headlessly and produce a video.
-uv run eval --algo ppo --task g1_motion_tracking --sim motrix --load-run -1 \
+uv run eval --algo ppo --task g1_motion_tracking --sim mujoco --load-run -1 \
   --render-mode record
 ```
 
@@ -31,7 +31,7 @@ uv run eval --algo ppo --task g1_motion_tracking --sim motrix --load-run -1 \
 通过训练回放路径导出 `policy.onnx`，使用产出该检查点的同一任务 owner：
 
 ```bash
-uv run eval --algo ppo --task g1_motion_tracking --sim motrix --load-run -1
+uv run eval --algo ppo --task g1_motion_tracking --sim mujoco --load-run -1
 ```
 
 硬件回路需要的每个字段都在该 owner 的 YAML 中声明。宽度随 owner 而异——两个 G1

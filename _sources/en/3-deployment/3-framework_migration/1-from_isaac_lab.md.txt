@@ -2,7 +2,7 @@
 
 Port an Isaac Lab Manager-Based task to UniLab by keeping its manager and term
 structure, then adapting configuration, numeric execution, and scene access at
-their owner boundaries. Do not rewrite it as a monolithic `NpEnv` subclass.
+their owner boundaries. Do not rewrite it as a monolithic environment subclass.
 
 This is source-compatible migration, not a promise that an arbitrary Isaac Lab
 task runs unchanged. The target path is:
@@ -11,8 +11,8 @@ task runs unchanged. The target path is:
 Hydra owner YAML
   -> plain ManagerBasedRlEnvCfg
   -> Registry + make_manager_based_rl_env
-  -> ManagerBasedRlEnv on the NumPy/SimBackend runtime
-  -> NpEnvState for the existing training and IPC path
+  -> ManagerBasedRlEnv on the Torch/SimBackend runtime
+  -> TorchEnvState for the existing training and IPC path
 ```
 
 ## Compatibility boundary

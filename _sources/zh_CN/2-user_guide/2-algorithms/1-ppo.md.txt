@@ -12,7 +12,7 @@ PPO 是默认的同步 on-policy 训练路径。它使用 `src/unilab/scripts/tr
 
 ```bash
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco
-uv run train --algo ppo --task go2_joystick_flat --sim motrix training.no_play=true
+uv run train --algo ppo --task go2_joystick_flat --sim mujoco training.no_play=true
 ```
 
 ## 常用 Override
@@ -35,27 +35,23 @@ uv run eval --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
 
 ## 单机多卡训练
 
-`training.devices` 打开 RSL-RL 的同步数据并行 PPO：
+`CUDA_VISIBLE_DEVICES`（每个 rank 一项）打开 RSL-RL 的同步数据并行 PPO：
 
 ```bash
+export CUDA_VISIBLE_DEVICES=<gpu-a>,<gpu-b>
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco \
-  'training.devices=[0,1]' \
   training.no_play=true
 
 uv run train --algo ppo --task g1_motion_tracking --sim mujoco \
-  'training.devices=[0,1]' \
   training.no_play=true
 ```
 
-`null` 或 `[]` 保持自动选择单个 device；`[d]` 显式选择一张 CUDA 卡；两个以上
-索引会按列表顺序在本机为每张卡启动一个进程。不能同时设置 `training.device` 与
-`training.devices`。父进程已有 `CUDA_VISIBLE_DEVICES` 时，配置索引仍按父进程可见
-设备解释，并保留用户给定顺序。
+`CUDA_VISIBLE_DEVICES` 是唯一的 GPU 拓扑来源。父进程列表可以包含物理序号、UUID 或
+MIG token；torchrun 为每个 worker 重映射成单卡可见，因此每个 rank 内部都使用本地
+`cuda:0`。`training.device` 仅保留为显式单设备覆盖，不能替代 rank-local 可见性。
 
-对 IsaacGym、IsaacSim 和 Genesis owner，同一拓扑也会传给环境仿真器。torchrun
-worker 继承重映射后的 `CUDA_VISIBLE_DEVICES`，因此传给 worker 的是本地索引（例如
-worker 看到 `[4,5]` 时，主机设备 5 传为 `device_id=1`）；off-policy worker 保持父进程
-可见设备索引。Genesis 会在 `gs.init` 前选择每个进程的 session 设备。
+对 IsaacGym、IsaacSim 和 Genesis owner，同一拓扑也会传给环境仿真器。Genesis 会在
+`gs.init` 前选择每个进程的 session 设备。
 
 `algo.num_envs` 是**每个 rank** 的环境数，不是全局预算。设 rank 数为 `W`、配置
 环境数为 `N`、rollout 长度为 `T`：

@@ -7,7 +7,7 @@
 ## 迁移进 UniLab 后你能获得什么
 
 1. **Env contract。** RSL-RL 把 env 结构留给你自己处理。UniLab 的
-   `unilab.base.np_env.NpEnv` 标准化了 obs/info/reset 的签名，让并行与复位
+   `unilab.base.torch_env.TorchEnv` 标准化了 obs/info/reset 的签名，让并行与复位
    更不容易出错。
 2. **任务 owner。** 基于 Hydra 的配置组合，外加 registry 驱动的
    backend / task / algo 选择。不再需要为每种机器人编写定制的训练脚本。

@@ -30,7 +30,6 @@ uv run scripts/audit_sim2sim_contracts.py
 |---|---|---|
 | allegro_inhand · allegro_inhand_grasp · g1_motion_tracking · go2_handstand · go2_joystick_flat | ✅ | 无 |
 | g1_box_tracking | ❌ | `obs_normalization` false↔true；`obs_groups` critic 组差异 |
-| g1_flip_tracking | ❌ | `obs_normalization` true↔false；`action_scale` 29 维↔默认 0.25；`sampling_mode` 两后端运行时同为 `start`（无害） |
 | g1_walk_flat | ❌ | `env.actions.joint_pos.scale` 0.25↔0.5；`obs_normalization` false↔true；`obs_groups` |
 
 ## `src/unilab/conf/appo/task/`
@@ -38,7 +37,6 @@ uv run scripts/audit_sim2sim_contracts.py
 | Task | 判定 | 分歧 |
 |---|---|---|
 | allegro_inhand · g1_motion_tracking · go2_joystick_flat | ✅ | 无 |
-| g1_flip_tracking | ❌ | `action_scale` 29 维↔默认 0.25；`sampling_mode` 同为 `start`（无害） |
 | g1_walk_flat | ⚪ | 仅 mujoco |
 
 已迁移的 Unitree owner 由 `unitree_rl_unilab` 自行维护 contract audit；核心状态表不再声称覆盖它们。

@@ -2,10 +2,10 @@
 
 ```bash
 # Latest run
-uv run eval --algo ppo --task go2_joystick_flat --sim motrix --load-run -1
+uv run eval --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
 
 # Headless video export
-uv run eval --algo ppo --task go2_joystick_flat --sim motrix \
+uv run eval --algo ppo --task go2_joystick_flat --sim mujoco \
     --load-run -1 --render-mode record
 
 # Off-policy playback can skip ONNX export and still record MP4
@@ -63,7 +63,7 @@ uv run src/unilab/scripts/play_interactive.py --algo ppo --task go2_joystick_fla
 uv run src/unilab/scripts/play_interactive.py --algo ppo --task go2_joystick_flat --sim mujoco \
     algo.load_run=-1 interactive.action_mode=policy
 
-uv run src/unilab/scripts/play_interactive.py --algo flashsac --task g1_walk_flat --sim motrix \
+uv run src/unilab/scripts/play_interactive.py --algo flashsac --task g1_walk_flat --sim mujoco \
     algo.load_run=-1 interactive.action_mode=policy
 
 uv run src/unilab/scripts/play_interactive.py --algo ppo --task go2_joystick_flat --sim mujoco \

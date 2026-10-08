@@ -36,12 +36,13 @@ training 不受支持。
 
 ## 多卡数据并行
 
-FlashSAC 与 SAC 共用同一套多卡数据并行机制：`training.devices` 下每个 rank 各跑一
+FlashSAC 与 SAC 共用同一套多卡数据并行机制：`CUDA_VISIBLE_DEVICES` 下每个 rank 各跑一
 套独立的 learner+collector；启动时广播完整模型状态，稳态在每个实际 optimizer step
 前分别平均 actor / critic / temperature 梯度。仅 rank 0 保存 checkpoint。用法与限制见
 {doc}`/zh_CN/2-user_guide/2-algorithms/3-sac` 的"多卡数据并行"小节。
 
 ```bash
+export CUDA_VISIBLE_DEVICES=<gpu-a>,<gpu-b>
 uv run train --algo flashsac --task g1_walk_flat --sim mujoco \
-  training.devices=[0,1]
+  training.no_play=true
 ```

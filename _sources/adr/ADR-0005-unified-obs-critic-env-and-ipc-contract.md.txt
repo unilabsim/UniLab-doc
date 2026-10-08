@@ -6,7 +6,7 @@ orphan: true
 
 语言: 简体中文
 
-- Status: Accepted
+- Status: Accepted; runtime representation updated by [ADR-0011](ADR-0011-torch-only-manager-based-runtime.md)
 - Date: 2026-04-17
 - Owners: Env / IPC maintainers
 - Supersedes: None
@@ -14,7 +14,8 @@ orphan: true
 
 ## Context
 
-UniLab 已经收敛到 `NpEnvState.obs: dict[str, np.ndarray]`，但历史实现里仍混杂过多种观测语义：
+UniLab 已经收敛到 observation-group dict（现为 `TorchEnvState.obs: dict[str, torch.Tensor]`），
+但历史实现里曾混杂过多种观测语义：
 
 - actor 路径消费 `obs`
 - 部分 env 额外暴露所谓 `privileged`
@@ -79,11 +80,11 @@ UniLab 运行时 observation contract 统一为且仅为两层：
 
 ## Evidence In Repo
 
-- Env contract: `src/unilab/base/np_env.py`
-- Final observation helper: `src/unilab/base/final_observation.py`
+- Env contract: `src/unilab/base/torch_env.py`
+- Final observation lifecycle: `TorchEnvState.final_observation`
 - RSL-RL adapter: `src/unilab/rl/vec_env.py`
 - IPC tests: `tests/ipc/`
-- Observation tests: `tests/base/test_np_env.py`, `tests/utils/test_final_observation.py`
+- Observation/lifecycle tests: `tests/base/test_torch_env.py`
 
 ## Related Documents
 

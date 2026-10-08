@@ -230,8 +230,10 @@
 <li class="toctree-l3"><a class="reference internal" href="../1-training/1-cli_reference.html">CLI 参考</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/2-hydra_config.html">Hydra 配置</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/3-logging.html">日志</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../1-training/4-tensor_runtime.html">Tensor runtime</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/5-resume_and_checkpoints.html">续训与检查点</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../1-training/6-docker.html">Docker</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../1-training/7-tensor_runtime_production.html">Tensor Runtime 生产指南</a></li>
 </ul>
 </li>
 <li class="toctree-l2 current has-children"><a class="reference internal" href="0-index.html">算法</a><input aria-label="Toggle navigation of 算法" checked="" class="toctree-checkbox" id="toctree-checkbox-24" name="toctree-checkbox-24" role="switch" type="checkbox"/><label for="toctree-checkbox-24"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
@@ -244,12 +246,9 @@
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../3-backends/0-index.html">仿真后端</a><input aria-label="Toggle navigation of 仿真后端" class="toctree-checkbox" id="toctree-checkbox-25" name="toctree-checkbox-25" role="switch" type="checkbox"/><label for="toctree-checkbox-25"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l3"><a class="reference internal" href="../3-backends/1-mujoco.html">MuJoCo 后端</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../3-backends/2-motrix.html">Motrix 后端</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../3-backends/3-isaacgym.html">IsaacGym 后端</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../3-backends/4-isaacsim.html">IsaacSim 后端</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../3-backends/5-genesis.html">Genesis 后端</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../3-backends/6-drake.html">Drake 后端</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../3-backends/7-newton.html">Newton 后端</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../3-backends/2-motrix.html">Motrix 后端</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../3-backends/8-superdex.html">SuperDex 后端</a></li>
 </ul>
 </li>
@@ -338,6 +337,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/5-contributing_workflow.html">协作工作流</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/6-agent_quick_reference.html">Agent 速查</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/7-motion_assets.html">Motion 资产迁移指南（Hugging Face）</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/8-tensor_runtime_production.html">Tensor Runtime 生产化</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../4-developer_guide/9-sim2sim_contract_status.html">Sim2Sim 跨后端任务契约状态</a></li>
 </ul>
 </li><li class="toctree-l1 has-children"><a class="reference internal" href="../../5-reference/0-index.html">参考</a><input aria-label="Toggle navigation of 参考" class="toctree-checkbox" id="toctree-checkbox-38" name="toctree-checkbox-38" role="switch" type="checkbox"/><label for="toctree-checkbox-38"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -463,21 +463,20 @@ shared memory 交换 observation/action，不持有 actor。</p>
 </section>
 <section id="id4">
 <h2>多卡数据并行<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">training.devices</span></code> 打开单节点多卡数据并行（data parallel）：rank i 在
-<code class="docutils literal notranslate"><span class="pre">cuda:devices[i]</span></code> 上各跑一套独立的 learner+collector，rank 0 负责 spawn 其余
+<p><code class="docutils literal notranslate"><span class="pre">CUDA_VISIBLE_DEVICES</span></code> 是唯一 GPU 拓扑来源：父进程列表中每个 opaque 条目对应一个
+rank，rank 内 learner 与 collector 共同使用本地 <code class="docutils literal notranslate"><span class="pre">cuda:0</span></code>。rank 0 负责 spawn 其余
 rank 子进程。启动时 rank 0 一次性广播 actor、critic、target critic 和温度状态；稳态
 训练不再平均参数，而是在每个实际 optimizer step 前对对应的 actor、critic 或温度梯度
 执行阻塞式 flat-gradient <code class="docutils literal notranslate"><span class="pre">all_reduce(SUM)</span> <span class="pre">/</span> <span class="pre">world_size</span></code>。各 rank 不交换 replay 数据，
 在相同初值、平均梯度和更新顺序下各自维护一致的 optimizer 状态。</p>
-<p>每个 rank 当前只创建一个 collector。使用 mjwarp 时，rank i 会在 probe env 和 collector
-正式 env materialization 之前，把 Warp 的进程默认/当前 device 显式绑定到该 rank 的
-learner device <code class="docutils literal notranslate"><span class="pre">cuda:devices[i]</span></code>；因此 collector 不依赖 Warp 新进程默认的 <code class="docutils literal notranslate"><span class="pre">cuda:0</span></code>，也不
-会跨 rank 集中到同一张卡。runtime manifest 的 <code class="docutils literal notranslate"><span class="pre">collector_backend_device</span></code> 记录本 rank 的
+<p>每个 rank 当前只创建一个 collector。每个 rank 都是单卡可见，因此 probe env、
+collector 正式 env、replay、inference ring 与 learner 都落在同一张物理卡上。runtime manifest 的 <code class="docutils literal notranslate"><span class="pre">collector_backend_device</span></code> 记录本 rank 的
 实际绑定。</p>
-<p>off-policy 只公开 <code class="docutils literal notranslate"><span class="pre">training.devices</span></code> 这一个设备字段：<code class="docutils literal notranslate"><span class="pre">null</span></code> 或 <code class="docutils literal notranslate"><span class="pre">[]</span></code> 自动选择单个
-learner device，<code class="docutils literal notranslate"><span class="pre">[0]</span></code> 显式选择 <code class="docutils literal notranslate"><span class="pre">cuda:0</span></code>，两个以上索引才启动多卡拓扑。</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>mujoco<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>training.devices<span class="o">=[</span><span class="m">0</span>,1<span class="o">]</span>
+<p>off-policy 不再有设备字段，GPU 由进程可见性决定。单 rank 只需导出单卡可见；
+多 rank 由父进程导出与 rank 数相同的 opaque 条目：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">CUDA_VISIBLE_DEVICES</span><span class="o">=</span>&lt;gpu-a&gt;,&lt;gpu-b&gt;
+uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>mujoco<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>training.no_play<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
 <p>rank 0 独占终端与 TensorBoard/W&amp;B logger；其他 learner 不刷新终端，也不创建独立

@@ -5,21 +5,21 @@ The detailed runtime contract is in
 {doc}`/zh_CN/4-developer_guide/0-index`. This page keeps the English
 summary close to the code paths.
 
-## Two Runtime Shapes
+## Runtime Shapes
 
 ### Synchronous PPO Paths
 
 `src/unilab/scripts/train_rsl_rl.py` composes Hydra config,
-calls registry bootstrap, constructs the env through `registry.make(...)`, and runs
-the learner in the same process. The RSL-RL path adapts `NpEnv` through
-`src/unilab/rl/`.
+calls registry bootstrap, constructs the strict `TorchEnv` through
+`registry.make(...)`, and runs the learner in the same process. The RSL-RL path
+adapts that tensor boundary through `src/unilab/rl/`.
 
 ### Async APPO And Off-Policy Paths
 
-APPO and off-policy runners use a CPU-sim-to-learner split:
+APPO and off-policy runners use an environment-to-learner split:
 
 ```text
-CPU physics env loop -> shared IPC buffer -> learner
+Environment tensor loop -> shared IPC carrier -> learner
         ^                                      |
         +------------- SharedWeightSync -------+
 ```
@@ -33,8 +33,11 @@ CPU physics env loop -> shared IPC buffer -> learner
 
 ## Boundary Rules
 
-- The env remains numpy/vectorized and returns `NpEnvState`.
-- GPU tensors and optimizer state belong to learner code, not env code.
+- The Manager-Based runtime returns `TorchEnvState`; CPU-authoritative physics
+  backends cross their declared host-bridge H2D/D2H boundaries, while
+  CUDA-native backends remain device-resident.
+- Trainer-only tensors such as optimizer state and rollout storage belong to
+  learner code, not env code.
 - Collector/learner protocols must reuse the existing IPC primitives instead of
   creating ad-hoc parallel protocols in scripts.
 

@@ -46,17 +46,13 @@ uv run train --algo sac --task g1_walk_flat --sim mujoco \
 
 ## Single-node multi-GPU device placement
 
-`training.devices` assigns rank i's learner to `cuda:devices[i]`; each rank owns one
-collector. For mjwarp, the rank process and its collector process explicitly bind Warp's
-default/current device to that same learner device before probe or production environment
-materialization. The collector therefore does not fall back to Warp's fresh-process default
-of `cuda:0`. The local binding is recorded as `collector_backend_device` in the runtime
-manifest.
+`CUDA_VISIBLE_DEVICES` is the sole GPU topology source. Each parent entry maps to one
+rank, and within that rank the learner, collector, inference ring, replay ingress, and
+backend payload all use the same physical GPU as local `cuda:0`. Off-policy collectors
+never consume another rank's device or a parent-global CUDA ordinal.
 
-IsaacGym, IsaacSim, and Genesis receive the rank-selected simulator device
-through the environment override as well. Off-policy collectors use the
-parent's visible CUDA indices; Genesis binds its process-wide session before
-initialization.
+IsaacGym, IsaacSim, and Genesis receive the rank-local simulator ordinal through the
+environment override. Genesis binds its process-wide session before initialization.
 
 MuJoCo has a committed multi-GPU scaling benchmark. The mjwarp per-rank placement contract is
 covered by `tests/base/backend/test_process_device.py` and the off-policy runner/worker unit

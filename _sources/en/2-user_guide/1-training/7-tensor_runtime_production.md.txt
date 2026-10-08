@@ -1,0 +1,333 @@
+# Tensor Runtime Production Guide
+
+This guide is the reproduction and operations entry point for the scoped
+single-GPU G1 Motion Tracking / FlashSAC / MJWarp tensor runtime. It covers the
+canonical owner-routed long soak, runtime artifacts, and failure triage. The
+settings contract is described separately in {doc}`4-tensor_runtime`; the
+generated {doc}`../../5-reference/5-support_matrix` is the authority for every
+backend, task, entrypoint, and platform support claim.
+
+The production path is deliberately narrow:
+
+- Linux with one NVIDIA CUDA GPU;
+- FlashSAC;
+- `g1_motion_tracking`;
+- the `mjwarp` owner selected through the unified task-owner route;
+- a tensor-native Manager runtime.
+
+It is not a multi-GPU guide, does not publish packages, and does not generalize
+to every MJWarp task. macOS and ROCm/HIP do not provide a fallback for this
+device-resident lifecycle; invalid requests fail before backend construction.
+
+## Owner Selection and Effective Combinations
+
+Use `--algo`, `--task`, and `--sim` together. They compose the owner YAML under
+`src/unilab/conf/<algo>/task/<task>/<sim>.yaml`. That owner, rather than the CLI
+spelling alone, sets `training.sim_backend`; tensor execution is a Manager invariant.
+
+For the canonical combination:
+
+```bash
+uv run train --algo flashsac --task g1_motion_tracking --sim mjwarp
+```
+
+the MJWarp owner inherits the MuJoCo FlashSAC owner and resolves to:
+
+| Effective setting | Value |
+| --- | --- |
+| Task semantic name | `G1MotionTrackingSAC` |
+| Backend identity | `mjwarp` |
+| Tensor runtime | invariant of the Manager lifecycle |
+| Inference slots | `training.inference_slot_capacity=1` |
+| Replay-ingress depth | `training.replay_ingress_depth=2` |
+| Replay-ingress slot rows | `null`, resolving to `algo.num_envs` |
+| Collector metric interval | `training.collector_metrics_interval=100` |
+| CUDA process sharing | `training.cuda_process_sharing=null` |
+| Scene | `src/unilab/assets/robots/g1/scene_flat.xml` |
+| Motion | `motions/g1/dance1_subject2_part.npz` |
+
+The MuJoCo owner uses the same 2048-environment training budget, but publishes
+collector metrics every step. The MJWarp task is also a DR-free lifecycle
+baseline: its selected-row tensor reset does not negotiate reset randomization
+or interval wrenches.
+
+At the current generated evidence grade, FlashSAC /
+`g1_motion_tracking` / MJWarp is `Configured`. A successful local soak does not
+silently promote it to `Benchmarked` or `Recommended`; support promotion is a
+separate repository decision made through the support-matrix generator and its
+validation inventory.
+
+## Reproducible Runtime
+
+The gated profile resolves UniSim, unilab-rl, and MJBatch from the committed
+registry lock files:
+
+```bash
+UV_FROZEN=1 uv sync --extra mujoco --extra mjwarp --extra uni_rl
+```
+
+`make setup` is useful for broad repository development, but it does not install
+the `mjwarp` extra. The command above matches the gated CUDA CI profile. CI
+uses Python 3.11 as the reference version even though the package supports a
+wider Python range.
+
+On a host with one visible GPU, no `CUDA_VISIBLE_DEVICES` mask is required.
+The automatic single-device topology binds the learner, collector, MJWarp
+physics, inference ring, and replay ingress to the same current CUDA device.
+Set the variable only to select one physical GPU on a multi-GPU host or to
+preserve a launcher/debug/MPS mask:
+
+```bash
+export CUDA_VISIBLE_DEVICES=<single-host-cuda-ordinal>
+```
+
+All CUDA ordinals inside trainer processes are relative to that mask. Do not
+add more devices: M11 is single-GPU only.
+
+## CUDA MPS Execution Sharing
+
+`training.cuda_process_sharing` is an explicit execution-sharing mode for the
+already-required rank-local topology. It is not a backend switch and does not
+replace `--sim mjwarp` or owner YAML selection.
+
+The default remains `null`: learner and collector keep independent CUDA contexts.
+For the supported single-host, single-rank MJWarp off-policy topology, request
+CUDA MPS with:
+
+```bash
+training.cuda_process_sharing=mps
+```
+
+Start an existing control daemon under user-owned directories before training:
+
+```bash
+export CUDA_MPS_PIPE_DIRECTORY=/absolute/path/mps/pipe
+export CUDA_MPS_LOG_DIRECTORY=/absolute/path/mps/log
+mkdir -p "$CUDA_MPS_PIPE_DIRECTORY" "$CUDA_MPS_LOG_DIRECTORY"
+nvidia-cuda-mps-control -d
+```
+
+UniLab validates, but never starts or stops, that daemon. An `mps` request must
+be Linux/NVIDIA CUDA, use MJWarp, resolve one physical GPU by UUID for learner
+and collector, have `world_size=1`, and reach a live control socket/FIFO and
+control daemon. Any unmet prerequisite fails before environment probing,
+learner construction, or collector spawn; there is no silent multi-context
+fallback. The error names the first prerequisite and the daemon start command.
+
+`run_config.json` records the configured owner value. A valid run's
+`run_summary.json` embeds `runtime_manifest.cuda_process_sharing` with the
+configured/effective mode, learner and collector devices, physical UUID
+evidence, control pipe, server PID, and validation state. The section is a
+runtime-manifest v1 producer diagnostic, not a stable scalar contract.
+
+MPS changes only GPU execution sharing. It does not change `env_steps_per_sync`,
+learner/collector placement, or training semantics. Multi-GPU DP remains
+unsupported until the separate DP gate and daemon topology decision are
+completed. CUDA MPS is host- and deployment-dependent: in shared containers,
+multi-user hosts, or restricted runners, control may be unavailable, and an
+explicit request fails closed rather than silently degrading.
+
+Stop the daemon after use:
+
+```bash
+export CUDA_MPS_PIPE_DIRECTORY=/absolute/path/mps/pipe
+echo quit | nvidia-cuda-mps-control
+```
+
+Check the runtime that will execute the benchmark:
+
+```bash
+uv run --no-sync python -c "import torch; print(torch.__version__, torch.version.cuda, torch.version.hip, torch.cuda.is_available(), torch.cuda.device_count(), torch.cuda.current_device())"
+```
+
+`torch.version.hip` must be `None`, CUDA must be available, and the visible
+device count must be one.
+
+## Assets
+
+G1 meshes and textures are downloaded from the asset hub. Pre-fetch them before
+an offline benchmark:
+
+```bash
+uv run --no-sync unilab-pull-assets --robot g1
+```
+
+The motion clip is also external. It is downloaded lazily on first use and must
+be present at:
+
+```text
+src/unilab/assets/motions/g1/dance1_subject2_part.npz
+```
+
+For a completely offline run, first materialize the required motion files, then
+set `HF_HUB_OFFLINE=1`. Do not set offline mode before the first
+materialization.
+
+## Canonical Long Soak
+
+The long soak is the canonical production benchmark. It launches the real
+owner-routed FlashSAC trainer, then monitors schemas, progress, CUDA state,
+processes, file descriptors, shared memory, inference flight, replay ingress,
+and shutdown.
+
+Choose new absolute paths for the run directory and JSON artifact. Do not reuse
+a dirty run directory: the monitor uses file changes in that directory as its
+liveness signal.
+
+```bash
+uv run --no-sync scripts/benchmark/torch_env/g1_flashsac_soak.py \
+  --num-envs 1024 \
+  --iterations 65000 \
+  --min-duration-seconds 1800 \
+  --sample-interval-seconds 5 \
+  --startup-timeout-seconds 900 \
+  --stale-progress-seconds 300 \
+  --post-shutdown-grace-seconds 10 \
+  --extra-override algo.save_interval=10000 \
+  --log-dir /absolute/path/to/g1-flashsac-mjwarp-run \
+  --output /absolute/path/to/g1-flashsac-mjwarp-soak.json
+```
+
+The wrapper owns and rejects overrides for `algo`, `task`,
+`training.sim_backend`, play mode, log directory, environment count, and
+iteration count. It constructs the low-level owner route for
+`flashsac` / `g1_motion_tracking` / `mjwarp`; users do not pass
+`training.sim_backend=mjwarp` as an independent switch.
+
+The M11 acceptance budget is intentionally distinct from the owner production
+default:
+
+| Budget | Environments | Iterations | Use |
+| --- | ---: | ---: | --- |
+| MJWarp owner default | 2048 | 25000 | Owner training budget |
+| M11 long soak | 1024 | 65000 | Lifecycle, resource, replay, and shutdown acceptance |
+
+The wrapper also sets `training.no_play=true`, so a passing soak does not create
+playback video or playback-driven ONNX output.
+
+## Required Artifacts
+
+The run directory must contain:
+
+- `run_config.json`;
+- `run_summary.json`;
+- TensorBoard event files;
+- checkpoints at the selected `algo.save_interval`;
+- progress files consumed by the soak monitor.
+
+`run_summary.json` must carry metric schema `1` and an embedded runtime-manifest
+schema `1`. The manifest records effective runtime limits, inference and tensor
+memory budgets when a budget decision is made, the collector/backend device,
+inference-flight state, replay-ingress state, and shutdown diagnostics. See
+{doc}`3-logging` for the field and compatibility contract.
+
+The soak JSON is self-contained monitor evidence with artifact schema `0.3.0`.
+A current-head pass requires:
+
+| Evidence | Passing value |
+| --- | --- |
+| Monitor status | `passed` |
+| Trainer return code | `0` |
+| Run status | `completed` |
+| Failure reason and classification | both `null` |
+| Final inference queue depth and publication lag | both `0` |
+| Replay final occupancy | `0` |
+| Replay dropped batches and early returns | both `0` |
+| Replay release sequence | equal to published sequence |
+| Published sequence | `total_env_steps / ingress_slot_rows` |
+| Shutdown classification | `normal_completion` |
+| Shutdown cleanup errors | `[]` |
+| Post-shutdown residual processes | `[]` |
+
+`resource_summary` also reports peak process count, RSS, GPU memory, eventfds,
+shared-memory FDs, replay high-water occupancy, inference event count, and
+maximum in-flight requests. Peaks are expected; look for unbounded or sustained
+growth across post-startup samples, not merely a nonzero maximum.
+
+The artifact `context` records the UniLab commit and dirty state, GPU
+UUID/name/driver, Python/Torch metadata, and `CUDA_VISIBLE_DEVICES`. Preserve
+the JSON and run directory together. The repository intentionally does not
+track these machine-generated artifacts.
+
+Extract the last 20 schema-v1 TensorBoard windows after the run:
+
+```bash
+uv run --no-sync scripts/benchmark/rl/extract_offpolicy_metrics.py \
+  /absolute/path/to/g1-flashsac-mjwarp-run \
+  --last 20 \
+  --json
+```
+
+The helper fails closed on a missing or unsupported metric schema. Historical
+unversioned event files require the explicit `--legacy-unversioned` mode and
+are never an implicit fallback.
+
+## Historical Soak Evidence
+
+The M11 lifecycle review reached a passing v6 long soak on a local RTX 5090:
+65,000 iterations, 66,660,352 environment steps, 1987.55 seconds, no dropped
+replay batch, final replay occupancy zero, final inference queue/lag zero, a
+normal shutdown, and no residual process. Resource sampling showed bounded
+process, RSS, GPU-memory, eventfd, and shared-memory-FD behavior.
+
+That v6 artifact is historical evidence, not a current-head benchmark claim. It
+used soak artifact schema `0.2.0` and older UniLab, unilab-rl, and UniSim
+commits before current schema-v1 consumer enforcement. Reproduce from the exact
+checked-out head with the command above when current-head evidence is required.
+
+## Optional Phase-Local Probe
+
+`g1_flashsac_backend.py` is a diagnostic probe, not the canonical end-to-end
+benchmark. It deliberately excludes inference IPC, replay ingestion, learner
+updates, and production Manager-Based dispatch.
+
+```bash
+uv run --no-sync scripts/benchmark/torch_env/g1_flashsac_backend.py \
+  --backends mjwarp,mujoco \
+  --num-envs 2048 \
+  --warmup 20 \
+  --iters 100 \
+  --acceptance \
+  --output scripts/benchmark/outputs/g1-flashsac-backend/current-host.json
+```
+
+Acceptance mode requires available `nvidia-smi` evidence and an idle GPU before
+and after each isolated backend process. It also rejects Isaac worker profiler
+environment variables.
+
+The JSON schema is `0.3.0`. Use
+`throughput_env_control_steps_per_s` and synchronized `phases.iteration_ms` for
+cross-backend comparison. Individual phase boundaries may be stream ordered, so
+do not add phases into a new wall-clock total or treat one backend's
+`update_state_ms` as directly comparable to another backend family's phase.
+MuJoCo results also include the packed H2D/D2H inventory and transfer counters.
+
+## Troubleshooting
+
+| Symptom | First action |
+| --- | --- |
+| MJWarp import fails | Re-run the explicit `uv sync --extra mujoco --extra mjwarp --extra uni_rl`; `make setup` alone is insufficient for this profile. |
+| CUDA unavailable | Check the driver/container runtime and the Torch sanity command; do not change the task owner to force a fallback. |
+| Wrong physical GPU | Set `CUDA_VISIBLE_DEVICES` in the shell that launches `uv run`; backend ordinal `0` is relative to that mask. |
+| CUDA IPC or worker mismatch | Keep learner, collector, and payload on the same physical GPU. External Isaac workers inherit visibility but not host Python paths. |
+| Asset startup failure | Pre-fetch G1 assets, verify the motion NPZ exists, and remove `HF_HUB_OFFLINE=1` until first download completes. |
+| Startup timeout | Inspect `soak-console.log` and the first monitor sample; distinguish asset download, dependency installation, backend startup, and process failure. |
+| Stale progress | Open the latest run files and console log; no file change for `stale-progress-seconds` intentionally fails rather than waiting forever. |
+| Replay backpressure or drops | Read occupancy, high-water, waits, early returns, and dropped batches; do not shrink ingress slot rows without a workload benchmark. |
+| Nonzero final replay occupancy | Keep the artifact and console log; this is a lifecycle/finalize failure even if the trainer otherwise appeared to finish. |
+| Eventfd/shared-memory growth | Compare post-startup samples; bounded peaks are normal, sustained growth is a leak signal. |
+| Abnormal shutdown | Use `failure_classification` and `shutdown.classification` to identify learner, collector, backend worker, stale tick, cancellation, or unknown failure. |
+| Residual process | Keep the artifact, which records known PIDs and start ticks; do not reuse the GPU until those processes are explained and gone. |
+| Unsupported capability | Read the exact fail-closed error and generated support matrix; there is no hidden NumPy or host-bridge fallback for a CUDA-only lifecycle. |
+
+For full schema definitions and metric interpretation, see {doc}`3-logging` and
+{doc}`4-tensor_runtime`.
+
+## Breaking Tensor Runtime Migration
+
+`env.tensor_runtime` and `env.tensor_runtime_device` were removed without a
+compatibility alias. The Manager runtime is tensor-native by construction:
+placement is derived from the backend's declared data plane and rank process
+device. Owner YAMLs and runner overrides that previously set either field must
+delete those keys. Unsupported tensor lifecycles fail during binding rather
+than falling back to a NumPy wire.

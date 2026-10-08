@@ -9,7 +9,7 @@ algorithm entrypoints must preserve.
 :::{grid-item-card} Env contract
 :link: 1-env_contract
 :link-type: doc
-`NpEnvState`, reset/step shape, observation groups, and wrappers.
+`TorchEnvState`, reset/step shape, observation groups, and wrappers.
 :::
 
 :::{grid-item-card} Backend contract

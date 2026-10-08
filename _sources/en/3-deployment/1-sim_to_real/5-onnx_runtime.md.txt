@@ -18,7 +18,7 @@ graph when that path implements ONNX Runtime checking.
 ```bash
 uv run eval --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
 
-uv run eval --algo appo --task g1_motion_tracking --sim motrix --load-run -1
+uv run eval --algo appo --task g1_motion_tracking --sim mujoco --load-run -1
 
 uv run eval --algo sac --task g1_walk_flat --sim mujoco --load-run -1
 ```

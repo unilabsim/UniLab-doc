@@ -14,7 +14,7 @@
 
 - 使用对外的 CLI flag 切换 backend，例如
   `uv run train --algo ppo --task go2_joystick_flat --sim mujoco` 或
-  `uv run train --algo ppo --task go2_joystick_flat --sim motrix`。
+  `uv run train --algo ppo --task go2_joystick_flat --sim mujoco`。
 - 对于 off-policy 入口，`--algo <algo>` 选择按算法划分的配置树；owner YAML
   路径为 `src/unilab/conf/<algo>/task/<task>/<backend>.yaml`。
 - `training.sim_backend` 是所选 owner YAML 内部的身份字段，而不是一个独立的

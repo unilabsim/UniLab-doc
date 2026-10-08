@@ -169,8 +169,66 @@ Retired without a replacement tag: `perf/effective_samples_per_sec` /
 timing and the run configuration), `perf/collector_cycle_ms`, `perf/learner_*_pct`,
 `timing/learner_other_ms`, and `perf/learner_pipeline_ms` — all of these are
 derivable from the canonical fields above or are terminal-only derived values. The
-extraction helper `scripts/benchmark/rl/extract_offpolicy_metrics.py` accepts both
-schemas, preferring the canonical tag and scaling units to match.
+extraction helper `scripts/benchmark/rl/extract_offpolicy_metrics.py` reads schema-v1
+canonical tags by default and fails closed on a missing or unsupported
+`metric_schema_version`.
+
+### Schema versions and compatibility
+
+Metric metadata and runtime manifests are separate version namespaces. The producer
+source of truth is `uni_rl.logging.metric_schema` and
+`uni_rl.logging.runtime_manifest_schema`:
+
+| Namespace | Current value | Storage |
+| --- | ---: | --- |
+| TensorBoard / W&B metric schema | `metric_schema_version = 1` | top level of `run_summary.json` |
+| Runtime process/device/IPC manifest | `runtime_manifest.schema_version = 1` | embedded runtime manifest |
+| Long-soak monitor artifact | `schema_version = "0.3.0"` | soak JSON artifact |
+
+The three values are intentionally independent: bumping the soak monitor artifact does
+not change metric semantics, and a metric-schema change does not invalidate every
+runtime-manifest field. The current soak monitor accepts only metric schema 1,
+runtime-manifest schema 1, and soak artifact `0.3.0`.
+
+Runtime-manifest v1 freezes the public configuration and lifecycle fields already
+consumed by UniLab: inference ring capacity, collector metric interval,
+`collector_backend_device`, inference-flight counters, replay-ingress counters/timing,
+and the CUDA inference IPC event count when that budget exists. `collector_backend_device`
+is required for completed manifests and is `null` only when the backend has no
+accelerator binding. `inference_flight.max_*` and
+`replay_ingress.high_water_occupancy` have distinct window semantics: inference maxima
+are since the previous successfully published collector report, while replay-ingress
+high-water occupancy is cumulative for the run. All fields not listed as stable,
+including `runtime_manifest.shutdown`, are experimental diagnostics in v1.
+
+Soak artifact `0.3.0` adds two top-level abnormal-shutdown fields. On a passed
+run, `failure_classification` is `null` and `shutdown.classification` must be
+`normal_completion` with non-empty string `owner` and `phase` fields and no
+cleanup errors. On a failed run, a valid producer classification
+(`learner_failure`, `collector_failure`, `backend_worker_failure`,
+`timeout/stale_tick`, `external_cancellation`, or `unknown_failure`) takes
+precedence because it identifies the initiating owner; otherwise UniLab records
+the monitor classification (for example `timeout/stale_tick` or
+`resource_leak`). The top-level `shutdown` value is the raw host-only
+`runtime_manifest.shutdown` mapping when available; it is `null` when teardown
+could not produce diagnostics. Producer shutdown snapshots are best-effort:
+they are appended to, and never replace, the original soak failure reason. The
+runtime-manifest v1 `shutdown` mapping remains opaque so that this soak
+artifact contract does not make producer-owned diagnostic extensions stable.
+
+Within a major schema version, producers may add optional fields with schema, test, and
+documentation updates. A stable field cannot be renamed, removed, retyped, or changed
+in unit or null semantics without incrementing the schema version. Consumers reject
+missing and unsupported versions rather than guessing.
+
+Historical event files are immutable. The only approved compatibility path is
+`extract_offpolicy_metrics.py --legacy-unversioned`. It accepts only recognized
+pre-schema legacy tags, requires that no canonical tag or schema stamp be present,
+and is not a fallback for future unversioned logs. The executable DP scaling
+benchmark generates and overwrites current runs, so it consumes schema-v1
+canonical tags only and has no historical mode. Canonical tags, mixed
+canonical/legacy files, or an unsupported metric schema version fail closed in
+default metric readers.
 
 ### Collector Timeline
 

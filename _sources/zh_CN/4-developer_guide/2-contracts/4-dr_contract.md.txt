@@ -1,7 +1,7 @@
 # 域随机化 Contract
 
 Manager-Based event term 是 UniLab 唯一的 DR lifecycle。任务 provider 协议已移除，
-`NpEnv` 不再携带 DR manager。
+环境不再携带 DR manager。
 
 ## 生命周期
 

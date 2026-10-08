@@ -21,7 +21,7 @@ Bootstrap imports, env registration, and runtime construction.
 :::{grid-item-card} Env contract
 :link: 2-contracts/1-env_contract
 :link-type: doc
-`NpEnvState`, reset/step shape, observation groups, and wrapper expectations.
+`TorchEnvState`, reset/step shape, observation groups, and wrapper expectations.
 :::
 
 :::{grid-item-card} Backend contract
@@ -40,6 +40,12 @@ Hydra owner YAML identity and backend-selection rules.
 :link: 2-contracts/4-dr_contract
 :link-type: doc
 Manager-Based construction, reset, interval, and backend capability boundaries.
+:::
+
+:::{grid-item-card} Tensor runtime productionization
+:link: 8-tensor_runtime_production
+:link-type: doc
+Contract ownership, schema policy, benchmark acceptance, and release transition.
 :::
 
 ::::
@@ -93,4 +99,5 @@ Extend terrain generation while keeping asset access on cold paths.
 5-contributing_workflow
 6-agent_quick_reference
 7-motion_assets
+8-tensor_runtime_production
 ```

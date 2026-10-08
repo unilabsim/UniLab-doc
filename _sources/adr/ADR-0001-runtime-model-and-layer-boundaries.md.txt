@@ -30,7 +30,7 @@ UniLab 同时支持多种算法入口和两种仿真后端。没有统一 runtim
 ## Stable Contracts
 
 - `registry.make(...)` 是 task 构造入口 contract。
-- `NpEnvState.obs` 必须是 `dict`，`reset()` 返回 `(obs_dict, info_dict)`。
+- `TorchEnvState.obs` 必须是 `dict`，`reset()` 返回 `(obs_dict, info_dict)`。
 - `SimBackend` 是 backend 抽象边界；算法与脚本不应依赖后端私有实现。
 - 异步路径统一复用 `AsyncRunner` 生命周期与 shared resource cleanup。
 - PPO 的 `algo.num_envs` 是 per-rank 数量；全局每轮新样本数为
@@ -59,7 +59,7 @@ UniLab 同时支持多种算法入口和两种仿真后端。没有统一 runtim
 
 - 架构基线文档: `docs/sphinx/source/zh_CN/4-developer_guide/0-index.md`
 - Backend 抽象: `unisim.backend.base`
-- Env contract: `src/unilab/base/np_env.py`
+- Env contract: `src/unilab/base/torch_env.py`
 - Registry 入口: `src/unilab/base/registry.py`
 - Async runner: `src/unilab/ipc/async_runner.py`
 - PPO distributed adapter: `src/unilab/ipc/dp_launcher.py`,

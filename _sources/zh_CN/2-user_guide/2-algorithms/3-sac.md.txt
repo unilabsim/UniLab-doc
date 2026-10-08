@@ -43,25 +43,24 @@ uv run train --algo sac --task g1_walk_flat --sim mujoco \
 
 ## 多卡数据并行
 
-`training.devices` 打开单节点多卡数据并行（data parallel）：rank i 在
-`cuda:devices[i]` 上各跑一套独立的 learner+collector，rank 0 负责 spawn 其余
+`CUDA_VISIBLE_DEVICES` 是唯一 GPU 拓扑来源：父进程列表中每个 opaque 条目对应一个
+rank，rank 内 learner 与 collector 共同使用本地 `cuda:0`。rank 0 负责 spawn 其余
 rank 子进程。启动时 rank 0 一次性广播 actor、critic、target critic 和温度状态；稳态
 训练不再平均参数，而是在每个实际 optimizer step 前对对应的 actor、critic 或温度梯度
 执行阻塞式 flat-gradient `all_reduce(SUM) / world_size`。各 rank 不交换 replay 数据，
 在相同初值、平均梯度和更新顺序下各自维护一致的 optimizer 状态。
 
-每个 rank 当前只创建一个 collector。使用 mjwarp 时，rank i 会在 probe env 和 collector
-正式 env materialization 之前，把 Warp 的进程默认/当前 device 显式绑定到该 rank 的
-learner device `cuda:devices[i]`；因此 collector 不依赖 Warp 新进程默认的 `cuda:0`，也不
-会跨 rank 集中到同一张卡。runtime manifest 的 `collector_backend_device` 记录本 rank 的
+每个 rank 当前只创建一个 collector。每个 rank 都是单卡可见，因此 probe env、
+collector 正式 env、replay、inference ring 与 learner 都落在同一张物理卡上。runtime manifest 的 `collector_backend_device` 记录本 rank 的
 实际绑定。
 
-off-policy 只公开 `training.devices` 这一个设备字段：`null` 或 `[]` 自动选择单个
-learner device，`[0]` 显式选择 `cuda:0`，两个以上索引才启动多卡拓扑。
+off-policy 不再有设备字段，GPU 由进程可见性决定。单 rank 只需导出单卡可见；
+多 rank 由父进程导出与 rank 数相同的 opaque 条目：
 
 ```bash
+export CUDA_VISIBLE_DEVICES=<gpu-a>,<gpu-b>
 uv run train --algo sac --task g1_walk_flat --sim mujoco \
-  training.devices=[0,1]
+  training.no_play=true
 ```
 
 rank 0 独占终端与 TensorBoard/W&B logger；其他 learner 不刷新终端，也不创建独立

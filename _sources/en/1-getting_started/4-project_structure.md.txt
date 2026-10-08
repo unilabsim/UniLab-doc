@@ -33,7 +33,7 @@ Task owner YAMLs are the backend identity. Examples:
 
 ```bash
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco
-uv run train --algo ppo --task go2_joystick_flat --sim motrix
+uv run train --algo ppo --task go2_joystick_flat --sim mujoco
 uv run train --algo sac --task g1_walk_flat --sim mujoco
 ```
 

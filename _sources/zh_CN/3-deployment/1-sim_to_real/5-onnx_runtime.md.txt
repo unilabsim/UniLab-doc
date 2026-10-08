@@ -17,7 +17,7 @@ owner；回放代码加载检查点、导出 `policy.onnx`，并在该路径实�
 ```bash
 uv run eval --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
 
-uv run eval --algo appo --task g1_motion_tracking --sim motrix --load-run -1
+uv run eval --algo appo --task g1_motion_tracking --sim mujoco --load-run -1
 
 uv run eval --algo sac --task g1_walk_flat --sim mujoco --load-run -1
 ```

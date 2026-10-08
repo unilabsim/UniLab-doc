@@ -81,7 +81,7 @@ After training, replay the checkpoint against the same backend owner YAML while
 you sweep DR ranges in config:
 
 ```bash
-uv run eval --algo ppo --task go2_joystick_flat --sim motrix --load-run -1
+uv run eval --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
 ```
 
 Log reward components and task success metrics for each sweep point. A sharp

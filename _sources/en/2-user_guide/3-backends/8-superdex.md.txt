@@ -1,10 +1,15 @@
 # SuperDex Backend
 
+> SuperDex participates in the tensor-only Manager runtime as a packed CPU
+> `HOST_BRIDGE` backend. Its Go2 and FR3 owners remain **Configured** research
+> profiles, not full-training or cross-platform production claims.
+
+
 SuperDex is an optional CPU physics adapter owned by `unisim.backend.superdex`.
 The initial UniLab owner is the fixed-base `FR3JointTarget` task:
 `src/unilab/conf/ppo/task/fr3_joint_target/superdex.yaml`. It uses seven torque
-actions, 21 observation values, joint-state resets and the standard NumPy
-manager runtime. Its support level is **Configured**; bounded rollout or short
+actions, 21 observation values, selected tensor joint-state resets, and
+`TorchEnv`. Its support level is **Configured**; bounded rollout or short
 training checks do not establish full-training performance or platform support.
 The implementation is tracked in [#1534](https://github.com/Motphys/UniLab/issues/1534)
 under [roadmap #1533](https://github.com/Motphys/UniLab/issues/1533).

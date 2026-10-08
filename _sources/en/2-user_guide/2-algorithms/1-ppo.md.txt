@@ -13,7 +13,7 @@ trains `rsl_rl.algorithms:PPO`. The config follows the native RSL-RL v5 schema â
 
 ```bash
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco
-uv run train --algo ppo --task go2_joystick_flat --sim motrix training.no_play=true
+uv run train --algo ppo --task go2_joystick_flat --sim mujoco training.no_play=true
 ```
 
 ## Common Overrides
@@ -36,30 +36,26 @@ is `rsl_rl_ppo`.
 
 ## Single-node multi-GPU training
 
-`training.devices` enables RSL-RL's synchronous data-parallel PPO path:
+`CUDA_VISIBLE_DEVICES` (one entry per rank) enables RSL-RL's synchronous data-parallel PPO path:
 
 ```bash
+export CUDA_VISIBLE_DEVICES=<gpu-a>,<gpu-b>
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco \
-  'training.devices=[0,1]' \
   training.no_play=true
 
 uv run train --algo ppo --task g1_motion_tracking --sim mujoco \
-  'training.devices=[0,1]' \
   training.no_play=true
 ```
 
-`null` or `[]` keeps automatic single-device selection, `[d]` selects one
-CUDA device, and two or more entries launch one local process per listed
-device. Do not set `training.device` and `training.devices` together. The
-configured order is preserved, including when the parent already has
-`CUDA_VISIBLE_DEVICES` set.
+`CUDA_VISIBLE_DEVICES` is the sole GPU topology source. Parent entries may be
+physical ordinals, UUIDs, or MIG tokens; torchrun remaps each worker to one
+visible GPU, so every rank uses its local `cuda:0`. `training.device` remains
+only an explicit single-device override and cannot replace rank-local
+visibility.
 
 For the IsaacGym, IsaacSim, and Genesis owners, the same topology is also
-applied to the simulator environment. Torchrun workers receive the local
-index inside their remapped `CUDA_VISIBLE_DEVICES` list (for example, host
-device 5 is sent as `device_id=1` when the worker sees `[4,5]`); off-policy
-workers keep the parent process's visible index namespace. Genesis selects
-its process-wide session before `gs.init`.
+applied to the simulator environment. Genesis selects its process-wide session
+before `gs.init`.
 
 `algo.num_envs` is a **per-rank** count, not a global budget. For `W` ranks,
 `N` configured envs, and rollout length `T`:

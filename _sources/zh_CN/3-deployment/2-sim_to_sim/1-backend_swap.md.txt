@@ -28,11 +28,11 @@ UniLab **不**支持通过透传式（passthrough）Hydra override 来选择后�
 
 ```bash
 # wrong — backend is not an override
-uv run train --algo ppo --task go2_joystick_flat --sim motrix training.sim_backend=mujoco
+uv run train --algo ppo --task go2_joystick_flat --sim mujoco training.sim_backend=mujoco
 
 # right — choose the backend with --sim
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco
-uv run train --algo ppo --task go2_joystick_flat --sim motrix
+uv run train --algo ppo --task go2_joystick_flat --sim mujoco
 ```
 
 CLI 会把 `--algo`、`--task` 和 `--sim` 解析为一个 owner YAML，例如

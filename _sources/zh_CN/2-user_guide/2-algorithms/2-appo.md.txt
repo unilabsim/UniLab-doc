@@ -9,7 +9,7 @@ APPO 是 UniLab 的异步 PPO 路径。它使用 `src/unilab/scripts/train_appo.
 
 ```bash
 uv run train --algo appo --task go2_joystick_flat --sim mujoco
-uv run train --algo appo --task g1_motion_tracking --sim motrix training.no_play=true
+uv run train --algo appo --task g1_motion_tracking --sim mujoco training.no_play=true
 ```
 
 ## 常用 Override

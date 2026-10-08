@@ -1,19 +1,23 @@
 # Env 契约
 
-Env 契约由 `src/unilab/base/base.py` 与 `src/unilab/base/np_env.py` 在代码层
-拥有。观测语义记录在
-{doc}`/adr/ADR-0005-unified-obs-critic-env-and-ipc-contract`。
+Env 契约由 `src/unilab/base/base.py` 与 `src/unilab/base/torch_env.py`
+在代码层拥有。观测语义
+记录在 {doc}`/adr/ADR-0005-unified-obs-critic-env-and-ipc-contract`，并被
+{doc}`/adr/ADR-0011-torch-only-manager-based-runtime` 取代。
 
 ## 必需形状
 
-- `NpEnvState.obs` 是 `dict[str, np.ndarray]`，而不是扁平的 tensor。
+- `TorchEnvState.obs` 是 `dict[str, torch.Tensor]`，而不是扁平的 tensor。
 - 必需的 actor 观测 key 是 `obs`。
 - 唯一可选的、仅供 critic 使用的观测 key 是 `critic`。
 - `obs_groups_spec` 将每个观测组名映射到其扁平维度。Wrapper 与 learner 利用该
   映射来确定 actor 与 critic 路径的尺寸。
-- `reset(env_indices)` 为被 reset 的 env 行返回 `(obs_dict, info_dict)`。
-- 在 `NpEnv` 上调用 `step(actions)` 返回 `NpEnvState`；外部适配器可以在适配边界
-  处将该状态映射为第三方 trainer 的 API。
+- `reset(env_indices)` 接受一维 Torch integer tensor 或 `None`，并为被 reset
+  的 env 行返回 `(obs_dict, info_dict)`。
+- 在 `TorchEnv` 上调用 `step(actions)` 接受 contiguous float32 Torch tensor，
+  并返回 `TorchEnvState`；外部适配器只能在适配边界做 trainer device transfer。
+- 不存在 legacy 环境 fallback。不支持的 device、carrier 和 backend tensor
+  lifecycle 一律 fail closed。
 
 ## Owner 职责
 
@@ -26,8 +30,9 @@ Env 契约由 `src/unilab/base/base.py` 与 `src/unilab/base/np_env.py` 在代�
 ## 仓库中的证据
 
 - Env base 契约：`src/unilab/base/base.py`
-- Numpy env 状态：`src/unilab/base/np_env.py`
+- Torch env 生命周期：`src/unilab/base/torch_env.py`
 - RSL-RL 适配边界：`src/unilab/rl/vec_env.py`
 - Final observation helper：`src/unilab/base/final_observation.py`
-- 测试：`tests/base/test_np_env.py`、`tests/utils/test_final_observation.py`、
-  `tests/ipc/`
+- 测试：`tests/base/test_torch_env.py`、
+  `tests/envs/test_manager_based_rl_env.py`、
+  `tests/utils/test_final_observation.py`、`tests/ipc/`

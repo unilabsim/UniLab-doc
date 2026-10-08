@@ -16,7 +16,7 @@ reproduce.
 
 ```bash
 # Replay the policy headlessly and produce a video.
-uv run eval --algo ppo --task g1_motion_tracking --sim motrix --load-run -1 \
+uv run eval --algo ppo --task g1_motion_tracking --sim mujoco --load-run -1 \
   --render-mode record
 ```
 
@@ -34,7 +34,7 @@ Export `policy.onnx` through the training playback path, using the same task
 owner that produced the checkpoint:
 
 ```bash
-uv run eval --algo ppo --task g1_motion_tracking --sim motrix --load-run -1
+uv run eval --algo ppo --task g1_motion_tracking --sim mujoco --load-run -1
 ```
 
 Every field your hardware loop needs is declared in that owner's YAML. Widths

@@ -2,10 +2,10 @@
 
 ```bash
 # 最近一次运行
-uv run eval --algo ppo --task go2_joystick_flat --sim motrix --load-run -1
+uv run eval --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
 
 # 无头视频导出
-uv run eval --algo ppo --task go2_joystick_flat --sim motrix \
+uv run eval --algo ppo --task go2_joystick_flat --sim mujoco \
     --load-run -1 --render-mode record
 
 # Off-policy 回放可以跳过 ONNX 导出，但仍然录制 MP4
@@ -59,7 +59,7 @@ uv run src/unilab/scripts/play_interactive.py --algo ppo --task go2_joystick_fla
 uv run src/unilab/scripts/play_interactive.py --algo ppo --task go2_joystick_flat --sim mujoco \
     algo.load_run=-1 interactive.action_mode=policy
 
-uv run src/unilab/scripts/play_interactive.py --algo flashsac --task g1_walk_flat --sim motrix \
+uv run src/unilab/scripts/play_interactive.py --algo flashsac --task g1_walk_flat --sim mujoco \
     algo.load_run=-1 interactive.action_mode=policy
 
 uv run src/unilab/scripts/play_interactive.py --algo ppo --task go2_joystick_flat --sim mujoco \

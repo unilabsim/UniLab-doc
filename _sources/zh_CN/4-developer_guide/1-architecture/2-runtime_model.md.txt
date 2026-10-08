@@ -10,10 +10,10 @@
 ### 同步 PPO 路径
 
 `src/unilab/scripts/train_rsl_rl.py` 会 compose Hydra config、
-调用 registry bootstrap、通过 `registry.make(...)` 构造 env，并在同一进程内运行
-learner。默认配置保持单进程；`training.devices` 指定多张卡时，父进程通过 PyTorch
-elastic launcher 启动本机 worker，worker 再进入同一脚本完成上述构造。RSL-RL 路径
-通过 `src/unilab/rl/` 适配 `NpEnv`。
+调用 registry bootstrap、通过 `registry.make(...)` 构造严格 `TorchEnv`，并在同一
+进程内运行 learner。默认配置保持单进程；`CUDA_VISIBLE_DEVICES` 指定多张卡时，父进程
+通过 PyTorch elastic launcher 启动本机 worker，worker 再进入同一脚本完成上述构造。
+RSL-RL 路径通过 `src/unilab/rl/` 适配这个 tensor boundary。
 
 多卡时每个 rank 按配置创建完整的 `algo.num_envs`、policy copy 与 rollout storage，
 数据和 GAE 不跨 rank 交换。RSL-RL 负责 startup model broadcast、adaptive-KL 标量
@@ -23,10 +23,10 @@ checkpoint；normalizer buffer、curriculum 和 episode 统计保持 rank-local�
 
 ### 异步 APPO 与 off-policy 路径
 
-APPO 与 off-policy runner 采用 CPU 仿真到 learner 的拆分：
+APPO 与 off-policy runner 采用环境到 learner 的拆分：
 
 ```text
-CPU physics env loop -> shared IPC buffer -> learner
+Environment tensor loop -> shared IPC carrier -> learner
         ^                                      |
         +------------- SharedWeightSync -------+
 ```
@@ -40,8 +40,10 @@ CPU physics env loop -> shared IPC buffer -> learner
 
 ## 边界规则
 
-- env 保持 numpy/向量化形态，并返回 `NpEnvState`。
-- GPU tensor 与 optimizer 状态属于 learner 代码，而非 env 代码。
+- Manager-Based runtime 返回 `TorchEnvState`；CPU-authoritative 物理后端只在
+  声明的 host-bridge H2D/D2H 边界交换，CUDA-native 后端保持 device-resident。
+- optimizer state、rollout storage 等 trainer-only tensor 属于 learner 代码，
+  而非 env 代码。
 - Collector/learner 协议必须复用现有的 IPC 原语，而不是在 scripts 中另起临时的
   并行协议。
 - PPO 多卡必须复用 RSL-RL 的 distributed contract；`algo.num_envs` 是 per-rank

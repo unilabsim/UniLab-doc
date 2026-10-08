@@ -15,7 +15,7 @@ contract is recorded in
 
 - Use public CLI flags to switch backend, for example
   `uv run train --algo ppo --task go2_joystick_flat --sim mujoco` or
-  `uv run train --algo ppo --task go2_joystick_flat --sim motrix`.
+  `uv run train --algo ppo --task go2_joystick_flat --sim mujoco`.
 - For off-policy entrypoints, `--algo <algo>` selects the per-algorithm config
   tree; the owner YAML path is `src/unilab/conf/<algo>/task/<task>/<backend>.yaml`.
 - `training.sim_backend` is an identity field inside the selected owner YAML. It

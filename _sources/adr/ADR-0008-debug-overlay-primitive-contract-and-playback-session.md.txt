@@ -24,7 +24,7 @@ record 管线各自维护了一套互不兼容的绘制代码。
 （`from_kwargs` 归一化、未知键 fail-closed）以及
 `BackendPlayCapabilities.supports_debug_overlay`。UniLab 作为下游需要：
 
-1. 把 env 契约（`ABEnv`/`NpEnv`）和所有调用点迁移到新契约；
+1. 把 env 契约（`ABEnv`/`TorchEnv`）和所有调用点迁移到新契约；
 2. 收敛交互 viewer 的硬编码 `user_scn` 叠加层到同一原语契约；
 3. 把 record 管线的“快照缓存 + 事后渲染”暴露为可嵌入组件，供自定义 eval
    循环（自写 trial 协议）复用。
@@ -130,7 +130,7 @@ record 管线各自维护了一套互不兼容的绘制代码。
 
 ## Evidence In Repo
 
-- env 契约: `src/unilab/base/base.py`, `src/unilab/base/np_env.py`
+- env 契约: `src/unilab/base/base.py`, `src/unilab/base/torch_env.py`
 - 任务 overlay 发现: `src/unilab/envs/manager_based_rl_env.py`（`get_playback_debug_overlays`）
 - 交互注入器: `src/unilab/visualization/debug_primitives.py`
 - 可嵌入 session: `src/unilab/visualization/playback_session.py`
@@ -138,7 +138,7 @@ record 管线各自维护了一套互不兼容的绘制代码。
 - 交互 viewer 迁移: `src/unilab/scripts/play_interactive.py`
 - 训练入口迁移: `src/unilab/scripts/train_rsl_rl.py`, `src/unilab/scripts/train_appo.py`, `src/unilab/scripts/train_offpolicy.py`
 - 上游契约: `unisim.backend.base`（`DebugPrimitive`, `CameraCfg`, `DebugOverlayGetter`, `validate_debug_overlays`, `BackendPlayCapabilities.supports_debug_overlay` / `supports_interactive_debug_overlay`）
-- 测试: `tests/visualization/test_debug_primitives.py`, `tests/visualization/test_playback_session.py`, `tests/base/test_np_env_playback_contract.py`, `tests/envs/test_manager_based_rl_env.py`（overlay 聚合）
+- 测试: `tests/visualization/test_debug_primitives.py`, `tests/visualization/test_playback_session.py`, `tests/base/test_torch_env.py`, `tests/envs/test_manager_based_rl_env.py`（overlay 聚合）
 
 ## Related Documents
 

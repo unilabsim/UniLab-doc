@@ -8,7 +8,7 @@
 :::{grid-item-card} Env 契约
 :link: 1-env_contract
 :link-type: doc
-`NpEnvState`、reset/step 形状、观测组与 wrapper。
+`TorchEnvState`、reset/step 形状、观测组与 wrapper。
 :::
 
 :::{grid-item-card} Backend 契约

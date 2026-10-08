@@ -74,3 +74,20 @@ child branch 从最新集成分支创建，使用常规类型前缀，例如
 `uv build`，并确认该 commit 存在成功的 `ci.yml`。推送与项目版本一致的 annotated
 `v<version>` tag。release workflow 构建并验证发行包，再通过 PyPI trusted publishing 发布
 带 tag 的构建。发布失败后若改动代码，必须使用新版本和新 tag；不得覆盖已发布版本。
+
+### Tensor-runtime 已发布依赖切换
+
+替换已发布依赖版本前，以下条件必须全部成立：
+
+1. M11 的长时 soak、泄漏、异常退出、schema、平台 fail-closed 与文档验收项已完成。
+2. 所需的公开 `unisim-core` tensor lifecycle contract 和 adapter 已进入某个已发布
+   `unisim-core` 版本，并且该包的 standalone gate 通过。
+3. 所需的 CUDA inference/replay runner 行为已进入某个已发布 `unilab-rl` 版本，
+   并且其完整仓库 gate 通过。
+4. 所需的 MJBatch executor API 已进入 UniSim adapter contract 支持的已发布
+   `mjbatch-uni` 版本。
+5. 默认与 ROCm lock profile 只解析 registry 包。
+6. 焦点 CPU CI 和手动 gate 的单 GPU CUDA profile 在确切切换 commit 上通过。
+
+发布本身不属于 M11。在 maintainer 另行批准 release 决策前，该 issue 仍保持
+no-PyPI checklist。

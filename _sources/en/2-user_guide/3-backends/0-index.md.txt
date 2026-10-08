@@ -1,79 +1,74 @@
 # Simulation Backends
 
-UniLab exposes backend names through registry/config paths, including `mujoco`,
-`motrix`, `mjwarp`, `drake`, `isaacgym`, `genesis`, `isaacsim`, `newton`, and `superdex`
-where an owner is registered.
-User commands select them with `--sim`, which routes to the matching task owner
+The tensor-only Manager runtime currently exposes `mujoco`, `mjwarp`, `genesis`,
+`newton`, `motrix`, `superdex`, and the scoped Drake owner described below.
+User commands select one with `--sim`, which routes to the matching task owner
 YAML; do not switch a run by overriding `training.sim_backend` alone.
+
+The `isaacgym` and `isaacsim` adapters remain temporarily shelved
+by `unisim-core` during issue #1811. Their historical pages are retained for
+adapter context only and are not production support claims. The train/eval CLI
+rejects these names until new capability, parity, and support-matrix evidence is
+provided.
 
 ## Runtime Prerequisites
 
-- Install Motrix support with `uv sync --extra motrix`.
-- IsaacGym and IsaacSim use dedicated external worker runtimes; see their
-  backend pages for installation and runtime requirements.
-- Any run using `--sim mujoco`, MuJoCo playback, or MuJoCo-only debugging tool
-  still requires a working MuJoCo runtime.
-- Drake uses the external `drake-uni` package plus a locally built C++ batch
-  extension; see {doc}`6-drake` before selecting `--sim drake`.
-- Newton uses the `newton` extra (`uv sync --extra newton`), which shares the
-  MuJoCo 3.11 / MuJoCo-Warp 3.11 / Warp 1.16 line with the `mujoco` / `mjwarp`
-  extras and can be combined with them in one environment; see
-  {doc}`7-newton` before selecting `--sim newton`.
-- On macOS, the package CLI routes Motrix interactive playback through
-  `mxpython` when needed. Direct script calls that open the native Motrix
-  renderer should use `uv run mxpython`.
+- Any run using `--sim mujoco`, MuJoCo playback, or a MuJoCo-only debugging
+  tool requires the `mujoco` extra and its pinned `mjbatch` runtime.
+- MJWarp requires the `mjwarp` extra, NVIDIA CUDA, and on multi-GPU hosts an
+  explicit process-device topology.
+- Genesis requires the `genesis` extra and the validated Linux x86_64 GPU path.
+- Newton requires the `newton` extra and an NVIDIA CUDA device; the current
+  tensor-native support scope is SAC `g1_walk_flat` and FlashSAC
+  `g1_motion_tracking`.
+- Motrix requires the `motrix` extra and provides a CPU-authoritative packed
+  HOST_BRIDGE; the current canonical support scope is SAC `g1_walk_flat` and
+  FlashSAC `g1_motion_tracking`.
+- SuperDex requires the `superdex` extra on CPython 3.12/3.13 Linux x86_64 and
+  provides a CPU-authoritative packed HOST_BRIDGE; the current scope is the
+  configured Go2 and FR3 research owners.
+- Drake requires the locally built DrakeUni batch extension. Its scoped PPO
+  `go2_joystick_flat` owner uses CPU physics and the packed HOST_BRIDGE
+  lifecycle; floating-root and reset-randomization events remain disabled until
+  the backend contract supports them.
 
 ## OS and GPU Support
 
 | Backend | Operating system | GPU |
 | --- | --- | --- |
 | MuJoCo | Linux / macOS / Windows | Not required: CPU physics; offline playback can render on CPU |
-| Motrix | Linux / Windows / Apple Silicon macOS | Not required: CPU physics (Rust runtime) |
-| MJWarp | Linux (validated path) | Required: NVIDIA CUDA with an explicit CUDA process device |
+| MJWarp | Linux (validated path) | Required: NVIDIA CUDA; a single-GPU host uses the current CUDA device by default |
 | Genesis | Linux x86_64 | Required: NVIDIA GPU and driver; only the `gs.gpu` channel is validated |
-| Newton | Linux | Required: NVIDIA GPU and CUDA driver; CPU devices are not a validated channel |
-| IsaacGym | Linux x86_64 | Required: NVIDIA GPU and driver; physics runs in a separate Python 3.8 worker |
-| IsaacSim | Linux x86_64 | Required: NVIDIA CUDA; native rendering depends on the RTX driver stack; separate Python 3.11 worker |
-| Drake | Linux x86_64 / Apple Silicon macOS (arm64) | Not required: CPU batch physics; Intel macOS has no official Drake binary |
+| Newton | Linux | Required: NVIDIA CUDA; the selected-reset lane is device-resident |
+| Motrix | Linux / macOS / Windows | CPU-authoritative physics; Torch CUDA buffers are optional |
+| SuperDex | Linux x86_64 (CPython 3.12/3.13) | CPU-authoritative physics; Torch CUDA buffers are optional |
+| Drake | Linux x86_64 / Apple Silicon macOS | CPU-authoritative physics; Torch CUDA buffers are optional |
 
-Backend device requirements are independent of the learner device: CPU-physics
-backends (MuJoCo / Motrix / Drake) can still train with the learner on CUDA,
-ROCm, MPS, or XPU; see the platform profiles in
-{doc}`../../1-getting_started/2-installation`.
+Backend device requirements are independent of the learner device: MuJoCo can
+still train with its learner on CUDA, ROCm, MPS, or XPU. See the platform
+profiles in {doc}`../../1-getting_started/2-installation`.
 
 ## Select A Backend
 
 UniLab selects the simulator through the task owner config. For normal usage,
 choose the task and backend with `--task` and `--sim`; off-policy commands keep
-the algorithm in `--algo`, not in `--task`. Do not switch a run by overriding
-`training.sim_backend` alone; that field is set by the owner YAML and identifies
-the composed backend.
+the algorithm in `--algo`, not in `--task`.
 
 ### Quick Choice
 
 | Need | Prefer |
 | --- | --- |
 | Default path or broadest owner coverage | MuJoCo |
-| Native interactive playback through the backend | Motrix |
 | MuJoCo-only tools such as `scripts/play_viser.py` | MuJoCo |
-| Task owner exists only under `src/unilab/conf/.../<task>/mujoco.yaml` | MuJoCo |
-| Task owner exists under `src/unilab/conf/.../<task>/motrix.yaml` and the support matrix marks the combination as tested or configured | Motrix |
+| Device-resident tensor owner | MJWarp, Genesis, or Newton, when the task support matrix marks the combination supported |
+| CPU-authoritative packed HOST_BRIDGE | Motrix; SuperDex or scoped Drake for their configured research owners |
 
 The support matrix is generated from registry, owner YAML, and tests; use it as
 the current evidence source: {doc}`../../5-reference/5-support_matrix`.
 
 ```bash
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco
-uv run train --algo ppo --task go2_joystick_flat --sim motrix
-uv run train --algo ppo --task g1_walk_flat --sim isaacsim
-```
-
-More combinations:
-
-```bash
-uv run train --algo ppo --task stewart_balance --sim drake \
-  algo.max_iterations=1 algo.num_envs=8 training.no_play=true
-uv run train --algo sac --task g1_walk_flat --sim mujoco
+uv run train --algo sac --task g1_motion_tracking --sim mjwarp
 ```
 
 Owner YAML locations:
@@ -86,18 +81,13 @@ The selected owner YAML sets `training.sim_backend` as an identity field.
 ## Playback Differences
 
 - `--render-mode auto` exports `play_video.mp4` on MuJoCo paths.
-- `--render-mode auto` opens Motrix native interactive rendering on Motrix
-  paths.
 - `--render-mode record` records without opening an interactive window.
 - `--render-mode viser` serves the rollout in a browser-based viser viewer on
-  backends with physics-state playback (MuJoCo, mjwarp, newton, drake,
-  superdex).
+  backends with physics-state playback (MuJoCo and MJWarp).
 - `--render-mode none` disables playback.
 
 ```bash
 uv run eval --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
-uv run eval --algo ppo --task go2_joystick_flat --sim motrix --load-run -1 \
-  --render-mode record
 ```
 
 ## Support Evidence
@@ -123,31 +113,18 @@ uv sync --extra mujoco
 uv run python -c "import unisim; print(unisim.ADAPTER_SPECS)"
 ```
 
-`unisim` has no dependency on UniLab, Hydra, or training components. MuJoCo,
-Motrix, Drake, MJWarp, Genesis, IsaacGym, IsaacSim, and Newton use one public
-contract.
-Missing proprietary SDKs or GPU workers produce an explicit cold-path diagnostic;
-no backend silently falls back to another engine.
-
-Backend physics is owned exclusively by `unisim-core`. UniLab keeps only the
-owner-layer assembly entry point `unilab.base.backend_factory`; contracts and
-adapters are imported from `unisim`. The former `unilab.base.backend`
-implementation and compatibility layer have been removed; do not add backend
-APIs to UniLab.
-
-Benchmark v1 reserves only `BenchmarkCase`, `BenchmarkResult`, and provenance
-schema. Workloads, timing, comparisons, and performance claims require a
-separately authorized issue.
+`unisim` has no dependency on UniLab, Hydra, or training components. The scoped
+MuJoCo, MJWarp, Genesis, Newton, Motrix, and SuperDex adapters and the temporarily
+shelved adapters use one public contract. Missing proprietary SDKs or GPU
+workers produce an explicit cold-path diagnostic; no backend silently falls
+back to another engine.
 
 ```{toctree}
 :hidden:
 
 1-mujoco
-2-motrix
-3-isaacgym
-4-isaacsim
 5-genesis
-6-drake
 7-newton
+2-motrix
 8-superdex
 ```
