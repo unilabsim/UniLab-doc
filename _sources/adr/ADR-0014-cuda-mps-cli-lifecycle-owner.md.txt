@@ -32,7 +32,7 @@ fail-closed probe，也不提前声明 DP 或 task-per-GPU 支持。
   - `stop` 只允许停止 UniLab record 证明拥有的 daemon；
   - `env` 输出 launcher 环境而不修改当前 shell。
 - 单 GPU 单 daemon 是默认路径：未传 `--gpus` 时选择唯一可见物理 GPU；未传
-  `--name` 时使用 `gpu-<uuid-prefix>`；未传 pipe/log 路径时使用用户 cache；
+  `--name` 时使用 `gpu-<full-uuid>`；未传 pipe/log 路径时使用 `/tmp/uni-cumps/<name>`（mode `0700`）；
   `env`/`stop` 未传 `--name` 时选择唯一 live record。多 GPU 或多 daemon 歧义必须
   显式指定，不自动选择。
 - Daemon record 以 `(UID, host, name)` 为 scope，持久化 canonical GPU UUID、绝对

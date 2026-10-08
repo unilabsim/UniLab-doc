@@ -112,9 +112,9 @@ uv run uni-cumps stop
 | 设置 | 默认值 |
 | --- | --- |
 | GPU | 唯一可见的物理 GPU，并解析为 canonical UUID |
-| daemon 名称 | `gpu-<uuid-prefix>` |
-| pipe 目录 | `~/.cache/unilab/cuda-mps/<name>/pipe` |
-| log 目录 | `~/.cache/unilab/cuda-mps/<name>/log` |
+| daemon 名称 | `gpu-<full-uuid>` |
+| pipe 目录 | `/tmp/uni-cumps/<name>/pipe` (mode `0700`) |
+| log 目录 | `/tmp/uni-cumps/<name>/log` (mode `0700`) |
 | `env`/`stop` 目标 | 唯一 live 的 UniLab-recorded daemon |
 
 如果可见 GPU 多于一张，`start` 与 `doctor` 必须显式传

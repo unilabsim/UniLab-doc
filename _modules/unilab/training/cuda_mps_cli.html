@@ -543,6 +543,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">stat</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Sequence</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">asdict</span><span class="p">,</span> <span class="n">dataclass</span>
@@ -561,6 +562,8 @@
 <span class="n">_NAME_PATTERN</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;^[a-z0-9][a-z0-9-]{0,63}$&quot;</span><span class="p">)</span>
 <span class="n">_DEFAULT_CONTROL_COMMAND</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;nvidia-cuda-mps-control&quot;</span><span class="p">,</span> <span class="s2">&quot;-d&quot;</span><span class="p">)</span>
 <span class="n">_QUIT_COMMAND</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;nvidia-cuda-mps-control&quot;</span><span class="p">,)</span>
+<span class="n">_MAX_CONTROL_SOCKET_BYTES</span> <span class="o">=</span> <span class="mi">95</span>
+<span class="n">_INERT_CONTROL_ARTIFACTS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;control_lock&quot;</span><span class="p">,</span> <span class="s2">&quot;log&quot;</span><span class="p">)</span>
 <span class="n">_GPU_QUERY_COMMAND</span> <span class="o">=</span> <span class="p">(</span>
     <span class="s2">&quot;nvidia-smi&quot;</span><span class="p">,</span>
     <span class="s2">&quot;--query-gpu=index,uuid,compute_mode&quot;</span><span class="p">,</span>
@@ -1008,6 +1011,17 @@
         <span class="k">return</span> <span class="kc">None</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_process_name_is_alive</span><span class="p">(</span><span class="n">pid</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">expected_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Match a procfs comm name, allowing its conventional 15-character limit.&quot;&quot;&quot;</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;/proc/</span><span class="si">{</span><span class="n">pid</span><span class="si">}</span><span class="s2">/stat&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span>
+        <span class="n">process_name</span> <span class="o">=</span> <span class="n">text</span><span class="p">[</span><span class="n">text</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;(&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:</span> <span class="n">text</span><span class="o">.</span><span class="n">rindex</span><span class="p">(</span><span class="s2">&quot;)&quot;</span><span class="p">)]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="n">process_name</span> <span class="o">==</span> <span class="n">expected_name</span> <span class="ow">or</span> <span class="n">process_name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">expected_name</span><span class="p">[:</span><span class="mi">15</span><span class="p">])</span>
+
+
 <div class="viewcode-block" id="daemon_process_is_live">
 <a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.cuda_mps_cli.daemon_process_is_live.html#unilab.training.cuda_mps_cli.daemon_process_is_live">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">daemon_process_is_live</span><span class="p">(</span>
@@ -1049,6 +1063,54 @@
     <span class="k">return</span> <span class="kc">False</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_remove_inert_control_artifacts</span><span class="p">(</span><span class="n">pipe_directory</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Remove only artifacts left by a failed control launch; preserve sockets.&quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">pipe_directory</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">return</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">_INERT_CONTROL_ARTIFACTS</span><span class="p">:</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">pipe_directory</span> <span class="o">/</span> <span class="n">name</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">is_fifo</span><span class="p">()</span> <span class="ow">or</span> <span class="p">(</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;control_lock&quot;</span> <span class="ow">and</span> <span class="n">path</span><span class="o">.</span><span class="n">is_file</span><span class="p">()):</span>
+                <span class="n">path</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Could not clean failed-control artifact </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_remove_orphan_default_control_sockets</span><span class="p">(</span><span class="n">pipe_directory</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Remove UniLab-default sockets orphaned after a control process exit.</span>
+
+<span class="sd">    Explicit user-supplied directories are never modified. In the default</span>
+<span class="sd">    runtime root, NVIDIA leaves ``control`` and ``control_privileged`` sockets</span>
+<span class="sd">    after the control process exits, which otherwise blocks every restart. A</span>
+<span class="sd">    stale PID file alone is not ownership evidence: remove the sockets only</span>
+<span class="sd">    when its PID is absent or no longer has the expected control process name.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">identity</span> <span class="o">=</span> <span class="n">_control_daemon_identity</span><span class="p">(</span><span class="n">pipe_directory</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">identity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">_process_name_is_alive</span><span class="p">(</span><span class="n">identity</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s2">&quot;nvidia-cuda-mps-control&quot;</span><span class="p">):</span>
+        <span class="k">return</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;control&quot;</span><span class="p">,</span> <span class="s2">&quot;control_privileged&quot;</span><span class="p">):</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">pipe_directory</span> <span class="o">/</span> <span class="n">name</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">is_socket</span><span class="p">():</span>
+                <span class="n">path</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not clean orphan MPS socket </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_control_log_tail</span><span class="p">(</span><span class="n">log_directory</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">12</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">log_directory</span> <span class="o">/</span> <span class="s2">&quot;control.log&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;replace&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+    <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">tail</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="o">-</span><span class="n">limit</span><span class="p">:])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">tail</span> <span class="ow">or</span> <span class="kc">None</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_control_daemon_identity</span><span class="p">(</span><span class="n">pipe_directory</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">pid</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">try</span><span class="p">:</span>
@@ -1061,8 +1123,26 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_default_name</span><span class="p">(</span><span class="n">gpus</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">GpuIdentity</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Use the complete UUID so shortened prefixes cannot collide.&quot;&quot;&quot;</span>
+
     <span class="n">uuid</span> <span class="o">=</span> <span class="n">gpus</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">uuid</span><span class="o">.</span><span class="n">removeprefix</span><span class="p">(</span><span class="s2">&quot;GPU-&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
-    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;gpu-</span><span class="si">{</span><span class="n">uuid</span><span class="p">[:</span><span class="mi">12</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;gpu-</span><span class="si">{</span><span class="n">uuid</span><span class="si">}</span><span class="s2">&quot;</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_default_runtime_root</span><span class="p">(</span><span class="n">daemon_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a short, user-private runtime root safe for Unix socket paths.&quot;&quot;&quot;</span>
+
+    <span class="n">root</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">tempfile</span><span class="o">.</span><span class="n">gettempdir</span><span class="p">())</span> <span class="o">/</span> <span class="s2">&quot;uni-cumps&quot;</span> <span class="o">/</span> <span class="n">daemon_name</span>
+    <span class="n">base</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">parent</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">base</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="mo">0o700</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">root</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="mo">0o700</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">root</span><span class="o">.</span><span class="n">chmod</span><span class="p">(</span><span class="mo">0o700</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Could not create user-owned MPS runtime directory </span><span class="si">{</span><span class="n">root</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+    <span class="k">return</span> <span class="n">root</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_write_daemon_record</span><span class="p">(</span><span class="n">root</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">daemon</span><span class="p">:</span> <span class="n">DaemonRecord</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
@@ -1278,8 +1358,10 @@
         <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;Could not prepare daemon record for </span><span class="si">{</span><span class="n">daemon_name</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">.&quot;</span>
         <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
-    <span class="n">pipe_value</span> <span class="o">=</span> <span class="n">pipe_dir</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span><span class="n">base</span> <span class="o">/</span> <span class="n">daemon_name</span> <span class="o">/</span> <span class="s2">&quot;pipe&quot;</span><span class="p">)</span>
-    <span class="n">log_value</span> <span class="o">=</span> <span class="n">log_dir</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span><span class="n">base</span> <span class="o">/</span> <span class="n">daemon_name</span> <span class="o">/</span> <span class="s2">&quot;log&quot;</span><span class="p">)</span>
+    <span class="n">runtime_base</span> <span class="o">=</span> <span class="n">_default_runtime_root</span><span class="p">(</span><span class="n">daemon_name</span><span class="p">)</span>
+    <span class="n">using_default_runtime</span> <span class="o">=</span> <span class="n">pipe_dir</span> <span class="ow">is</span> <span class="kc">None</span>
+    <span class="n">pipe_value</span> <span class="o">=</span> <span class="n">pipe_dir</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span><span class="n">runtime_base</span> <span class="o">/</span> <span class="s2">&quot;pipe&quot;</span><span class="p">)</span>
+    <span class="n">log_value</span> <span class="o">=</span> <span class="n">log_dir</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span><span class="n">runtime_base</span> <span class="o">/</span> <span class="s2">&quot;log&quot;</span><span class="p">)</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">pipe_directory</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">pipe_value</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="n">log_directory</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">log_value</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
@@ -1288,6 +1370,16 @@
     <span class="k">if</span> <span class="n">pipe_directory</span> <span class="o">==</span> <span class="n">log_directory</span><span class="p">:</span>
         <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span><span class="s2">&quot;MPS pipe and log directories must be different absolute paths.&quot;</span><span class="p">)</span>
     <span class="n">control</span> <span class="o">=</span> <span class="n">pipe_directory</span> <span class="o">/</span> <span class="s2">&quot;control&quot;</span>
+    <span class="n">control_bytes</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">control</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+    <span class="k">if</span> <span class="n">control_bytes</span> <span class="o">&gt;</span> <span class="n">_MAX_CONTROL_SOCKET_BYTES</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;MPS control socket path is too long (</span><span class="si">{</span><span class="n">control_bytes</span><span class="si">}</span><span class="s2"> bytes; maximum &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_MAX_CONTROL_SOCKET_BYTES</span><span class="si">}</span><span class="s2">): </span><span class="si">{</span><span class="n">control</span><span class="si">}</span><span class="s2">. Choose a shorter --pipe-dir, such as &quot;</span>
+            <span class="s2">&quot;/tmp/&lt;short-name&gt;/pipe.&quot;</span>
+        <span class="p">)</span>
+    <span class="n">_remove_inert_control_artifacts</span><span class="p">(</span><span class="n">pipe_directory</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">using_default_runtime</span><span class="p">:</span>
+        <span class="n">_remove_orphan_default_control_sockets</span><span class="p">(</span><span class="n">pipe_directory</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">control</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
         <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;Refusing to attach to an existing control path </span><span class="si">{</span><span class="n">control</span><span class="si">}</span><span class="s2">; remove/rename it or choose a new daemon.&quot;</span>
@@ -1300,13 +1392,21 @@
         <span class="s2">&quot;CUDA_MPS_LOG_DIRECTORY&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">log_directory</span><span class="p">),</span>
     <span class="p">}</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="n">pipe_directory</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="n">log_directory</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">pipe_directory</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="mo">0o700</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">log_directory</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="mo">0o700</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">pipe_directory</span><span class="o">.</span><span class="n">chmod</span><span class="p">(</span><span class="mo">0o700</span><span class="p">)</span>
+        <span class="n">log_directory</span><span class="o">.</span><span class="n">chmod</span><span class="p">(</span><span class="mo">0o700</span><span class="p">)</span>
     <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
         <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not create user-owned MPS directories: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
     <span class="n">command</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">_DEFAULT_CONTROL_COMMAND</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">daemon</span><span class="p">:</span>
-        <span class="n">_run_command</span><span class="p">(</span><span class="n">run_command</span><span class="p">,</span> <span class="n">command</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">)</span>  <span class="c1"># type: ignore[call-overload]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">_run_command</span><span class="p">(</span><span class="n">run_command</span><span class="p">,</span> <span class="n">command</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">CudaMpsCliError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">_remove_inert_control_artifacts</span><span class="p">(</span><span class="n">pipe_directory</span><span class="p">)</span>
+            <span class="n">tail</span> <span class="o">=</span> <span class="n">_control_log_tail</span><span class="p">(</span><span class="n">log_directory</span><span class="p">)</span>
+            <span class="n">detail</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot; Control log tail:</span><span class="se">\n</span><span class="si">{</span><span class="n">tail</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">tail</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+            <span class="k">raise</span> <span class="n">CudaMpsCliError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">exc</span><span class="si">}{</span><span class="n">detail</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">runner</span> <span class="o">=</span> <span class="n">foreground_runner</span> <span class="k">if</span> <span class="n">foreground_runner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_foreground_control</span>
         <span class="n">return_code</span> <span class="o">=</span> <span class="n">runner</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>

@@ -117,9 +117,9 @@ Default values:
 | Setting | Default |
 | --- | --- |
 | GPU | the sole visible physical GPU, resolved to its canonical UUID |
-| daemon name | `gpu-<uuid-prefix>` |
-| pipe directory | `~/.cache/unilab/cuda-mps/<name>/pipe` |
-| log directory | `~/.cache/unilab/cuda-mps/<name>/log` |
+| daemon name | `gpu-<full-uuid>` |
+| pipe directory | `/tmp/uni-cumps/<name>/pipe` (mode `0700`) |
+| log directory | `/tmp/uni-cumps/<name>/log` (mode `0700`) |
 | `env`/`stop` target | the sole live UniLab-recorded daemon |
 
 If more than one GPU is visible, `start` and `doctor` require
