@@ -5,14 +5,17 @@ Motrix 是一个可选后端，通过 `motrix` extra 安装。该 extra 委托�
 中，适配层位于 `unisim.backend.motrix` 下。
 
 Motrix 是 CPU-authoritative packed HOST_BRIDGE 后端。issue #2054 将其恢复
-进 tensor-only Manager runtime，但范围仅限两个 canonical workload：
+进 tensor-only Manager runtime，当前包含这些 canonical workload：
 
 ```bash
+uv run --extra motrix train --algo appo --task go2_joystick_flat --sim motrix
 uv run --extra motrix train --algo sac --task g1_walk_flat --sim motrix
 uv run --extra motrix train --algo flashsac --task g1_motion_tracking --sim motrix
 ```
 
 其他 Motrix owner 仍不在支持范围内，也不构成生产支持声明。
+Go2 APPO owner 是已恢复的 configured 训练路径；当前证据仅限 bounded smoke
+training，不构成性能 benchmark。
 
 public tensor lifecycle 提供：
 
@@ -35,7 +38,7 @@ uv sync --extra motrix
 
 ## 何时使用
 
-- workload 是上述两个 canonical owner 之一。
+- workload 是上述 canonical owner 之一。
 - 需要 CPU-authoritative packed HOST_BRIDGE 对比/参考路径。
 - 所生成的支持矩阵将你的 entrypoint/task/backend 组合标记为 configured 或 tested。
 

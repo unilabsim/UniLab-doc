@@ -5,17 +5,18 @@ Motrix is an optional backend installed through the `motrix` extra, which
 delegates to `unisim-core[motrix]`: the runtime pin lives in UniSim's
 `pyproject.toml`, and the adapter lives under `unisim.backend.motrix`.
 
-Motrix is a CPU-authoritative packed HOST_BRIDGE backend. Issue #2054 restores
-it to the tensor-only Manager runtime for exactly two canonical training
-workloads:
+Motrix is a CPU-authoritative packed HOST_BRIDGE backend. Issue #2054 restored
+it to the tensor-only Manager runtime with these canonical training workloads:
 
 ```bash
+uv run --extra motrix train --algo appo --task go2_joystick_flat --sim motrix
 uv run --extra motrix train --algo sac --task g1_walk_flat --sim motrix
 uv run --extra motrix train --algo flashsac --task g1_motion_tracking --sim motrix
 ```
 
 Other Motrix owners remain out of scope and do not constitute production
-support claims.
+support claims. The Go2 APPO owner is restored as a configured training path;
+its current evidence is bounded smoke training, not a performance benchmark.
 
 The public tensor lifecycle exposes:
 
@@ -38,7 +39,7 @@ uv sync --extra motrix
 
 ## When To Use It
 
-- The workload is one of the two canonical owners above.
+- The workload is one of the canonical owners above.
 - You need a CPU-authoritative packed HOST_BRIDGE comparison/reference path.
 - The generated support matrix marks the entrypoint/task/backend combination as
   configured or tested.
