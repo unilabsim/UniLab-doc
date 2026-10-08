@@ -35,7 +35,7 @@ the MJWarp owner inherits the MuJoCo FlashSAC owner and resolves to:
 
 | Effective setting | Value |
 | --- | --- |
-| Task semantic name | `G1MotionTrackingSAC` |
+| Task semantic name | `G1MotionTracking` |
 | Backend identity | `mjwarp` |
 | Tensor runtime | invariant of the Manager lifecycle |
 | Inference slots | `training.inference_slot_capacity=1` |

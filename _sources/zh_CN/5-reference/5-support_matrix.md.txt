@@ -79,10 +79,10 @@ uv run scripts/generate_support_matrix.py --write
 |------------|------------|---|---|---|---|---|---|---|
 | PPO (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | - | Configured | - | - | Configured | - |
 | PPO (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Registered | - | Tested | Registered | - | Configured |
-| PPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | - | - | - | - | - | - |
+| PPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Registered | - | Registered | Registered | - | Registered |
 | APPO (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | - | Registered | - | - | Registered | - |
 | APPO (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Registered | - | Registered | Registered | - | Registered |
-| APPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | - | - | - | - | - | - |
+| APPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Registered | - | Registered | Registered | - | Registered |
 | SAC (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Tested | - | Tested | Tested | - | Tested |
 | SAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Registered | - | Configured | Registered | - | Configured |
 | FlashSAC (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | - | Registered | - | - | Registered | - |

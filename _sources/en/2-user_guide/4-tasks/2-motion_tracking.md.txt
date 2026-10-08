@@ -21,8 +21,10 @@ configuration entry point; the selected owner is materialized into the shared
 | --- | --- | --- | --- |
 | `g1_motion_tracking` | `G1MotionTracking` | `dance1_subject2_part.npz` | `src/unilab/conf/ppo/task/g1_motion_tracking/`, `src/unilab/conf/appo/task/g1_motion_tracking/` |
 
-Profile differences remain in Hydra. The retained G1 identities use the shared
-manager factory. Unitree production wall-flip, climb, deploy, and 23-DoF motion
+Profile differences remain in Hydra: PPO/APPO, SAC, and FlashSAC all compose
+the registered `G1MotionTracking` identity, while algorithm-specific
+observation, DR, tensor-runtime, and reward-pack declarations stay in their
+owner YAML. Unitree production wall-flip, climb, deploy, and 23-DoF motion
 profiles live in `unitree_rl_unilab`.
 
 ## PPO And APPO
@@ -53,7 +55,7 @@ pass the absolute path through `uv run eval`:
 
 ```bash
 uv run eval --algo sac --task g1_motion_tracking --sim mujoco \
-  algo.load_run=/abs/path/to/logs/sac/G1MotionTrackingSAC/2026-04-23_14-06-57_mujoco
+  algo.load_run=/abs/path/to/logs/sac/G1MotionTracking/2026-04-23_14-06-57_mujoco
 ```
 
 ## Motion Files

@@ -34,7 +34,7 @@ MJWarp owner 继承 FlashSAC MuJoCo owner，并解析为：
 
 | 有效设置 | 值 |
 | --- | --- |
-| Task 语义名 | `G1MotionTrackingSAC` |
+| Task 语义名 | `G1MotionTracking` |
 | Backend 身份 | `mjwarp` |
 | Tensor runtime | Manager 生命周期不变量 |
 | Inference slot | `training.inference_slot_capacity=1` |

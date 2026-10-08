@@ -19,8 +19,10 @@ runtime 执行。
 | --- | --- | --- | --- |
 | `g1_motion_tracking` | `G1MotionTracking` | `dance1_subject2_part.npz` | `src/unilab/conf/ppo/task/g1_motion_tracking/`, `src/unilab/conf/appo/task/g1_motion_tracking/` |
 
-profile 差异留在 Hydra 中。保留的 G1 identity 使用共享 manager factory。Unitree 的
-wall flip、climb、deploy 与 23-DoF motion production profile 位于
+profile 差异留在 Hydra 中：PPO/APPO、SAC 与 FlashSAC 都组合注册的
+`G1MotionTracking` identity，而算法专属的 observation、DR、tensor runtime 与
+reward-pack 声明保留在各自 owner YAML。Unitree 的 wall flip、climb、deploy 与
+23-DoF motion production profile 位于
 `unitree_rl_unilab`。
 
 ## PPO 与 APPO
@@ -50,7 +52,7 @@ uv run train --algo sac --task g1_motion_tracking --sim mujoco training.use_amp=
 
 ```bash
 uv run eval --algo sac --task g1_motion_tracking --sim mujoco \
-  algo.load_run=/abs/path/to/logs/sac/G1MotionTrackingSAC/2026-04-23_14-06-57_mujoco
+  algo.load_run=/abs/path/to/logs/sac/G1MotionTracking/2026-04-23_14-06-57_mujoco
 ```
 
 ## 动作文件
