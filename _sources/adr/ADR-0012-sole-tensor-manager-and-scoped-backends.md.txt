@@ -61,14 +61,16 @@ owns its explicit packed conversion boundary. MuJoCo remains a production backen
 canonical in-process host-bridge implementation; it is not a test-only fallback.
 
 `env.tensor_runtime` and `env.tensor_runtime_device` are removed. Tensor execution is an invariant
-of the Manager runtime. Placement is derived from declared backend data plane and rank topology.
-No compatibility alias, dual-mode field, or hidden fallback is retained.
+of the Manager runtime. Placement is derived from the declared backend data plane and, for a
+`HOST_BRIDGE`, the process's explicit carrier request. No NumPy/dual-runtime compatibility alias
+or hidden fallback is retained.
 
-For a `HOST_BRIDGE` backend, CPU-authoritative physics does not imply CPU Manager tensors.
-When PyTorch exposes an available GPU and the backend accepts its current `cuda` ordinal,
-the Manager uses that GPU, including ROCm PyTorch's `cuda` namespace. CPU-only capabilities
-or hosts without an available GPU retain CPU placement. `DEVICE_RESIDENT` adapters keep
-their own CUDA-only platform requirements; accepting HIP Torch buffers on a host bridge
+For a `HOST_BRIDGE` backend, CPU-authoritative physics keeps the default Manager/TorchEnv
+carriers on CPU. A training process may explicitly request `cuda`/`cuda:<ordinal>` through
+`manager_torch_device` (routed from its resolved learner device), including ROCm PyTorch's
+`cuda` namespace; UniLab validates the request against the backend's declared Torch devices.
+GPU visibility alone is not a placement request. `DEVICE_RESIDENT` adapters keep their own
+CUDA-only placement and platform requirements; accepting HIP Torch buffers on a host bridge
 does not make those physics engines ROCm-compatible.
 
 ### Manager-owned RNG

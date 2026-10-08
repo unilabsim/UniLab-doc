@@ -536,8 +536,9 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">cast</span>
 
 <span class="c1"># These backends consume an explicit integer device id while materializing</span>
-<span class="c1"># their simulator.  MuJoCo/Motrix/Drake either run on the host or own their</span>
-<span class="c1"># device selection internally and must not receive a synthetic override.</span>
+<span class="c1"># their simulator.  MuJoCo/Motrix/Drake run CPU-authoritative physics; their</span>
+<span class="c1"># optional accelerator Manager buffers are selected separately through</span>
+<span class="c1"># ``manager_torch_device``.</span>
 <span class="n">BACKEND_ENV_DEVICE_FIELDS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">&quot;isaacgym&quot;</span><span class="p">:</span> <span class="s2">&quot;isaacgym_device_id&quot;</span><span class="p">,</span>
     <span class="s2">&quot;isaacsim&quot;</span><span class="p">:</span> <span class="s2">&quot;isaacsim_device_id&quot;</span><span class="p">,</span>
@@ -560,6 +561,11 @@
 <span class="c1"># CUDA IPC arena.  Its Torch current device must therefore agree with the</span>
 <span class="c1"># integer payload sent to that worker before construction.</span>
 <span class="n">_EXTERNAL_CUDA_IPC_BACKENDS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;isaacgym&quot;</span><span class="p">,</span> <span class="s2">&quot;isaacsim&quot;</span><span class="p">}</span>
+
+<span class="c1"># HOST_BRIDGE backends accept optional accelerator Torch carriers across their packed</span>
+<span class="c1"># boundary. A process may explicitly request those carriers on its learner Torch</span>
+<span class="c1"># device; unset non-accelerator requests retain the owner/default CPU placement.</span>
+<span class="n">_HOST_BRIDGE_TORCH_BACKENDS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;mujoco&quot;</span><span class="p">,</span> <span class="s2">&quot;motrix&quot;</span><span class="p">,</span> <span class="s2">&quot;drake&quot;</span><span class="p">,</span> <span class="s2">&quot;superdex&quot;</span><span class="p">}</span>
 
 
 <span class="c1"># Set once ``bind_genesis_process_device`` has pinned CUDA_VISIBLE_DEVICES for</span>
@@ -614,7 +620,7 @@
 
 
 <div class="viewcode-block" id="rank_local_visible_cuda_entries">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.rank_local_visible_cuda_entries.html#unilab.base.process_device.rank_local_visible_cuda_entries">[docs]</a>
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.html#unilab.base.process_device.rank_local_visible_cuda_entries">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">rank_local_visible_cuda_entries</span><span class="p">(</span>
     <span class="n">current_visible_devices</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
@@ -634,7 +640,7 @@
 
 
 <div class="viewcode-block" id="resolve_backend_env_device_id">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.resolve_backend_env_device_id.html#unilab.base.process_device.resolve_backend_env_device_id">[docs]</a>
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.html#unilab.base.process_device.resolve_backend_env_device_id">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">resolve_backend_env_device_id</span><span class="p">(</span>
     <span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
@@ -699,8 +705,40 @@
 
 
 
+<div class="viewcode-block" id="apply_manager_torch_device_override">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.apply_manager_torch_device_override.html#unilab.base.process_device.apply_manager_torch_device_override">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">apply_manager_torch_device_override</span><span class="p">(</span>
+    <span class="n">env_cfg_override</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return an env override selecting optional HOST_BRIDGE Torch carriers.</span>
+
+<span class="sd">    The input mapping is never mutated. Explicit CPU requests force CPU carriers.</span>
+<span class="sd">    Unset and non-CUDA learner requests retain owner/default placement. A CUDA request</span>
+<span class="sd">    is validated against backend capabilities when the environment binds.</span>
+<span class="sd">    DEVICE_RESIDENT backends own placement and never receive this synthetic field.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">env_cfg_override</span><span class="p">)</span> <span class="k">if</span> <span class="n">env_cfg_override</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_HOST_BRIDGE_TORCH_BACKENDS</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">result</span>
+    <span class="k">if</span> <span class="n">learner_device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">result</span>
+    <span class="n">device</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">learner_device</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">device</span> <span class="ow">or</span> <span class="n">device</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;cpu&quot;</span><span class="p">:</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;manager_torch_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span>
+        <span class="k">return</span> <span class="n">result</span>
+    <span class="k">if</span> <span class="n">device</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">!=</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">result</span>
+    <span class="n">result</span><span class="p">[</span><span class="s2">&quot;manager_torch_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">device</span>
+    <span class="k">return</span> <span class="n">result</span></div>
+
+
+
 <div class="viewcode-block" id="resolve_backend_process_device">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.resolve_backend_process_device.html#unilab.base.process_device.resolve_backend_process_device">[docs]</a>
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.html#unilab.base.process_device.resolve_backend_process_device">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">resolve_backend_process_device</span><span class="p">(</span><span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
     <span class="k">if</span> <span class="p">(</span>
@@ -765,7 +803,7 @@
 
 
 <div class="viewcode-block" id="configure_backend_process_device">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.configure_backend_process_device.html#unilab.base.process_device.configure_backend_process_device">[docs]</a>
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.html#unilab.base.process_device.configure_backend_process_device">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">configure_backend_process_device</span><span class="p">(</span>
     <span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
@@ -789,7 +827,7 @@
 
 
 <div class="viewcode-block" id="bind_backend_process_device_for_backend">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.bind_backend_process_device_for_backend.html#unilab.base.process_device.bind_backend_process_device_for_backend">[docs]</a>
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.html#unilab.base.process_device.bind_backend_process_device_for_backend">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">bind_backend_process_device_for_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">resolved</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Bind one backend&#39;s process-global accelerator device.</span>
 
@@ -868,7 +906,7 @@
 
 
 <div class="viewcode-block" id="pin_genesis_device_before_cuda_init">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.pin_genesis_device_before_cuda_init.html#unilab.base.process_device.pin_genesis_device_before_cuda_init">[docs]</a>
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.html#unilab.base.process_device.pin_genesis_device_before_cuda_init">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">pin_genesis_device_before_cuda_init</span><span class="p">(</span>
     <span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
@@ -893,7 +931,7 @@
 
 
 <div class="viewcode-block" id="bind_genesis_process_device">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.bind_genesis_process_device.html#unilab.base.process_device.bind_genesis_process_device">[docs]</a>
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.html#unilab.base.process_device.bind_genesis_process_device">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">bind_genesis_process_device</span><span class="p">(</span><span class="n">resolved</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Select the CUDA device used by an in-process Genesis worker.</span>
 
@@ -946,6 +984,7 @@
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">&quot;BACKEND_ENV_DEVICE_FIELDS&quot;</span><span class="p">,</span>
     <span class="s2">&quot;apply_backend_env_device_override&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;apply_manager_torch_device_override&quot;</span><span class="p">,</span>
     <span class="s2">&quot;bind_backend_process_device&quot;</span><span class="p">,</span>
     <span class="s2">&quot;bind_backend_process_device_for_backend&quot;</span><span class="p">,</span>
     <span class="s2">&quot;bind_genesis_process_device&quot;</span><span class="p">,</span>

@@ -65,12 +65,12 @@ uv run scripts/generate_support_matrix.py --write
 
 | Backend | Execution / process / data plane | Torch devices | CUDA runtime | Linux+CUDA | macOS | ROCm | Worker | Reset randomization | Fixed variants | Host callbacks | Packed bridge |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| `mujoco` | Host bridge / in-process / host bridge | CPU / CUDA | Required only when the learner requests CUDA state/control buffers | Supported: CPU-authoritative physics with optional CUDA Torch buffers | CPU-authoritative host bridge only; no CUDA physics claim | Supported: CPU-authoritative physics with ROCm Torch buffers (`cuda`) | In-process; no external Python worker | unknown | unknown | 不支持 | 支持 |
-| `motrix` | Host bridge / in-process / host bridge | CPU / CUDA | Required only when the learner requests CUDA state/control buffers | Supported: CPU-authoritative physics with optional CUDA Torch buffers | CPU-authoritative host bridge only; no CUDA physics claim | Supported: CPU-authoritative physics with ROCm Torch buffers (`cuda`) | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 支持 |
-| `drake` | Host bridge / in-process / host bridge | CPU / CUDA | Required only when the learner requests CUDA state/control buffers | Supported: CPU-authoritative physics with optional CUDA Torch buffers | CPU-authoritative host bridge only; no CUDA physics claim | Supported: CPU-authoritative physics with ROCm Torch buffers (`cuda`) | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 支持 |
+| `mujoco` | Host bridge / in-process / host bridge | CPU / CUDA | Required only when the learner requests CUDA state/control buffers | Supported: CPU-authoritative physics with optional CUDA Torch buffers | CPU-authoritative host bridge only; no CUDA physics claim | CPU-authoritative host bridge with explicit ROCm Torch buffers (`cuda`) | In-process; no external Python worker | unknown | unknown | 不支持 | 支持 |
+| `motrix` | Host bridge / in-process / host bridge | CPU / CUDA | Required only when the learner requests CUDA state/control buffers | Supported: CPU-authoritative physics with optional CUDA Torch buffers | CPU-authoritative host bridge only; no CUDA physics claim | CPU-authoritative host bridge with explicit ROCm Torch buffers (`cuda`) | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 支持 |
+| `drake` | Host bridge / in-process / host bridge | CPU / CUDA | Required only when the learner requests CUDA state/control buffers | Supported: CPU-authoritative physics with optional CUDA Torch buffers | CPU-authoritative host bridge only; no CUDA physics claim | CPU-authoritative host bridge with explicit ROCm Torch buffers (`cuda`) | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 支持 |
 | `mjwarp` | Device-resident / in-process / direct | CUDA | Required for the entire tensor lifecycle | Supported: Linux CUDA only | Unsupported; no CPU, MPS, or ROCm fallback | Unsupported; no CPU, MPS, or ROCm fallback | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 不支持 |
 | `newton` | Device-resident / in-process / direct | CUDA | Required for the entire tensor lifecycle | Supported: Linux CUDA only | Unsupported; no CPU, MPS, or ROCm fallback | Unsupported; no CPU, MPS, or ROCm fallback | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 不支持 |
-| `superdex` | Host bridge / in-process / host bridge | CPU / CUDA | Required only when the learner requests CUDA state/control buffers | Supported: CPU-authoritative physics with optional CUDA Torch buffers | CPU-authoritative host bridge only; no CUDA physics claim | Supported: CPU-authoritative physics with ROCm Torch buffers (`cuda`) | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 支持 |
+| `superdex` | Host bridge / in-process / host bridge | CPU / CUDA | Required only when the learner requests CUDA state/control buffers | Supported: CPU-authoritative physics with optional CUDA Torch buffers | CPU-authoritative host bridge only; no CUDA physics claim | CPU-authoritative host bridge with explicit ROCm Torch buffers (`cuda`) | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 支持 |
 | `genesis` | Device-resident / in-process / direct | CUDA | Required for the entire tensor lifecycle | Supported: Linux CUDA only | Unsupported; no CPU, MPS, or ROCm fallback | Unsupported; no CPU, MPS, or ROCm fallback | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 不支持 |
 
 ### Entrypoint x Task Owner
@@ -114,7 +114,8 @@ NVIDIA 驱动与容器运行时不匹配，再调整任务配置。设置了
 `CUDA_VISIBLE_DEVICES` 时，后端序号指向重映射后的命名空间，而不是宿主机
 全局物理索引。
 
-在 macOS 与 ROCm 上请使用 CPU-authoritative host-bridge 后端。在 ROCm 上，
-ROCm PyTorch 的 GPU 可用且后端接受当前 `cuda` 设备时，Manager/TorchEnv 使用
-当前 GPU；CPU 物理仿真不要求 Manager tensor 使用 CPU。host bridge 使用 GPU
-Torch buffer 不代表 GPU physics，也不代表 device-resident 后端生命周期。
+在 macOS 与 ROCm 上请使用 CPU-authoritative host-bridge 后端。在 ROCm 上，只有
+训练进程显式请求该 learner 设备且后端接受被路由的 `cuda`
+`manager_torch_device` 时，Manager/TorchEnv 才使用当前 GPU；直接构造环境仍为
+CPU。host bridge 使用 GPU Torch buffer 不代表 GPU physics，也不代表
+device-resident 后端生命周期。
