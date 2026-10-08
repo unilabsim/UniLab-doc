@@ -91,28 +91,86 @@ already-required rank-local topology. It is not a backend switch and does not
 replace `--sim mjwarp` or owner YAML selection.
 
 The default remains `null`: learner and collector keep independent CUDA contexts.
-For the supported single-host, single-rank MJWarp off-policy topology, request
-CUDA MPS with:
+The supported initial topology is Linux, NVIDIA CUDA, one physical GPU, MJWarp,
+SAC/FlashSAC, and `world_size=1`. Request shared GPU execution with:
 
 ```bash
 training.cuda_process_sharing=mps
 ```
 
-Start an existing control daemon under user-owned directories before training:
+### Managed daemon lifecycle
+
+UniLab now provides an explicit user-owned lifecycle command, while training
+itself still never starts or stops a host service implicitly:
+
+On a single-GPU host, the defaults are already complete:
 
 ```bash
-export CUDA_MPS_PIPE_DIRECTORY=/absolute/path/mps/pipe
-export CUDA_MPS_LOG_DIRECTORY=/absolute/path/mps/log
-mkdir -p "$CUDA_MPS_PIPE_DIRECTORY" "$CUDA_MPS_LOG_DIRECTORY"
-nvidia-cuda-mps-control -d
+uv run uni-cumps start
+eval "$(uv run uni-cumps env)"
+uv run uni-cumps doctor
+uv run uni-cumps stop
 ```
 
-UniLab validates, but never starts or stops, that daemon. An `mps` request must
-be Linux/NVIDIA CUDA, use MJWarp, resolve one physical GPU by UUID for learner
-and collector, have `world_size=1`, and reach a live control socket/FIFO and
-control daemon. Any unmet prerequisite fails before environment probing,
-learner construction, or collector spawn; there is no silent multi-context
-fallback. The error names the first prerequisite and the daemon start command.
+Default values:
+
+| Setting | Default |
+| --- | --- |
+| GPU | the sole visible physical GPU, resolved to its canonical UUID |
+| daemon name | `gpu-<uuid-prefix>` |
+| pipe directory | `~/.cache/unilab/cuda-mps/<name>/pipe` |
+| log directory | `~/.cache/unilab/cuda-mps/<name>/log` |
+| `env`/`stop` target | the sole live UniLab-recorded daemon |
+
+If more than one GPU is visible, `start` and `doctor` require
+`--gpus <index-or-uuid>`. Explicit overrides remain available for deployments
+that need stable labels or service-owned paths:
+
+```bash
+uv run uni-cumps start \
+  --gpus <gpu-index-or-uuid> \
+  --name <daemon-name> \
+  --pipe-dir /absolute/path/mps/pipe \
+  --log-dir /absolute/path/mps/log
+eval "$(uv run uni-cumps env --name <daemon-name>)"
+uv run uni-cumps stop --name <daemon-name>
+```
+
+Read-only status works without arguments:
+
+```bash
+uv run uni-cumps status
+```
+
+`status` and `doctor` are read-only. `start` creates a user-owned daemon and a
+record under the current user's UniLab cache. `stop` uses only that recorded
+ownership evidence: UID, host, control PID, and Linux process start-time. It
+never sends `quit` to an unmanaged pipe. `env` prints exports for a launcher or
+an explicit shell integration; it does not mutate UniLab's parent process.
+
+A daemon is not exclusively owned by a training run and may serve multiple
+clients. A stale record is quarantined before reuse, and logs are retained after
+stop.
+
+### Topology modes and current limits
+
+The command reports three topology-mode names so future launch contracts remain
+additive:
+
+| Mode | Meaning | Initial status |
+| --- | --- | --- |
+| `single_gpu` | one task uses one physical GPU | Implemented |
+| `single_task_multi_gpu` | one task has one rank per GPU | Parsed, fail-closed |
+| `task_per_gpu` | independent tasks are packed one per GPU | Parsed, fail-closed |
+
+Selectors resolve through canonical physical GPU UUIDs. MIG UUIDs are rejected
+explicitly. A comma-separated multi-GPU request fails closed and references the
+multi-GPU gate rather than silently choosing DP or task packing. `all` is useful
+in read-only diagnostics but cannot start a daemon in this release.
+
+Training still validates before environment probing, learner construction, and
+collector spawn; there is no silent multi-context fallback. The error names the
+first unmet prerequisite and points to the CLI lifecycle commands.
 
 `run_config.json` records the configured owner value. A valid run's
 `run_summary.json` embeds `runtime_manifest.cuda_process_sharing` with the
@@ -120,19 +178,17 @@ configured/effective mode, learner and collector devices, physical UUID
 evidence, control pipe, server PID, and validation state. The section is a
 runtime-manifest v1 producer diagnostic, not a stable scalar contract.
 
-MPS changes only GPU execution sharing. It does not change `env_steps_per_sync`,
-learner/collector placement, or training semantics. Multi-GPU DP remains
-unsupported until the separate DP gate and daemon topology decision are
-completed. CUDA MPS is host- and deployment-dependent: in shared containers,
-multi-user hosts, or restricted runners, control may be unavailable, and an
-explicit request fails closed rather than silently degrading.
+MPS changes only GPU execution sharing. It does not change
+`env_steps_per_sync`, learner/collector placement, or training semantics.
+Multi-GPU DP remains unsupported until its separate gate and daemon topology
+decision are completed. CUDA MPS remains host- and deployment-dependent: in
+shared containers, multi-user hosts, or restricted runners, control may be
+unavailable, and an explicit request fails closed rather than silently
+degrading.
 
-Stop the daemon after use:
-
-```bash
-export CUDA_MPS_PIPE_DIRECTORY=/absolute/path/mps/pipe
-echo quit | nvidia-cuda-mps-control
-```
+Restricted deployments that cannot use the UniLab CLI may still operate an
+existing daemon manually with `nvidia-cuda-mps-control`; training validation
+does not depend on which explicit deployment tool started it.
 
 Check the runtime that will execute the benchmark:
 

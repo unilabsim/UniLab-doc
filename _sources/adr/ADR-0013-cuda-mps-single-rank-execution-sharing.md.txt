@@ -10,7 +10,7 @@ orphan: true
 - Date: 2026-10-04
 - Owners: UniLab training runtime maintainers
 - Supersedes: None
-- Superseded by: None
+- Superseded by: [ADR-0014](ADR-0014-cuda-mps-cli-lifecycle-owner.md)（仅 daemon 生命周期管理边界）
 
 ## Context
 
@@ -31,8 +31,10 @@ fail closed，也没有可审计的 runtime evidence。
 - `mps` 是显式请求：所有前置条件在 env probe、learner construction 与 collector
   spawn 之前验证，失败时给出第一个未满足条件和启动既有 daemon 的命令，不 fallback。
 - rank-local 物理一致性按 GPU UUID 判断，而不是 CUDA ordinal。
-- UniLab 只验证既有 MPS control daemon 与 control socket/FIFO，不 start/stop/repair
-  daemon，不引入 `auto`、SM percentage 或 OS nice/affinity 配置。
+- 训练路径只验证既有 MPS control daemon 与 control socket/FIFO，不 start/stop/repair
+  daemon，也不把 daemon 选择耦合到训练语义。daemon 的显式生命周期管理由
+  [ADR-0014](ADR-0014-cuda-mps-cli-lifecycle-owner.md) 的独立 CLI contract 接管；
+  本 ADR 原先的训练进程自动管理 daemon 替代方案仍保持拒绝。
 - `run_config.json` 记录配置值；runtime manifest v1 增加 producer 诊断字段
   `cuda_process_sharing`，记录 configured/effective、devices、UUID、control pipe、
   server PID 与 validated 状态。该字段先保持 v1 诊断扩展，不提升为稳定公共字段。
@@ -51,8 +53,9 @@ fail closed，也没有可审计的 runtime evidence。
 ## Alternatives Considered
 
 - 继续要求用户只在 shell 设置 MPS 环境变量：无法验证拓扑，也没有结构化证据。
-- 由 UniLab 启动/停止 daemon：把共享 host 服务生命周期混入训练进程，且无法安全服务
-  并发/多用户运行。
+- 由训练进程启动/停止 daemon：把共享 host 服务生命周期混入训练进程，且无法安全服务
+  并发/多用户运行。ADR-0014 将该操作移到显式 CLI，但不改变训练路径的 fail-closed
+  contract。
 - CPU priority/affinity：Discussion #1800 的测量显示其不解决跨进程 CUDA context
   arbitration，且引入未证实的公共配置复杂度。
 
@@ -80,3 +83,12 @@ fail closed，也没有可审计的 runtime evidence。
 - {doc}`RL Infrastructure 开发标准 </zh_CN/4-developer_guide/0-index>`
 - Discussion #1800
 - Issue #2063
+
+
+## Amendment: CLI-owned daemon lifecycle
+
+- Status: Proposed
+- Date: 2026-10-08
+- Decision: [ADR-0014](ADR-0014-cuda-mps-cli-lifecycle-owner.md)
+- Scope: 仅修订本 ADR 中 “UniLab 不 start/stop daemon” 的生命周期归属；训练请求、
+  probe 时序、per-rank evidence 与 fail-closed 语义不变。

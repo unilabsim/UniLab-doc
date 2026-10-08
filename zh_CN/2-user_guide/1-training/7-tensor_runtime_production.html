@@ -519,44 +519,125 @@ launcher/debug/MPS 掩码时才设置该变量：</p>
 <p><code class="docutils literal notranslate"><span class="pre">training.cuda_process_sharing</span></code> 是针对既有 rank-local 拓扑的显式
 execution-sharing 模式。它不是 backend 开关，也不替代 <code class="docutils literal notranslate"><span class="pre">--sim</span> <span class="pre">mjwarp</span></code> 或 owner
 YAML 选择。</p>
-<p>默认 <code class="docutils literal notranslate"><span class="pre">null</span></code> 表示 learner 与 collector 保持独立 CUDA context。对受支持的单主机、
-单 rank MJWarp off-policy 拓扑，使用以下设置请求 CUDA MPS：</p>
+<p>默认 <code class="docutils literal notranslate"><span class="pre">null</span></code> 表示 learner 与 collector 保持独立 CUDA context。初始支持拓扑为
+Linux、NVIDIA CUDA、单物理 GPU、MJWarp、SAC/FlashSAC 且 <code class="docutils literal notranslate"><span class="pre">world_size=1</span></code>。使用以下
+设置请求共享 GPU 执行：</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>training.cuda_process_sharing<span class="o">=</span>mps
 </pre></div>
 </div>
-<p>训练前在用户拥有的目录中启动既有 control daemon：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">CUDA_MPS_PIPE_DIRECTORY</span><span class="o">=</span>/absolute/path/mps/pipe
-<span class="nb">export</span><span class="w"> </span><span class="nv">CUDA_MPS_LOG_DIRECTORY</span><span class="o">=</span>/absolute/path/mps/log
-mkdir<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$CUDA_MPS_PIPE_DIRECTORY</span><span class="s2">&quot;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$CUDA_MPS_LOG_DIRECTORY</span><span class="s2">&quot;</span>
-nvidia-cuda-mps-control<span class="w"> </span>-d
+<section id="daemon">
+<h3>受管理的 daemon 生命周期<a class="headerlink" href="#daemon" title="Link to this heading">¶</a></h3>
+<p>UniLab 提供显式的用户自有生命周期命令，但训练路径仍不会隐式启动或停止 host
+服务：</p>
+<p>单 GPU 主机无需传任何参数，默认值已经完整：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>start
+<span class="nb">eval</span><span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>env<span class="k">)</span><span class="s2">&quot;</span>
+uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>doctor
+uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>stop
 </pre></div>
 </div>
-<p>UniLab 只验证、绝不 start/stop 该 daemon。<code class="docutils literal notranslate"><span class="pre">mps</span></code> 请求必须是 Linux/NVIDIA CUDA、
-使用 MJWarp、learner 与 collector 按 UUID 解析到同一张物理 GPU、<code class="docutils literal notranslate"><span class="pre">world_size=1</span></code>，
-且能访问 live control socket/FIFO 与 control daemon。任一条件不满足都会在
-environment probe、learner construction 或 collector spawn 之前失败；没有静默
-multi-context fallback。错误会指出第一个未满足条件以及 daemon 启动命令。</p>
+<p>默认参数：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>设置</p></th>
+<th class="head"><p>默认值</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>GPU</p></td>
+<td><p>唯一可见的物理 GPU，并解析为 canonical UUID</p></td>
+</tr>
+<tr class="row-odd"><td><p>daemon 名称</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">gpu-&lt;uuid-prefix&gt;</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>pipe 目录</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">~/.cache/unilab/cuda-mps/&lt;name&gt;/pipe</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>log 目录</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">~/.cache/unilab/cuda-mps/&lt;name&gt;/log</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">env</span></code>/<code class="docutils literal notranslate"><span class="pre">stop</span></code> 目标</p></td>
+<td><p>唯一 live 的 UniLab-recorded daemon</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>如果可见 GPU 多于一张，<code class="docutils literal notranslate"><span class="pre">start</span></code> 与 <code class="docutils literal notranslate"><span class="pre">doctor</span></code> 必须显式传
+<code class="docutils literal notranslate"><span class="pre">--gpus</span> <span class="pre">&lt;index-or-uuid&gt;</span></code>。需要稳定 label 或服务自有路径的部署仍可显式覆盖：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>start<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--gpus<span class="w"> </span>&lt;gpu-index-or-uuid&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--name<span class="w"> </span>&lt;daemon-name&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--pipe-dir<span class="w"> </span>/absolute/path/mps/pipe<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--log-dir<span class="w"> </span>/absolute/path/mps/log
+<span class="nb">eval</span><span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>env<span class="w"> </span>--name<span class="w"> </span>&lt;daemon-name&gt;<span class="k">)</span><span class="s2">&quot;</span>
+uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>stop<span class="w"> </span>--name<span class="w"> </span>&lt;daemon-name&gt;
+</pre></div>
+</div>
+<p>只读 status 无参数即可使用：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>status
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">status</span></code> 与 <code class="docutils literal notranslate"><span class="pre">doctor</span></code> 是只读诊断。<code class="docutils literal notranslate"><span class="pre">start</span></code> 创建 user-owned daemon，并在当前用户的
+UniLab cache 中写入 record。<code class="docutils literal notranslate"><span class="pre">stop</span></code> 只接受 record 中的 ownership evidence：UID、
+host、control PID 与 Linux process start-time；它绝不会向 unmanaged pipe 发送
+<code class="docutils literal notranslate"><span class="pre">quit</span></code>。<code class="docutils literal notranslate"><span class="pre">env</span></code> 输出给 launcher 或显式 shell 集成使用的环境变量，不修改 UniLab
+父进程环境。</p>
+<p>daemon 不是某个训练 run 的独占资源，可以服务多个 client。stale record 会在复用前
+被 quarantine；stop 后保留日志。</p>
+</section>
+<section id="id1">
+<h3>拓扑模式与当前限制<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<p>命令会报告三个 topology-mode 名称，使未来 launch contract 保持加法扩展：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>模式</p></th>
+<th class="head"><p>含义</p></th>
+<th class="head"><p>初始状态</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">single_gpu</span></code></p></td>
+<td><p>一个任务使用一张物理 GPU</p></td>
+<td><p>已实现</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">single_task_multi_gpu</span></code></p></td>
+<td><p>一个任务每张 GPU 一个 rank</p></td>
+<td><p>可解析，fail-closed</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">task_per_gpu</span></code></p></td>
+<td><p>多个独立任务按 GPU 打包</p></td>
+<td><p>可解析，fail-closed</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>selector 会解析成 canonical 物理 GPU UUID。MIG UUID 显式拒绝。逗号分隔的多 GPU
+请求会 fail closed，并指向 multi-GPU gate，而不是静默选择 DP 或 task packing。
+<code class="docutils literal notranslate"><span class="pre">all</span></code> 可用于只读诊断，但当前版本不能用它启动 daemon。</p>
+<p>训练仍在 environment probe、learner construction 与 collector spawn 之前验证；
+没有静默 multi-context fallback。错误会指出第一个未满足条件，并指向 CLI 生命周期
+命令。</p>
 <p><code class="docutils literal notranslate"><span class="pre">run_config.json</span></code> 记录配置值。有效 run 的 <code class="docutils literal notranslate"><span class="pre">run_summary.json</span></code> 内嵌
 <code class="docutils literal notranslate"><span class="pre">runtime_manifest.cuda_process_sharing</span></code>，包含 configured/effective 模式、learner
-与 collector device、物理 UUID 证据、control pipe、server PID 和 validation 状态。
+与 collector device、物理 UUID 证据、control pipe、server PID 与 validation 状态。
 该 section 是 runtime-manifest v1 的 producer diagnostic，不是稳定标量契约。</p>
 <p>MPS 只改变 GPU execution sharing，不改变 <code class="docutils literal notranslate"><span class="pre">env_steps_per_sync</span></code>、
-learner/collector placement 或训练语义。多 GPU DP 在独立的 DP gate 与 daemon
-拓扑决策完成前保持不支持。CUDA MPS 依赖 host 与部署方式：在共享容器、多用户
-主机或受限 runner 中 control 可能不可用，显式请求会 fail closed，不会静默降级。</p>
-<p>使用后停止 daemon：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">CUDA_MPS_PIPE_DIRECTORY</span><span class="o">=</span>/absolute/path/mps/pipe
-<span class="nb">echo</span><span class="w"> </span>quit<span class="w"> </span><span class="p">|</span><span class="w"> </span>nvidia-cuda-mps-control
-</pre></div>
-</div>
+learner/collector placement 或训练语义。多 GPU DP 在独立的 gate 与 daemon 拓扑
+决策完成前保持不支持。CUDA MPS 仍依赖 host 与部署方式：在共享容器、多用户主机或
+受限 runner 中 control 可能不可用，显式请求会 fail closed 而不是静默降级。</p>
+<p>无法使用 UniLab CLI 的受限部署仍可以用 <code class="docutils literal notranslate"><span class="pre">nvidia-cuda-mps-control</span></code> 手动运行既有
+daemon；训练验证不关心该 daemon 由哪个显式部署工具启动。</p>
 <p>检查实际执行 benchmark 的 runtime：</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>--no-sync<span class="w"> </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import torch; print(torch.__version__, torch.version.cuda, torch.version.hip, torch.cuda.is_available(), torch.cuda.device_count(), torch.cuda.current_device())&quot;</span>
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">torch.version.hip</span></code> 必须为 <code class="docutils literal notranslate"><span class="pre">None</span></code>，CUDA 必须可用，且可见设备数必须为 1。</p>
 </section>
-<section id="id1">
-<h2>资产<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+</section>
+<section id="id2">
+<h2>资产<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
 <p>G1 mesh 与纹理来自 asset hub。离线 benchmark 前先预取：</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>--no-sync<span class="w"> </span>unilab-pull-assets<span class="w"> </span>--robot<span class="w"> </span>g1
 </pre></div>
@@ -735,8 +816,8 @@ Manager-Based dispatch。</p>
 backend family 的同名 phase 比较。MuJoCo 结果还包含 packed H2D/D2H 清单与
 transfer counter。</p>
 </section>
-<section id="id2">
-<h2>故障排查<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<section id="id3">
+<h2>故障排查<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -790,8 +871,8 @@ transfer counter。</p>
 <p>完整 schema 定义与 metric 判读见 <a class="reference internal" href="3-logging.html"><span class="doc">日志</span></a> 与
 <a class="reference internal" href="4-tensor_runtime.html"><span class="doc">Tensor runtime</span></a>。</p>
 </section>
-<section id="id3">
-<h2>Tensor Runtime 破坏性迁移<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<section id="id4">
+<h2>Tensor Runtime 破坏性迁移<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">env.tensor_runtime</span></code> 与 <code class="docutils literal notranslate"><span class="pre">env.tensor_runtime_device</span></code> 已移除，且没有兼容别名。
 Manager runtime 构造上就是 tensor-native：设备位置由 backend 声明的数据面与
 rank 进程设备推导。此前设置这两个字段的 owner YAML 和 runner override 必须
@@ -861,14 +942,18 @@ wire。</p>
 <li><a class="reference internal" href="#">Tensor Runtime 生产指南</a><ul>
 <li><a class="reference internal" href="#owner">Owner 选择与有效组合</a></li>
 <li><a class="reference internal" href="#runtime">可复现 Runtime</a></li>
-<li><a class="reference internal" href="#cuda-mps">CUDA MPS 执行共享</a></li>
-<li><a class="reference internal" href="#id1">资产</a></li>
+<li><a class="reference internal" href="#cuda-mps">CUDA MPS 执行共享</a><ul>
+<li><a class="reference internal" href="#daemon">受管理的 daemon 生命周期</a></li>
+<li><a class="reference internal" href="#id1">拓扑模式与当前限制</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id2">资产</a></li>
 <li><a class="reference internal" href="#canonical-soak">Canonical 长 Soak</a></li>
 <li><a class="reference internal" href="#artifact">必需 Artifact</a></li>
 <li><a class="reference internal" href="#soak">历史 Soak 证据</a></li>
 <li><a class="reference internal" href="#phase-local-probe">可选 Phase-Local Probe</a></li>
-<li><a class="reference internal" href="#id2">故障排查</a></li>
-<li><a class="reference internal" href="#id3">Tensor Runtime 破坏性迁移</a></li>
+<li><a class="reference internal" href="#id3">故障排查</a></li>
+<li><a class="reference internal" href="#id4">Tensor Runtime 破坏性迁移</a></li>
 </ul>
 </li>
 </ul>

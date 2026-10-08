@@ -524,46 +524,131 @@ add more devices: M11 is single-GPU only.</p>
 already-required rank-local topology. It is not a backend switch and does not
 replace <code class="docutils literal notranslate"><span class="pre">--sim</span> <span class="pre">mjwarp</span></code> or owner YAML selection.</p>
 <p>The default remains <code class="docutils literal notranslate"><span class="pre">null</span></code>: learner and collector keep independent CUDA contexts.
-For the supported single-host, single-rank MJWarp off-policy topology, request
-CUDA MPS with:</p>
+The supported initial topology is Linux, NVIDIA CUDA, one physical GPU, MJWarp,
+SAC/FlashSAC, and <code class="docutils literal notranslate"><span class="pre">world_size=1</span></code>. Request shared GPU execution with:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>training.cuda_process_sharing<span class="o">=</span>mps
 </pre></div>
 </div>
-<p>Start an existing control daemon under user-owned directories before training:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">CUDA_MPS_PIPE_DIRECTORY</span><span class="o">=</span>/absolute/path/mps/pipe
-<span class="nb">export</span><span class="w"> </span><span class="nv">CUDA_MPS_LOG_DIRECTORY</span><span class="o">=</span>/absolute/path/mps/log
-mkdir<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$CUDA_MPS_PIPE_DIRECTORY</span><span class="s2">&quot;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$CUDA_MPS_LOG_DIRECTORY</span><span class="s2">&quot;</span>
-nvidia-cuda-mps-control<span class="w"> </span>-d
+<section id="managed-daemon-lifecycle">
+<h3>Managed daemon lifecycle<a class="headerlink" href="#managed-daemon-lifecycle" title="Link to this heading">¶</a></h3>
+<p>UniLab now provides an explicit user-owned lifecycle command, while training
+itself still never starts or stops a host service implicitly:</p>
+<p>On a single-GPU host, the defaults are already complete:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>start
+<span class="nb">eval</span><span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>env<span class="k">)</span><span class="s2">&quot;</span>
+uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>doctor
+uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>stop
 </pre></div>
 </div>
-<p>UniLab validates, but never starts or stops, that daemon. An <code class="docutils literal notranslate"><span class="pre">mps</span></code> request must
-be Linux/NVIDIA CUDA, use MJWarp, resolve one physical GPU by UUID for learner
-and collector, have <code class="docutils literal notranslate"><span class="pre">world_size=1</span></code>, and reach a live control socket/FIFO and
-control daemon. Any unmet prerequisite fails before environment probing,
-learner construction, or collector spawn; there is no silent multi-context
-fallback. The error names the first prerequisite and the daemon start command.</p>
+<p>Default values:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Setting</p></th>
+<th class="head"><p>Default</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>GPU</p></td>
+<td><p>the sole visible physical GPU, resolved to its canonical UUID</p></td>
+</tr>
+<tr class="row-odd"><td><p>daemon name</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">gpu-&lt;uuid-prefix&gt;</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>pipe directory</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">~/.cache/unilab/cuda-mps/&lt;name&gt;/pipe</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>log directory</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">~/.cache/unilab/cuda-mps/&lt;name&gt;/log</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">env</span></code>/<code class="docutils literal notranslate"><span class="pre">stop</span></code> target</p></td>
+<td><p>the sole live UniLab-recorded daemon</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>If more than one GPU is visible, <code class="docutils literal notranslate"><span class="pre">start</span></code> and <code class="docutils literal notranslate"><span class="pre">doctor</span></code> require
+<code class="docutils literal notranslate"><span class="pre">--gpus</span> <span class="pre">&lt;index-or-uuid&gt;</span></code>. Explicit overrides remain available for deployments
+that need stable labels or service-owned paths:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>start<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--gpus<span class="w"> </span>&lt;gpu-index-or-uuid&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--name<span class="w"> </span>&lt;daemon-name&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--pipe-dir<span class="w"> </span>/absolute/path/mps/pipe<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--log-dir<span class="w"> </span>/absolute/path/mps/log
+<span class="nb">eval</span><span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>env<span class="w"> </span>--name<span class="w"> </span>&lt;daemon-name&gt;<span class="k">)</span><span class="s2">&quot;</span>
+uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>stop<span class="w"> </span>--name<span class="w"> </span>&lt;daemon-name&gt;
+</pre></div>
+</div>
+<p>Read-only status works without arguments:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>status
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">status</span></code> and <code class="docutils literal notranslate"><span class="pre">doctor</span></code> are read-only. <code class="docutils literal notranslate"><span class="pre">start</span></code> creates a user-owned daemon and a
+record under the current user’s UniLab cache. <code class="docutils literal notranslate"><span class="pre">stop</span></code> uses only that recorded
+ownership evidence: UID, host, control PID, and Linux process start-time. It
+never sends <code class="docutils literal notranslate"><span class="pre">quit</span></code> to an unmanaged pipe. <code class="docutils literal notranslate"><span class="pre">env</span></code> prints exports for a launcher or
+an explicit shell integration; it does not mutate UniLab’s parent process.</p>
+<p>A daemon is not exclusively owned by a training run and may serve multiple
+clients. A stale record is quarantined before reuse, and logs are retained after
+stop.</p>
+</section>
+<section id="topology-modes-and-current-limits">
+<h3>Topology modes and current limits<a class="headerlink" href="#topology-modes-and-current-limits" title="Link to this heading">¶</a></h3>
+<p>The command reports three topology-mode names so future launch contracts remain
+additive:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Mode</p></th>
+<th class="head"><p>Meaning</p></th>
+<th class="head"><p>Initial status</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">single_gpu</span></code></p></td>
+<td><p>one task uses one physical GPU</p></td>
+<td><p>Implemented</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">single_task_multi_gpu</span></code></p></td>
+<td><p>one task has one rank per GPU</p></td>
+<td><p>Parsed, fail-closed</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">task_per_gpu</span></code></p></td>
+<td><p>independent tasks are packed one per GPU</p></td>
+<td><p>Parsed, fail-closed</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Selectors resolve through canonical physical GPU UUIDs. MIG UUIDs are rejected
+explicitly. A comma-separated multi-GPU request fails closed and references the
+multi-GPU gate rather than silently choosing DP or task packing. <code class="docutils literal notranslate"><span class="pre">all</span></code> is useful
+in read-only diagnostics but cannot start a daemon in this release.</p>
+<p>Training still validates before environment probing, learner construction, and
+collector spawn; there is no silent multi-context fallback. The error names the
+first unmet prerequisite and points to the CLI lifecycle commands.</p>
 <p><code class="docutils literal notranslate"><span class="pre">run_config.json</span></code> records the configured owner value. A valid run’s
 <code class="docutils literal notranslate"><span class="pre">run_summary.json</span></code> embeds <code class="docutils literal notranslate"><span class="pre">runtime_manifest.cuda_process_sharing</span></code> with the
 configured/effective mode, learner and collector devices, physical UUID
 evidence, control pipe, server PID, and validation state. The section is a
 runtime-manifest v1 producer diagnostic, not a stable scalar contract.</p>
-<p>MPS changes only GPU execution sharing. It does not change <code class="docutils literal notranslate"><span class="pre">env_steps_per_sync</span></code>,
-learner/collector placement, or training semantics. Multi-GPU DP remains
-unsupported until the separate DP gate and daemon topology decision are
-completed. CUDA MPS is host- and deployment-dependent: in shared containers,
-multi-user hosts, or restricted runners, control may be unavailable, and an
-explicit request fails closed rather than silently degrading.</p>
-<p>Stop the daemon after use:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">CUDA_MPS_PIPE_DIRECTORY</span><span class="o">=</span>/absolute/path/mps/pipe
-<span class="nb">echo</span><span class="w"> </span>quit<span class="w"> </span><span class="p">|</span><span class="w"> </span>nvidia-cuda-mps-control
-</pre></div>
-</div>
+<p>MPS changes only GPU execution sharing. It does not change
+<code class="docutils literal notranslate"><span class="pre">env_steps_per_sync</span></code>, learner/collector placement, or training semantics.
+Multi-GPU DP remains unsupported until its separate gate and daemon topology
+decision are completed. CUDA MPS remains host- and deployment-dependent: in
+shared containers, multi-user hosts, or restricted runners, control may be
+unavailable, and an explicit request fails closed rather than silently
+degrading.</p>
+<p>Restricted deployments that cannot use the UniLab CLI may still operate an
+existing daemon manually with <code class="docutils literal notranslate"><span class="pre">nvidia-cuda-mps-control</span></code>; training validation
+does not depend on which explicit deployment tool started it.</p>
 <p>Check the runtime that will execute the benchmark:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>--no-sync<span class="w"> </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import torch; print(torch.__version__, torch.version.cuda, torch.version.hip, torch.cuda.is_available(), torch.cuda.device_count(), torch.cuda.current_device())&quot;</span>
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">torch.version.hip</span></code> must be <code class="docutils literal notranslate"><span class="pre">None</span></code>, CUDA must be available, and the visible
 device count must be one.</p>
+</section>
 </section>
 <section id="assets">
 <h2>Assets<a class="headerlink" href="#assets" title="Link to this heading">¶</a></h2>
@@ -882,7 +967,11 @@ than falling back to a NumPy wire.</p>
 <li><a class="reference internal" href="#">Tensor Runtime Production Guide</a><ul>
 <li><a class="reference internal" href="#owner-selection-and-effective-combinations">Owner Selection and Effective Combinations</a></li>
 <li><a class="reference internal" href="#reproducible-runtime">Reproducible Runtime</a></li>
-<li><a class="reference internal" href="#cuda-mps-execution-sharing">CUDA MPS Execution Sharing</a></li>
+<li><a class="reference internal" href="#cuda-mps-execution-sharing">CUDA MPS Execution Sharing</a><ul>
+<li><a class="reference internal" href="#managed-daemon-lifecycle">Managed daemon lifecycle</a></li>
+<li><a class="reference internal" href="#topology-modes-and-current-limits">Topology modes and current limits</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#assets">Assets</a></li>
 <li><a class="reference internal" href="#canonical-long-soak">Canonical Long Soak</a></li>
 <li><a class="reference internal" href="#required-artifacts">Required Artifacts</a></li>

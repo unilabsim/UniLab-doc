@@ -27,6 +27,7 @@ orphan: true
 | [ADR-0011 Torch-Only Manager-Based Runtime](ADR-0011-torch-only-manager-based-runtime.md) | Manager runtime / tensor lifecycle | Superseded |
 | [ADR-0012 Sole Tensor Manager And Scoped Backends](ADR-0012-sole-tensor-manager-and-scoped-backends.md) | Manager runtime / backend scope | Proposed |
 | [ADR-0013 CUDA MPS Single-Rank Execution Sharing](ADR-0013-cuda-mps-single-rank-execution-sharing.md) | Training runtime / execution sharing | Proposed |
+| [ADR-0014 CUDA MPS CLI Lifecycle Owner](ADR-0014-cuda-mps-cli-lifecycle-owner.md) | Training runtime / host tooling | Proposed |
 
 ## ADR Governance
 

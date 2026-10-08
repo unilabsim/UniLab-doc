@@ -25,6 +25,27 @@ CLI 会根据 `--algo`、`--task`、`--sim` 以及可选的 `--profile` 构造�
 路径。定义路由的取值必须使用 CLI flag；命令之后的 Hydra override 用于设置诸如
 `algo.max_iterations`、`algo.num_envs` 和 `training.no_play` 等字段。
 
+`uni-cumps` 负责 CUDA MPS 的显式用户态 daemon 生命周期。它提供只读
+host/topology 诊断，只启动和停止 UniLab record 记录的 user-owned daemon，并输出
+launcher 环境而不修改调用方 shell：
+
+```bash
+# 单 GPU 主机；默认参数已经完整。
+uv run uni-cumps start
+eval "$(uv run uni-cumps env)"
+uv run uni-cumps doctor
+uv run uni-cumps stop
+
+# 多 GPU 或需要显式命名的部署。
+uv run uni-cumps doctor --gpus <gpu-index-or-uuid>
+uv run uni-cumps start --gpus <gpu-index-or-uuid> --name <name>
+uv run uni-cumps env --name <name>
+uv run uni-cumps stop --name <name>
+```
+
+ownership、并发和拓扑限制见 tensor runtime 生产指南。训练仍必须显式设置
+`training.cuda_process_sharing=mps`。
+
 ### 各环境的调用方式
 
 CLI 前缀取决于安装方案：

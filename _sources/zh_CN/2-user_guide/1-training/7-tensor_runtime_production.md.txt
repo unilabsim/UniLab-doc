@@ -85,44 +85,96 @@ trainer 进程内所有 CUDA ordinal 都相对于该 mask。不要添加更多�
 execution-sharing 模式。它不是 backend 开关，也不替代 `--sim mjwarp` 或 owner
 YAML 选择。
 
-默认 `null` 表示 learner 与 collector 保持独立 CUDA context。对受支持的单主机、
-单 rank MJWarp off-policy 拓扑，使用以下设置请求 CUDA MPS：
+默认 `null` 表示 learner 与 collector 保持独立 CUDA context。初始支持拓扑为
+Linux、NVIDIA CUDA、单物理 GPU、MJWarp、SAC/FlashSAC 且 `world_size=1`。使用以下
+设置请求共享 GPU 执行：
 
 ```bash
 training.cuda_process_sharing=mps
 ```
 
-训练前在用户拥有的目录中启动既有 control daemon：
+### 受管理的 daemon 生命周期
+
+UniLab 提供显式的用户自有生命周期命令，但训练路径仍不会隐式启动或停止 host
+服务：
+
+单 GPU 主机无需传任何参数，默认值已经完整：
 
 ```bash
-export CUDA_MPS_PIPE_DIRECTORY=/absolute/path/mps/pipe
-export CUDA_MPS_LOG_DIRECTORY=/absolute/path/mps/log
-mkdir -p "$CUDA_MPS_PIPE_DIRECTORY" "$CUDA_MPS_LOG_DIRECTORY"
-nvidia-cuda-mps-control -d
+uv run uni-cumps start
+eval "$(uv run uni-cumps env)"
+uv run uni-cumps doctor
+uv run uni-cumps stop
 ```
 
-UniLab 只验证、绝不 start/stop 该 daemon。`mps` 请求必须是 Linux/NVIDIA CUDA、
-使用 MJWarp、learner 与 collector 按 UUID 解析到同一张物理 GPU、`world_size=1`，
-且能访问 live control socket/FIFO 与 control daemon。任一条件不满足都会在
-environment probe、learner construction 或 collector spawn 之前失败；没有静默
-multi-context fallback。错误会指出第一个未满足条件以及 daemon 启动命令。
+默认参数：
+
+| 设置 | 默认值 |
+| --- | --- |
+| GPU | 唯一可见的物理 GPU，并解析为 canonical UUID |
+| daemon 名称 | `gpu-<uuid-prefix>` |
+| pipe 目录 | `~/.cache/unilab/cuda-mps/<name>/pipe` |
+| log 目录 | `~/.cache/unilab/cuda-mps/<name>/log` |
+| `env`/`stop` 目标 | 唯一 live 的 UniLab-recorded daemon |
+
+如果可见 GPU 多于一张，`start` 与 `doctor` 必须显式传
+`--gpus <index-or-uuid>`。需要稳定 label 或服务自有路径的部署仍可显式覆盖：
+
+```bash
+uv run uni-cumps start \
+  --gpus <gpu-index-or-uuid> \
+  --name <daemon-name> \
+  --pipe-dir /absolute/path/mps/pipe \
+  --log-dir /absolute/path/mps/log
+eval "$(uv run uni-cumps env --name <daemon-name>)"
+uv run uni-cumps stop --name <daemon-name>
+```
+
+只读 status 无参数即可使用：
+
+```bash
+uv run uni-cumps status
+```
+
+`status` 与 `doctor` 是只读诊断。`start` 创建 user-owned daemon，并在当前用户的
+UniLab cache 中写入 record。`stop` 只接受 record 中的 ownership evidence：UID、
+host、control PID 与 Linux process start-time；它绝不会向 unmanaged pipe 发送
+`quit`。`env` 输出给 launcher 或显式 shell 集成使用的环境变量，不修改 UniLab
+父进程环境。
+
+daemon 不是某个训练 run 的独占资源，可以服务多个 client。stale record 会在复用前
+被 quarantine；stop 后保留日志。
+
+### 拓扑模式与当前限制
+
+命令会报告三个 topology-mode 名称，使未来 launch contract 保持加法扩展：
+
+| 模式 | 含义 | 初始状态 |
+| --- | --- | --- |
+| `single_gpu` | 一个任务使用一张物理 GPU | 已实现 |
+| `single_task_multi_gpu` | 一个任务每张 GPU 一个 rank | 可解析，fail-closed |
+| `task_per_gpu` | 多个独立任务按 GPU 打包 | 可解析，fail-closed |
+
+selector 会解析成 canonical 物理 GPU UUID。MIG UUID 显式拒绝。逗号分隔的多 GPU
+请求会 fail closed，并指向 multi-GPU gate，而不是静默选择 DP 或 task packing。
+`all` 可用于只读诊断，但当前版本不能用它启动 daemon。
+
+训练仍在 environment probe、learner construction 与 collector spawn 之前验证；
+没有静默 multi-context fallback。错误会指出第一个未满足条件，并指向 CLI 生命周期
+命令。
 
 `run_config.json` 记录配置值。有效 run 的 `run_summary.json` 内嵌
 `runtime_manifest.cuda_process_sharing`，包含 configured/effective 模式、learner
-与 collector device、物理 UUID 证据、control pipe、server PID 和 validation 状态。
+与 collector device、物理 UUID 证据、control pipe、server PID 与 validation 状态。
 该 section 是 runtime-manifest v1 的 producer diagnostic，不是稳定标量契约。
 
 MPS 只改变 GPU execution sharing，不改变 `env_steps_per_sync`、
-learner/collector placement 或训练语义。多 GPU DP 在独立的 DP gate 与 daemon
-拓扑决策完成前保持不支持。CUDA MPS 依赖 host 与部署方式：在共享容器、多用户
-主机或受限 runner 中 control 可能不可用，显式请求会 fail closed，不会静默降级。
+learner/collector placement 或训练语义。多 GPU DP 在独立的 gate 与 daemon 拓扑
+决策完成前保持不支持。CUDA MPS 仍依赖 host 与部署方式：在共享容器、多用户主机或
+受限 runner 中 control 可能不可用，显式请求会 fail closed 而不是静默降级。
 
-使用后停止 daemon：
-
-```bash
-export CUDA_MPS_PIPE_DIRECTORY=/absolute/path/mps/pipe
-echo quit | nvidia-cuda-mps-control
-```
+无法使用 UniLab CLI 的受限部署仍可以用 `nvidia-cuda-mps-control` 手动运行既有
+daemon；训练验证不关心该 daemon 由哪个显式部署工具启动。
 
 检查实际执行 benchmark 的 runtime：
 

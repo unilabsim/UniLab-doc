@@ -26,6 +26,29 @@ optional `--profile`. Route-defining values must use the CLI flags; Hydra
 overrides after the command are for fields such as `algo.max_iterations`,
 `algo.num_envs`, and `training.no_play`.
 
+The `uni-cumps` command owns the explicit user-space daemon lifecycle for
+CUDA MPS. It reports read-only host status and topology diagnostics, starts and
+stops only UniLab-recorded user-owned daemons, and prints launcher environment
+values without mutating the caller's shell:
+
+```bash
+# Single-GPU host; all defaults are complete.
+uv run uni-cumps start
+eval "$(uv run uni-cumps env)"
+uv run uni-cumps doctor
+uv run uni-cumps stop
+
+# Multi-GPU or explicitly named deployments.
+uv run uni-cumps doctor --gpus <gpu-index-or-uuid>
+uv run uni-cumps start --gpus <gpu-index-or-uuid> --name <name>
+uv run uni-cumps env --name <name>
+uv run uni-cumps stop --name <name>
+```
+
+See the tensor runtime production guide for ownership, concurrency, and topology
+limits. Training still requests MPS explicitly with
+`training.cuda_process_sharing=mps`.
+
 ### Per-Environment Invocation
 
 The CLI prefix depends on the install flavor:
