@@ -160,8 +160,6 @@ useful for launcher/debug/MPS isolation.
 ## Evidence In Repo
 
 - Manager runtime: `src/unilab/envs/manager_based_rl_env.py`
-- Absorbed FlashSAC owner fingerprint:
-  `src/unilab/tasks/motion_tracking/g1/flashsac_owner_contract.py`
 - Tensor state store/readiness consumer:
   `src/unilab/tasks/motion_tracking/common/tensor_state_store.py`
 - Public backend contract: `unisim.backend.base.SimBackend`
