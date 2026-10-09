@@ -562,10 +562,9 @@
 <span class="c1"># integer payload sent to that worker before construction.</span>
 <span class="n">_EXTERNAL_CUDA_IPC_BACKENDS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;isaacgym&quot;</span><span class="p">,</span> <span class="s2">&quot;isaacsim&quot;</span><span class="p">}</span>
 
-<span class="c1"># HOST_BRIDGE backends accept optional accelerator Torch carriers across their packed</span>
-<span class="c1"># boundary. A process may explicitly request those carriers on its learner Torch</span>
-<span class="c1"># device; unset non-accelerator requests retain the owner/default CPU placement.</span>
-<span class="n">_HOST_BRIDGE_TORCH_BACKENDS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;mujoco&quot;</span><span class="p">,</span> <span class="s2">&quot;motrix&quot;</span><span class="p">,</span> <span class="s2">&quot;drake&quot;</span><span class="p">,</span> <span class="s2">&quot;superdex&quot;</span><span class="p">}</span>
+<span class="c1"># MuJoCo is the scoped HOST_BRIDGE backend whose training collector may explicitly</span>
+<span class="c1"># request accelerator Torch carriers across its packed boundary.</span>
+<span class="n">_COLLECTOR_TENSOR_BACKENDS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;mujoco&quot;</span><span class="p">}</span>
 
 
 <span class="c1"># Set once ``bind_genesis_process_device`` has pinned CUDA_VISIBLE_DEVICES for</span>
@@ -711,18 +710,37 @@
     <span class="n">env_cfg_override</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
+    <span class="n">collector_tensor_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Return an env override selecting optional HOST_BRIDGE Torch carriers.</span>
 
-<span class="sd">    The input mapping is never mutated. Explicit CPU requests force CPU carriers.</span>
-<span class="sd">    Unset and non-CUDA learner requests retain owner/default placement. A CUDA request</span>
-<span class="sd">    is validated against backend capabilities when the environment binds.</span>
-<span class="sd">    DEVICE_RESIDENT backends own placement and never receive this synthetic field.</span>
+<span class="sd">    The input mapping is never mutated. ``collector_tensor_device`` is the explicit</span>
+<span class="sd">    training contract: ``cpu`` remains on CPU and unindexed ``cuda`` is resolved to</span>
+<span class="sd">    the current device by the environment. The legacy ``learner_device`` argument is</span>
+<span class="sd">    used only by callers without a composed training configuration.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">result</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">env_cfg_override</span><span class="p">)</span> <span class="k">if</span> <span class="n">env_cfg_override</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{}</span>
-    <span class="k">if</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_HOST_BRIDGE_TORCH_BACKENDS</span><span class="p">:</span>
+    <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">collector_tensor_device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">collector_tensor_device</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">device</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="s2">&quot;cuda&quot;</span><span class="p">}:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;training.collector_tensor_device must be &#39;cpu&#39; or &#39;cuda&#39;; &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">collector_tensor_device</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_COLLECTOR_TENSOR_BACKENDS</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;training.collector_tensor_device=cuda is supported only for &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;the MuJoCo HOST_BRIDGE backend; got </span><span class="si">{</span><span class="n">backend_type</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">return</span> <span class="n">result</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;manager_torch_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">device</span>
+        <span class="k">return</span> <span class="n">result</span>
+
+    <span class="k">if</span> <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_COLLECTOR_TENSOR_BACKENDS</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">result</span>
     <span class="k">if</span> <span class="n">learner_device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">result</span>

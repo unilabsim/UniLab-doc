@@ -115,7 +115,7 @@ NVIDIA 驱动与容器运行时不匹配，再调整任务配置。设置了
 全局物理索引。
 
 在 macOS 与 ROCm 上请使用 CPU-authoritative host-bridge 后端。在 ROCm 上，只有
-训练进程显式请求该 learner 设备且后端接受被路由的 `cuda`
-`manager_torch_device` 时，Manager/TorchEnv 才使用当前 GPU；直接构造环境仍为
-CPU。host bridge 使用 GPU Torch buffer 不代表 GPU physics，也不代表
+MuJoCo 训练显式设置 `training.collector_tensor_device=cuda` 且后端接受被路由的
+`cuda` `manager_torch_device` 时，Manager/TorchEnv 才使用当前 GPU；直接构造环境与
+训练默认仍为 CPU。host bridge 使用 GPU Torch buffer 不代表 GPU physics，也不代表
 device-resident 后端生命周期。

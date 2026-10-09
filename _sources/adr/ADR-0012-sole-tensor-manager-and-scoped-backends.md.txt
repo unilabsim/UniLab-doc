@@ -66,12 +66,14 @@ of the Manager runtime. Placement is derived from the declared backend data plan
 or hidden fallback is retained.
 
 For a `HOST_BRIDGE` backend, CPU-authoritative physics keeps the default Manager/TorchEnv
-carriers on CPU. A training process may explicitly request `cuda`/`cuda:<ordinal>` through
-`manager_torch_device` (routed from its resolved learner device), including ROCm PyTorch's
-`cuda` namespace; UniLab validates the request against the backend's declared Torch devices.
-GPU visibility alone is not a placement request. `DEVICE_RESIDENT` adapters keep their own
-CUDA-only placement and platform requirements; accepting HIP Torch buffers on a host bridge
-does not make those physics engines ROCm-compatible.
+carriers on CPU. MuJoCo training may explicitly request the unindexed accelerator family with
+`training.collector_tensor_device=cuda`; routing maps that request to the existing
+`manager_torch_device` owner field, and the collector process resolves it to its current
+rank-local Torch CUDA ordinal. UniLab validates the request against the backend's declared
+Torch devices. Learner CUDA selection, GPU visibility, and backend device acceptance alone
+are not placement requests. `DEVICE_RESIDENT` adapters keep their own CUDA-only placement and
+platform requirements; accepting HIP Torch buffers on a host bridge does not make those
+physics engines ROCm-compatible.
 
 ### Manager-owned RNG
 

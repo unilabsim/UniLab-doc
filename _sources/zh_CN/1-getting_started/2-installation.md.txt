@@ -219,8 +219,8 @@ ROCm 说明：
   `uv run --no-sync`（或 `UV_NO_SYNC=1 make ...`）；自动同步会重新安装默认配置档的
   CUDA wheel。
 - 安装 ROCm PyTorch 且 GPU 可用时，接受 `cuda` buffer 的 `HOST_BRIDGE` 后端只有在
-  训练进程显式请求该 learner 设备（并路由 `manager_torch_device`）时才会让
-  Manager/TorchEnv tensor 使用当前 GPU；直接构造环境的默认仍是 CPU。MuJoCo 物理
+  MuJoCo 训练显式设置 `training.collector_tensor_device=cuda` 时才会让
+  Manager/TorchEnv tensor 使用当前 GPU；直接构造环境与训练默认仍是 CPU。MuJoCo 物理
   仿真仍在 CPU 上，通过 packed 传输连接显式请求的 GPU observation、action、reward
   与 reset。CUDA-only 物理后端仍不支持 ROCm。见
   {doc}`/adr/ADR-0012-sole-tensor-manager-and-scoped-backends`。
