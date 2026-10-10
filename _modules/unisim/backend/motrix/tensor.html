@@ -1154,7 +1154,15 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">transfer_stats</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
         <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_transfer_stats</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_layout</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_buffer_layout</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Re-check the plan-owned buffer invariants on packed read hot paths.</span>
+
+<span class="sd">        A Motrix scene layout is immutable for the lifetime of its backend,</span>
+<span class="sd">        and ``MotrixBackend.close()`` closes every compiled plan fail closed,</span>
+<span class="sd">        so hot reads only re-verify the staging buffer shapes. Re-reading</span>
+<span class="sd">        sensor widths from the backend is compile-time work owned by</span>
+<span class="sd">        ``_validate_layout``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">buffers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffers</span><span class="p">()</span>
         <span class="n">expected_packet</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_row_width</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">buffers</span><span class="o">.</span><span class="n">host_packet</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected_packet</span><span class="p">:</span>
@@ -1165,6 +1173,17 @@
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;MotrixSim packed tensor selected host layout is inconsistent&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">buffers</span><span class="o">.</span><span class="n">selected_packet</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">buffers</span><span class="o">.</span><span class="n">device_packet</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;MotrixSim packed tensor selected device layout is inconsistent&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_layout</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run the full layout contract check, including backend sensor re-reads.</span>
+
+<span class="sd">        This is compile/open cold-path work: it re-reads every physical</span>
+<span class="sd">        sensor to confirm its width still matches the compiled layout and</span>
+<span class="sd">        fails closed on any drift. Hot packed reads must call</span>
+<span class="sd">        ``_check_buffer_layout`` instead so the sensor fan-out never enters</span>
+<span class="sd">        the step/reset loop.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_check_buffer_layout</span><span class="p">()</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">width</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sensor_widths</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolved_sensors</span><span class="o">.</span><span class="n">body_slots</span><span class="p">:</span>
                 <span class="n">prefix</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
@@ -1283,7 +1302,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">read_state_sensors</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_open</span><span class="p">()</span>
         <span class="n">require_motrix_tensor_runtime</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="p">,</span> <span class="n">require_callback_free</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_layout</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_check_buffer_layout</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">last_timing</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pack_host_packet</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
@@ -1404,7 +1423,7 @@
         <span class="n">rows_device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_rows_device</span>
         <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">rows_device</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">rows</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;apply_reset() must complete before a selected packed read&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_layout</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_check_buffer_layout</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">last_timing</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
