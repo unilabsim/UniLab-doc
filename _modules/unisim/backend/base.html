@@ -535,6 +535,7 @@
     <span class="n">IntervalRandomizationPlan</span><span class="p">,</span>
     <span class="n">IntervalTermOp</span><span class="p">,</span>
     <span class="n">ResetRandomizationPayload</span><span class="p">,</span>
+    <span class="n">TensorResetRandomizationPayload</span><span class="p">,</span>
     <span class="n">_validate_reset_term</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneResetRequest</span>
@@ -703,6 +704,11 @@
 <span class="sd">    The flags describe the optional methods, not whether a particular tensor</span>
 <span class="sd">    engine is installed. Unsupported operations remain fail-closed even when</span>
 <span class="sd">    the coarse execution mode is not ``UNSUPPORTED``.</span>
+
+<span class="sd">    ``device_reset_randomization`` declares that ``set_state_tensor`` accepts</span>
+<span class="sd">    :class:`~unisim.dr.types.TensorResetRandomizationPayload` values with</span>
+<span class="sd">    arrays resident on the backend&#39;s declared Torch device, applied as</span>
+<span class="sd">    selected-row in-place scatters.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">execution</span><span class="p">:</span> <span class="n">TensorExecution</span>
@@ -712,6 +718,7 @@
     <span class="n">stepping</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">selected_reset</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">reset_randomization</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">device_reset_randomization</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">fixed_variants</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">host_pre_step_control</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">packed_host_bridge</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
@@ -736,6 +743,7 @@
                     <span class="bp">self</span><span class="o">.</span><span class="n">stepping</span><span class="p">,</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">selected_reset</span><span class="p">,</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">reset_randomization</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">device_reset_randomization</span><span class="p">,</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">fixed_variants</span><span class="p">,</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">host_pre_step_control</span><span class="p">,</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">packed_host_bridge</span><span class="p">,</span>
@@ -799,6 +807,15 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor selected reset requires qpos and qvel state fields&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset_randomization</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">selected_reset</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor reset randomization requires selected reset&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">device_reset_randomization</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">reset_randomization</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">execution</span> <span class="ow">is</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">DEVICE_RESIDENT</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">data_plane</span> <span class="ow">is</span> <span class="n">TensorDataPlane</span><span class="o">.</span><span class="n">DIRECT</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;tensor device reset randomization requires reset randomization with &quot;</span>
+                <span class="s2">&quot;device-resident execution and a direct data plane&quot;</span>
+            <span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">tracked_body_views</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sensor_views</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">selected_reset</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tracked-body views require sensor views and selected reset&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">packed_host_bridge</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span>
@@ -1790,7 +1807,7 @@
         <span class="n">env_indices</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">qpos</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">qvel</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
-        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Set selected state through the adapter-declared tensor lifecycle.</span>
 
@@ -1803,6 +1820,14 @@
 <span class="sd">        a host detour; ``HOST_BRIDGE`` adapters make their explicit</span>
 <span class="sd">        accelerator-to-host boundary measurable before CPU state is updated.</span>
 <span class="sd">        Inputs are consumed before return.</span>
+
+<span class="sd">        ``randomization`` is a host NumPy :class:`ResetRandomizationPayload`,</span>
+<span class="sd">        or — only when the adapter declares</span>
+<span class="sd">        ``TensorLifecycleCapabilities.device_reset_randomization`` — a</span>
+<span class="sd">        :class:`TensorResetRandomizationPayload` whose arrays are resident on</span>
+<span class="sd">        the adapter&#39;s declared Torch device and applied as selected-row</span>
+<span class="sd">        in-place scatters. Adapters without that declaration fail closed on a</span>
+<span class="sd">        device payload (``TypeError`` or ``NotImplementedError``).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">backend_type</span><span class="si">}</span><span class="s2"> does not support tensor state writes: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">tensor_execution</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>

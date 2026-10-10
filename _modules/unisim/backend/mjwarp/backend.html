@@ -589,6 +589,7 @@
     <span class="n">IntervalRandomizationPlan</span><span class="p">,</span>
     <span class="n">IntervalTermOp</span><span class="p">,</span>
     <span class="n">ResetRandomizationPayload</span><span class="p">,</span>
+    <span class="n">TensorResetRandomizationPayload</span><span class="p">,</span>
     <span class="n">_validate_reset_term</span><span class="p">,</span>
     <span class="n">require_op_body_ids</span><span class="p">,</span>
 <span class="p">)</span>
@@ -833,6 +834,11 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_sensor_names</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state_torch_views</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_sensor_torch_views</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="c1"># Live Torch views of per-world DR Model fields (separate from the</span>
+        <span class="c1"># Data-field views above) plus the set of host mirrors a device-side</span>
+        <span class="c1"># scatter has left stale.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_model_torch_views</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_dr_mirror_stale</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco</span> <span class="o">=</span> <span class="n">deps</span><span class="o">.</span><span class="n">mujoco</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span> <span class="o">=</span> <span class="n">deps</span><span class="o">.</span><span class="n">mujoco_warp</span>
@@ -2010,6 +2016,7 @@
         <span class="o">*</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;torch.float32&quot;</span><span class="p">,</span>
+        <span class="n">check_finite</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
@@ -2031,27 +2038,96 @@
             <span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">()):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp tensor </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be contiguous&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
+        <span class="k">if</span> <span class="n">check_finite</span> <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp tensor </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must contain finite values&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">value</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_torch_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rows</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-
-        <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">rows</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_torch_rows_flag</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rows</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return a device-resident bool scalar for unique in-range reset rows.&quot;&quot;&quot;</span>
         <span class="n">sorted_rows</span> <span class="o">=</span> <span class="n">rows</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span><span class="o">.</span><span class="n">values</span>
         <span class="n">in_range</span> <span class="o">=</span> <span class="p">(</span><span class="n">sorted_rows</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">sorted_rows</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">)</span>
-        <span class="n">unique</span> <span class="o">=</span> <span class="p">(</span><span class="n">sorted_rows</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">!=</span> <span class="n">sorted_rows</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
-        <span class="n">valid</span> <span class="o">=</span> <span class="n">in_range</span> <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">2</span> <span class="k">else</span> <span class="n">in_range</span> <span class="o">&amp;</span> <span class="n">unique</span>
-        <span class="c1"># Compare against a device-resident true scalar. Converting the aggregate</span>
-        <span class="c1"># to Python synchronizes the selected-reset boundary even when every row</span>
-        <span class="c1"># is valid; the invalid branch below may synchronize to report the error.</span>
-        <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">equal</span><span class="p">(</span><span class="n">valid</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">valid</span><span class="p">)):</span>
-            <span class="k">return</span> <span class="n">rows</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;mjwarp tensor env_indices must contain unique values in [0, </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="si">}</span><span class="s2">)&quot;</span>
-        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">in_range</span>
+        <span class="k">return</span> <span class="n">in_range</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">sorted_rows</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">!=</span> <span class="n">sorted_rows</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_torch_value_flag</span><span class="p">(</span><span class="n">rule</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return one device-resident bool scalar for a payload value rule.</span>
+
+<span class="sd">        The rules mirror the host ``_validate_extended_randomization`` /</span>
+<span class="sd">        ``_prepare_reset_randomization`` constraints; every flag subsumes the</span>
+<span class="sd">        finiteness check so a single aggregate verdict is fail-closed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="k">if</span> <span class="n">rule</span> <span class="o">==</span> <span class="s2">&quot;finite&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">rule</span> <span class="o">==</span> <span class="s2">&quot;non_negative&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">value</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">))</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">rule</span> <span class="o">==</span> <span class="s2">&quot;solref&quot;</span><span class="p">:</span>
+            <span class="n">pair_ok</span> <span class="o">=</span> <span class="p">(</span><span class="n">value</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">value</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">pair_ok</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">rule</span> <span class="o">==</span> <span class="s2">&quot;solimp&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span> <span class="o">&amp;</span> <span class="p">(</span>
+                <span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+                <span class="o">&amp;</span> <span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+                <span class="o">&amp;</span> <span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+                <span class="o">&amp;</span> <span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+                <span class="o">&amp;</span> <span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+                <span class="o">&amp;</span> <span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">4</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">rule</span> <span class="o">==</span> <span class="s2">&quot;unit_quat&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span> <span class="o">&amp;</span> <span class="p">(</span>
+                <span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">&lt;=</span> <span class="mf">1e-5</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unknown mjwarp tensor value rule </span><span class="si">{</span><span class="n">rule</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_torch_rule_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">rule</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">rule</span> <span class="o">==</span> <span class="s2">&quot;rows&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="s2">&quot;mjwarp tensor env_indices must contain unique values in &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;[0, </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="si">}</span><span class="s2">)&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">rule</span> <span class="o">==</span> <span class="s2">&quot;finite&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;mjwarp tensor </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must contain finite values&quot;</span>
+        <span class="k">if</span> <span class="n">rule</span> <span class="o">==</span> <span class="s2">&quot;non_negative&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;mjwarp tensor </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be non-negative&quot;</span>
+        <span class="k">if</span> <span class="n">rule</span> <span class="o">==</span> <span class="s2">&quot;solref&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;mjwarp tensor </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> requires two positive or two non-positive values&quot;</span>
+        <span class="k">if</span> <span class="n">rule</span> <span class="o">==</span> <span class="s2">&quot;solimp&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;mjwarp tensor </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> requires impedance [0,1], width&gt;0, &quot;</span>
+                <span class="s2">&quot;midpoint (0,1), power&gt;=1&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">rule</span> <span class="o">==</span> <span class="s2">&quot;unit_quat&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;mjwarp tensor </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> requires unit wxyz quaternions&quot;</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unknown mjwarp tensor value rule </span><span class="si">{</span><span class="n">rule</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_torch_fused</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entries</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Aggregate per-operand value rules into one reduction, one D2H sync.</span>
+
+<span class="sd">        Each entry is ``(name, rule, value, flag)`` with ``flag`` a</span>
+<span class="sd">        device-resident bool scalar; structural checks (type, shape, dtype,</span>
+<span class="sd">        device, contiguity) already ran host-side in ``_validate_torch_operand``.</span>
+<span class="sd">        The happy path costs exactly one synchronization no matter how many</span>
+<span class="sd">        operands are staged.  A failed aggregate re-checks each operand on the</span>
+<span class="sd">        cold failure path so the raised error still names its field.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">live</span> <span class="o">=</span> <span class="p">[</span><span class="n">entry</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">entries</span> <span class="k">if</span> <span class="n">entry</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">numel</span><span class="p">()]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">live</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">aggregate</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">flag</span><span class="o">.</span><span class="n">reshape</span><span class="p">(())</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">flag</span> <span class="ow">in</span> <span class="n">live</span><span class="p">])</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">aggregate</span><span class="p">):</span>
+            <span class="k">return</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">rule</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">flag</span> <span class="ow">in</span> <span class="n">live</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">flag</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">rule</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="s2">&quot;rows&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp tensor </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must contain finite values&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_torch_rule_error</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">rule</span><span class="p">))</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;mjwarp tensor validation failed&quot;</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_disable_cuda_graphs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Atomically select the eager path and release any captured graphs.&quot;&quot;&quot;</span>
@@ -2411,6 +2487,7 @@
             <span class="n">stepping</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">selected_reset</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">reset_randomization</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">device_reset_randomization</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">process_topology</span><span class="o">=</span><span class="n">TensorProcessTopology</span><span class="o">.</span><span class="n">IN_PROCESS</span><span class="p">,</span>
             <span class="n">data_plane</span><span class="o">=</span><span class="n">TensorDataPlane</span><span class="o">.</span><span class="n">DIRECT</span><span class="p">,</span>
             <span class="n">stream_event_ownership</span><span class="o">=</span><span class="s2">&quot;backend-completes-step-and-refresh; caller owns Torch stream&quot;</span><span class="p">,</span>
@@ -2452,6 +2529,11 @@
                 <span class="n">disable_reason</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_disable_reason</span><span class="p">,</span>
             <span class="p">),</span>
             <span class="s2">&quot;selected_reset_sensor_refresh&quot;</span><span class="p">:</span> <span class="n">TensorRuntimeDiagnostic</span><span class="p">(</span>
+                <span class="n">requested</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">enabled</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">disable_reason</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;device_reset_randomization&quot;</span><span class="p">:</span> <span class="n">TensorRuntimeDiagnostic</span><span class="p">(</span>
                 <span class="n">requested</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                 <span class="n">enabled</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                 <span class="n">disable_reason</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
@@ -2648,6 +2730,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_size</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="n">geom_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_geom_id</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_realization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_require_fresh_dr_mirror</span><span class="p">(</span><span class="s2">&quot;geom_size&quot;</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_dr_geom_size</span><span class="p">[:,</span> <span class="n">geom_id</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">geom_size</span><span class="p">[</span><span class="n">geom_id</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
@@ -2656,6 +2739,7 @@
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_sizes">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_sizes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_realization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_require_fresh_dr_mirror</span><span class="p">(</span><span class="s2">&quot;geom_size&quot;</span><span class="p">)</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dr_geom_size</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">geom_size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
@@ -2784,6 +2868,7 @@
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_mass">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_mass</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_realization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_require_fresh_dr_mirror</span><span class="p">(</span><span class="s2">&quot;body_mass&quot;</span><span class="p">)</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dr_body_mass</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">body_mass</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
@@ -2796,6 +2881,7 @@
             <span class="c1"># variant defaults are exposed via get_reset_term_default().</span>
             <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">body_ipos</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
         <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_env_ids</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_fresh_dr_mirror</span><span class="p">(</span><span class="s2">&quot;body_ipos&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dr_body_ipos</span><span class="p">[</span><span class="n">ids</span><span class="p">]</span></div>
 
 
@@ -3232,17 +3318,23 @@
         <span class="n">env_indices</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">qpos</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">qvel</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
-        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Commit selected generalized state with device-resident scatter kernels.&quot;&quot;&quot;</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
+        <span class="n">device_randomization</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">):</span>
+            <span class="n">device_randomization</span> <span class="o">=</span> <span class="n">randomization</span>
+            <span class="n">randomization</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">model_randomized</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">updates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_reset_randomization</span><span class="p">(</span>
                 <span class="n">env_indices</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">randomization</span>
             <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_apply_model_updates</span><span class="p">(</span><span class="n">updates</span><span class="p">)</span>
+            <span class="n">model_randomized</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">updates</span><span class="o">.</span><span class="n">fields</span> <span class="ow">or</span> <span class="n">updates</span><span class="o">.</span><span class="n">actuator_fields</span><span class="p">)</span>
             <span class="n">randomization</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
@@ -3254,21 +3346,50 @@
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;mjwarp tensor env_indices must be a torch.Tensor&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">env_indices</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;mjwarp tensor env_indices must be a contiguous 1-D int64 tensor&quot;</span><span class="p">)</span>
+        <span class="c1"># Structural checks run host-side per operand; every value rule</span>
+        <span class="c1"># (rows range/uniqueness, qpos/qvel finiteness, and, when present,</span>
+        <span class="c1"># the device randomization field rules) aggregates into a single</span>
+        <span class="c1"># device-side reduction with one D2H sync inside</span>
+        <span class="c1"># _validate_torch_fused.</span>
+        <span class="n">validation</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
             <span class="s2">&quot;env_indices&quot;</span><span class="p">,</span>
             <span class="n">env_indices</span><span class="p">,</span>
             <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">env_indices</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),),</span>
             <span class="n">dtype_name</span><span class="o">=</span><span class="s2">&quot;torch.int64&quot;</span><span class="p">,</span>
+            <span class="n">check_finite</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_rows</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
-        <span class="n">qpos_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span><span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nq</span><span class="p">))</span>
-        <span class="n">qvel_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span><span class="s2">&quot;qvel&quot;</span><span class="p">,</span> <span class="n">qvel</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nv</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+            <span class="n">validation</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;env_indices&quot;</span><span class="p">,</span> <span class="s2">&quot;rows&quot;</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_rows_flag</span><span class="p">(</span><span class="n">rows</span><span class="p">)))</span>
+        <span class="n">qpos_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
+            <span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nq</span><span class="p">),</span> <span class="n">check_finite</span><span class="o">=</span><span class="kc">False</span>
+        <span class="p">)</span>
+        <span class="n">validation</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">(</span><span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">qpos_tensor</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_value_flag</span><span class="p">(</span><span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">qpos_tensor</span><span class="p">))</span>
+        <span class="p">)</span>
+        <span class="n">qvel_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
+            <span class="s2">&quot;qvel&quot;</span><span class="p">,</span> <span class="n">qvel</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nv</span><span class="p">),</span> <span class="n">check_finite</span><span class="o">=</span><span class="kc">False</span>
+        <span class="p">)</span>
+        <span class="n">validation</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">(</span><span class="s2">&quot;qvel&quot;</span><span class="p">,</span> <span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">qvel_tensor</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_value_flag</span><span class="p">(</span><span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">qvel_tensor</span><span class="p">))</span>
+        <span class="p">)</span>
+        <span class="c1"># Device randomization scatters must commit before the reset graph</span>
+        <span class="c1"># replays; keep the same top-of-reset ordering as the NumPy path.</span>
+        <span class="n">model_update_ms</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">if</span> <span class="n">device_randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_tensor_reset_randomization</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">device_randomization</span><span class="p">,</span> <span class="n">validation</span><span class="p">)</span>
+            <span class="n">model_update_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+            <span class="n">model_randomized</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">device_randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_fused</span><span class="p">(</span><span class="n">validation</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">{</span>
                 <span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="p">{</span>
                     <span class="s2">&quot;set_state_tensor_mask_ms&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
                     <span class="s2">&quot;set_state_tensor_commit_forward_ms&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
                     <span class="s2">&quot;set_state_tensor_host_cache_refresh_ms&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+                    <span class="s2">&quot;set_state_tensor_model_update_ms&quot;</span><span class="p">:</span> <span class="n">model_update_ms</span><span class="p">,</span>
                 <span class="p">}</span>
             <span class="p">}</span>
 
@@ -3306,7 +3427,11 @@
             <span class="c1"># tensor sensor view or host-cache publication.  The task runtime</span>
             <span class="c1"># always reads sensors immediately after selected reset, so an</span>
             <span class="c1"># eager forward here would duplicate that work on the hot path.</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_publish_selected_tensor_reset_sensors</span><span class="p">(</span><span class="n">rows</span><span class="p">):</span>
+            <span class="c1"># The bounded scratch replay reads model rows 0..n-1 for scratch</span>
+            <span class="c1"># worlds, so it is only valid while model rows stay uniform; any</span>
+            <span class="c1"># applied model randomization falls back to the lazy full-model</span>
+            <span class="c1"># refresh, as documented on _publish_selected_tensor_reset_sensors.</span>
+            <span class="k">if</span> <span class="n">model_randomized</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_publish_selected_tensor_reset_sensors</span><span class="p">(</span><span class="n">rows</span><span class="p">):</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span><span class="p">)</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">qpos_tensor</span><span class="o">.</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
         <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
@@ -3319,6 +3444,7 @@
                 <span class="s2">&quot;set_state_tensor_mask_ms&quot;</span><span class="p">:</span> <span class="n">reset_ms</span><span class="p">,</span>
                 <span class="s2">&quot;set_state_tensor_commit_forward_ms&quot;</span><span class="p">:</span> <span class="n">forward_ms</span><span class="p">,</span>
                 <span class="s2">&quot;set_state_tensor_host_cache_refresh_ms&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+                <span class="s2">&quot;set_state_tensor_model_update_ms&quot;</span><span class="p">:</span> <span class="n">model_update_ms</span><span class="p">,</span>
             <span class="p">}</span>
         <span class="p">}</span></div>
 
@@ -3462,6 +3588,8 @@
                 <span class="p">)</span>
             <span class="n">staged</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">array</span>
         <span class="k">if</span> <span class="s2">&quot;geom_size&quot;</span> <span class="ow">in</span> <span class="n">staged</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;geom_size&quot;</span><span class="p">,</span> <span class="s2">&quot;geom_rbound&quot;</span><span class="p">,</span> <span class="s2">&quot;geom_aabb&quot;</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_require_fresh_dr_mirror</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
             <span class="n">rbound</span><span class="p">,</span> <span class="n">aabb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geom_bounds</span><span class="o">.</span><span class="n">compute</span><span class="p">(</span>
                 <span class="n">staged</span><span class="p">[</span><span class="s2">&quot;geom_size&quot;</span><span class="p">],</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_dr_geom_size</span><span class="p">[</span><span class="n">rows</span><span class="p">],</span>
@@ -3499,6 +3627,168 @@
             <span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_base_body_id</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_model_torch_view</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return a cached live Torch view of one per-world DR Model field.&quot;&quot;&quot;</span>
+        <span class="n">view</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_torch_views</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">view</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">target</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="o">.</span><span class="n">opt</span><span class="o">.</span><span class="n">gravity</span>
+                <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;gravity&quot;</span>
+                <span class="k">else</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">view</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_view</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_model_torch_views</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">view</span>
+        <span class="k">return</span> <span class="n">view</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_require_fresh_dr_mirror</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Refresh one host DR mirror a device-side scatter left stale.&quot;&quot;&quot;</span>
+        <span class="n">stale</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_dr_mirror_stale&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">stale</span> <span class="ow">or</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">stale</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">mirror</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;_dr_</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="o">.</span><span class="n">opt</span><span class="o">.</span><span class="n">gravity</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;gravity&quot;</span>
+            <span class="k">else</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">mirror</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">target</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+        <span class="n">stale</span><span class="o">.</span><span class="n">discard</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_tensor_reset_randomization</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">rows</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">payload</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">,</span>
+        <span class="n">validation</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Scatter device-resident final values into per-world Model rows.</span>
+
+<span class="sd">        Values already live on the declared Torch device, so this path performs</span>
+<span class="sd">        no host round-trips; host ``_dr_*`` mirrors are marked stale and</span>
+<span class="sd">        refreshed lazily by the next host reader.  The device-scatterable set</span>
+<span class="sd">        is ``gravity``, ``body_mass``, ``body_ipos``, ``body_inertia``,</span>
+<span class="sd">        ``body_iquat``, ``geom_friction``, ``geom_solref``, ``geom_solimp``,</span>
+<span class="sd">        ``dof_armature``, ``dof_damping``, ``dof_frictionloss`` and the</span>
+<span class="sd">        actuator ``kp``/``kd`` gains, with value rules ported from the host</span>
+<span class="sd">        ``_validate_extended_randomization`` / ``_prepare_reset_randomization``</span>
+<span class="sd">        checks.  ``geom_size`` fails closed: its derived ``geom_rbound`` /</span>
+<span class="sd">        ``geom_aabb`` rows are computed host-side today, and no device-side</span>
+<span class="sd">        derivation exists in this slice.  Field validation shares one fused</span>
+<span class="sd">        device-side reduction (one D2H sync) with the reset entry operands</span>
+<span class="sd">        passed in ``validation``; a failed aggregate re-checks each operand on</span>
+<span class="sd">        the cold path so the error still names its field.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">unsupported</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span>
+            <span class="n">payload</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp does not support reset terms: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">payload</span><span class="o">.</span><span class="n">geom_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;mjwarp device reset randomization does not support geom_size: &quot;</span>
+                <span class="s2">&quot;derived geom_rbound/geom_aabb rows are computed host-side &quot;</span>
+                <span class="s2">&quot;today; use the host ResetRandomizationPayload path&quot;</span>
+            <span class="p">)</span>
+        <span class="n">num_rows</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">ngeom</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">ngeom</span><span class="p">)</span>
+        <span class="n">checks</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">validation</span><span class="p">)</span> <span class="k">if</span> <span class="n">validation</span> <span class="k">else</span> <span class="p">[]</span>
+        <span class="n">staged</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">tail</span><span class="p">,</span> <span class="n">rule</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="p">(</span><span class="s2">&quot;body_mass&quot;</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nbody</span><span class="p">,),</span> <span class="s2">&quot;non_negative&quot;</span><span class="p">),</span>
+            <span class="c1"># body_ipos is a COM offset, not a magnitude, so it stays</span>
+            <span class="c1"># finite-only, matching the host path&#39;s validated set.</span>
+            <span class="p">(</span><span class="s2">&quot;body_ipos&quot;</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nbody</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="s2">&quot;finite&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;body_inertia&quot;</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nbody</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="s2">&quot;non_negative&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;body_iquat&quot;</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nbody</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="s2">&quot;unit_quat&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;geom_friction&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">ngeom</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="s2">&quot;non_negative&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;geom_solref&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">ngeom</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="s2">&quot;solref&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;geom_solimp&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">ngeom</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="s2">&quot;solimp&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;dof_armature&quot;</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nv</span><span class="p">,),</span> <span class="s2">&quot;non_negative&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;dof_damping&quot;</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nv</span><span class="p">,),</span> <span class="s2">&quot;non_negative&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;dof_frictionloss&quot;</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nv</span><span class="p">,),</span> <span class="s2">&quot;non_negative&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;gravity&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mi">3</span><span class="p">,),</span> <span class="s2">&quot;finite&quot;</span><span class="p">),</span>
+        <span class="p">):</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">staged</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
+                <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">num_rows</span><span class="p">,</span> <span class="o">*</span><span class="n">tail</span><span class="p">),</span> <span class="n">check_finite</span><span class="o">=</span><span class="kc">False</span>
+            <span class="p">)</span>
+            <span class="n">checks</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">name</span><span class="p">,</span> <span class="n">rule</span><span class="p">,</span> <span class="n">staged</span><span class="p">[</span><span class="n">name</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_value_flag</span><span class="p">(</span><span class="n">rule</span><span class="p">,</span> <span class="n">staged</span><span class="p">[</span><span class="n">name</span><span class="p">])))</span>
+        <span class="n">kp</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">payload</span><span class="o">.</span><span class="n">kp</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
+                <span class="s2">&quot;kp&quot;</span><span class="p">,</span> <span class="n">payload</span><span class="o">.</span><span class="n">kp</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">num_rows</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nu</span><span class="p">),</span> <span class="n">check_finite</span><span class="o">=</span><span class="kc">False</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">kp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">checks</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;kp&quot;</span><span class="p">,</span> <span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">kp</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_value_flag</span><span class="p">(</span><span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">kp</span><span class="p">)))</span>
+        <span class="n">kd</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">payload</span><span class="o">.</span><span class="n">kd</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
+                <span class="s2">&quot;kd&quot;</span><span class="p">,</span> <span class="n">payload</span><span class="o">.</span><span class="n">kd</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">num_rows</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nu</span><span class="p">),</span> <span class="n">check_finite</span><span class="o">=</span><span class="kc">False</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">kd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">checks</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;kd&quot;</span><span class="p">,</span> <span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">kd</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_value_flag</span><span class="p">(</span><span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">kd</span><span class="p">)))</span>
+
+        <span class="c1"># Fail closed on any invalid field before the first device mutation.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_fused</span><span class="p">(</span><span class="n">checks</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">staged</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_model_torch_view</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_dr_mirror_stale</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">kp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">kd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Mirror the NumPy kp/kd semantics: gainprm[..., 0] = kp,</span>
+            <span class="c1"># biasprm[..., 1] = -kp, biasprm[..., 2] = -kd.</span>
+            <span class="n">gainprm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_torch_view</span><span class="p">(</span><span class="s2">&quot;actuator_gainprm&quot;</span><span class="p">)</span>
+            <span class="n">biasprm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_torch_view</span><span class="p">(</span><span class="s2">&quot;actuator_biasprm&quot;</span><span class="p">)</span>
+            <span class="n">bias</span> <span class="o">=</span> <span class="n">biasprm</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">kp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">gain</span> <span class="o">=</span> <span class="n">gainprm</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+                <span class="n">gain</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">kp</span>
+                <span class="n">gainprm</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">gain</span><span class="p">)</span>
+                <span class="n">bias</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="n">kp</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_dr_mirror_stale</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;actuator_gainprm&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">kd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">bias</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="n">kd</span>
+            <span class="n">biasprm</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">bias</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_dr_mirror_stale</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;actuator_biasprm&quot;</span><span class="p">)</span>
+        <span class="c1"># Torch writes run on the caller&#39;s stream; order them ahead of the</span>
+        <span class="c1"># Warp derived-constant refresh and the reset-graph replay.</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+        <span class="c1"># Refresh levels mirror the host ModelUpdates contract: 2 for</span>
+        <span class="c1"># mass/COM/inertial-orientation rows (set_const), 1 for inertia or</span>
+        <span class="c1"># armature rows (set_const_0), 0 otherwise.</span>
+        <span class="n">refresh</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="mi">2</span>
+            <span class="k">if</span> <span class="p">{</span><span class="s2">&quot;body_mass&quot;</span><span class="p">,</span> <span class="s2">&quot;body_ipos&quot;</span><span class="p">,</span> <span class="s2">&quot;body_iquat&quot;</span><span class="p">}</span> <span class="o">&amp;</span> <span class="n">staged</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+            <span class="k">else</span> <span class="p">(</span><span class="mi">1</span> <span class="k">if</span> <span class="p">{</span><span class="s2">&quot;body_inertia&quot;</span><span class="p">,</span> <span class="s2">&quot;dof_armature&quot;</span><span class="p">}</span> <span class="o">&amp;</span> <span class="n">staged</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span> <span class="k">else</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">refresh</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="c1"># restore=False skips the nine full-model smooth passes that rebuild</span>
+        <span class="c1"># Data derived state (xpos, crb, factorized M, actuator_moment, ...)</span>
+        <span class="c1"># at the current qpos.  set_const_0/set_const_spring always restore</span>
+        <span class="c1"># d.qpos itself; only derived fields transiently hold qpos0-computed</span>
+        <span class="c1"># values.  No consumer can observe them: every post-reset read goes</span>
+        <span class="c1"># through _refresh_tracked_body_state_device_only (full-width</span>
+        <span class="c1"># kinematics/com_pos/com_vel/sensors) or the next step&#39;s forward, and</span>
+        <span class="c1"># both recompute those fields for every world from qpos/qvel and the</span>
+        <span class="c1"># live model — for reset and non-reset rows alike.  Row-scoped</span>
+        <span class="c1"># derived-constant refresh is not available either: mujoco_warp</span>
+        <span class="c1"># 3.11.0&#39;s set_const/set_const_fixed/set_const_0/set_const_spring</span>
+        <span class="c1"># accept no world mask and launch every kernel with</span>
+        <span class="c1"># dim=(d.nworld, ...), so full-model recompute is the narrowest</span>
+        <span class="c1"># correct option upstream exposes.</span>
+        <span class="k">if</span> <span class="n">refresh</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span><span class="o">.</span><span class="n">set_const</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="p">,</span> <span class="n">restore</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span><span class="o">.</span><span class="n">set_const_0</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="p">,</span> <span class="n">restore</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_reset_randomization</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
@@ -3509,6 +3799,10 @@
             <span class="k">return</span> <span class="n">ModelUpdates</span><span class="p">()</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">ResetRandomizationPayload</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;randomization must be ResetRandomizationPayload or None&quot;</span><span class="p">)</span>
+        <span class="c1"># A device-side scatter may have left host mirrors stale; refresh them</span>
+        <span class="c1"># before any composition below reads `_dr_*` rows.</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_dr_mirror_stale&quot;</span><span class="p">,</span> <span class="p">())):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_require_fresh_dr_mirror</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
         <span class="n">unsupported</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span>
             <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
         <span class="p">)</span>

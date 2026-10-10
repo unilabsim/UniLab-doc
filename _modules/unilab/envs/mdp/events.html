@@ -745,13 +745,15 @@
     <span class="n">cfg</span><span class="p">:</span> <span class="n">EventTermCfg</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
     <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="n">mode</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
     <span class="n">allowed_params</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
     <span class="n">required_params</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">mode</span> <span class="o">!=</span> <span class="n">mode</span><span class="p">:</span>
+    <span class="n">supported_modes</span> <span class="o">=</span> <span class="p">(</span><span class="n">mode</span><span class="p">,)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mode</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">mode</span>
+    <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">mode</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">supported_modes</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; only supports mode=&#39;</span><span class="si">{</span><span class="n">mode</span><span class="si">}</span><span class="s2">&#39; on the UniLab runtime&quot;</span>
+            <span class="s2">&quot;EventManager term &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; only supports mode=&#39;</span><span class="si">{</span><span class="s1">&#39;/&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">supported_modes</span><span class="p">)</span><span class="si">}</span><span class="s2">&#39; on the UniLab runtime&quot;</span>
         <span class="p">)</span>
     <span class="n">unknown</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">params</span><span class="p">)</span> <span class="o">-</span> <span class="n">allowed_params</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">unknown</span><span class="p">:</span>
@@ -791,6 +793,68 @@
     <span class="p">)</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_probe_device_reset_randomization</span><span class="p">(</span><span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether the backend declares device-resident reset DR commits.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">backend</span><span class="o">.</span><span class="n">get_tensor_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">device_reset_randomization</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_device_reset_randomization_active</span><span class="p">(</span>
+    <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span>
+    <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">entity</span><span class="p">:</span> <span class="n">Entity</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">capable</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether this apply can stage DR values wholly on the reset device.</span>
+
+<span class="sd">    All four gates must hold: the backend declares the</span>
+<span class="sd">    ``device_reset_randomization`` tensor capability, the reset rows are</span>
+<span class="sd">    already CUDA tensors, the environment owns a device Torch RNG, and the</span>
+<span class="sd">    active reset transaction composes device tensor rows</span>
+<span class="sd">    (``scoped_device_event_tensor``). Any miss keeps the NumPy staging path.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">capable</span>
+        <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">is_cuda</span>
+        <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;torch_rng&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span> <span class="n">TorchManagerRng</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="n">entity</span><span class="o">.</span><span class="n">reset_state_tensor_active</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_device_reset_table</span><span class="p">(</span><span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Materialize one immutable NumPy default/parameter table on a device.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_sample_distribution_tensor</span><span class="p">(</span>
+    <span class="n">rng</span><span class="p">:</span> <span class="n">TorchManagerRng</span><span class="p">,</span>
+    <span class="n">low</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">high</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+    <span class="n">distribution</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Sample one DR distribution on the Torch RNG&#39;s device.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">distribution</span> <span class="o">==</span> <span class="s2">&quot;gaussian&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">low</span><span class="p">,</span> <span class="n">high</span><span class="p">,</span> <span class="n">shape</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">distribution</span> <span class="o">==</span> <span class="s2">&quot;log_uniform&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">low</span><span class="o">.</span><span class="n">log</span><span class="p">(),</span> <span class="n">high</span><span class="o">.</span><span class="n">log</span><span class="p">(),</span> <span class="n">shape</span><span class="p">)</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">low</span><span class="p">,</span> <span class="n">high</span><span class="p">,</span> <span class="n">shape</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_apply_randomization_operation_tensor</span><span class="p">(</span>
+    <span class="n">default</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">samples</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">operation</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compose sampled multipliers/offsets with default rows on device.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">operation</span> <span class="o">==</span> <span class="s2">&quot;add&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">default</span> <span class="o">+</span> <span class="n">samples</span>
+    <span class="k">if</span> <span class="n">operation</span> <span class="o">==</span> <span class="s2">&quot;scale&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">default</span> <span class="o">*</span> <span class="n">samples</span>
+    <span class="k">return</span> <span class="n">samples</span>
+
+
 <span class="k">class</span><span class="w"> </span><span class="nc">_ModelFieldRandomizer</span><span class="p">(</span><span class="n">ManagerTermBase</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Cold-path-bound NumPy adapter for pinned mjlab model-field DR terms.&quot;&quot;&quot;</span>
 
@@ -798,6 +862,7 @@
     <span class="n">_field_width</span> <span class="o">=</span> <span class="mi">1</span>
     <span class="n">_default_axes</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,)</span>
     <span class="n">_valid_axes</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,)</span>
+    <span class="n">_supports_device_reset_tensor</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">_PARAMS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span>
         <span class="p">(</span><span class="s2">&quot;ranges&quot;</span><span class="p">,</span> <span class="s2">&quot;asset_cfg&quot;</span><span class="p">,</span> <span class="s2">&quot;distribution&quot;</span><span class="p">,</span> <span class="s2">&quot;operation&quot;</span><span class="p">,</span> <span class="s2">&quot;axes&quot;</span><span class="p">,</span> <span class="s2">&quot;shared_random&quot;</span><span class="p">)</span>
     <span class="p">)</span>
@@ -849,6 +914,12 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_defaults</span> <span class="o">=</span> <span class="n">defaults</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_axes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_axes</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">params</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;axes&quot;</span><span class="p">),</span> <span class="n">ranges</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_ranges</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_ranges</span><span class="p">(</span><span class="n">ranges</span><span class="p">,</span> <span class="n">names</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_dr_capable</span> <span class="o">=</span> <span class="n">_probe_device_reset_randomization</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_defaults</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_ranges</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_axis_groups</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span>
+            <span class="nb">int</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]]</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_bind</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -862,6 +933,9 @@
         <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_write_tensor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_select_string_ranges</span><span class="p">(</span>
@@ -1009,6 +1083,95 @@
         <span class="n">result</span><span class="o">.</span><span class="n">setflags</span><span class="p">(</span><span class="n">write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">result</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_axis_groups</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Group selected columns sharing identical bounds for one axis on device.&quot;&quot;&quot;</span>
+        <span class="n">ranges</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_ranges</span>
+        <span class="k">assert</span> <span class="n">ranges</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">parameters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ranges</span><span class="p">[:,</span> <span class="n">axis</span><span class="p">]</span>
+        <span class="n">groups</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">pair</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">parameters</span><span class="p">):</span>
+            <span class="n">groups</span><span class="o">.</span><span class="n">setdefault</span><span class="p">((</span><span class="nb">float</span><span class="p">(</span><span class="n">pair</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">pair</span><span class="p">[</span><span class="mi">1</span><span class="p">])),</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">low</span><span class="p">,</span> <span class="n">high</span><span class="p">),</span> <span class="n">indices</span> <span class="ow">in</span> <span class="n">groups</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">bounds</span> <span class="o">=</span> <span class="n">_device_reset_table</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">low</span><span class="p">,</span> <span class="n">high</span><span class="p">]),</span> <span class="n">ranges</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="n">bounds</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="n">bounds</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">indices</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">ranges</span><span class="o">.</span><span class="n">device</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_sample_axis_tensor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rng</span><span class="p">:</span> <span class="n">TorchManagerRng</span><span class="p">,</span> <span class="n">axis</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">count</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample one axis on the RNG device, honoring shared_random groups.&quot;&quot;&quot;</span>
+        <span class="n">ranges</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_ranges</span>
+        <span class="k">assert</span> <span class="n">ranges</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">parameters</span> <span class="o">=</span> <span class="n">ranges</span><span class="p">[:,</span> <span class="n">axis</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_shared_random</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_sample_distribution_tensor</span><span class="p">(</span>
+                <span class="n">rng</span><span class="p">,</span>
+                <span class="n">parameters</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span>
+                <span class="n">parameters</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">],</span>
+                <span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="n">parameters</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_distribution</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="n">groups</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_axis_groups</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">groups</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">groups</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_axis_groups</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_device_axis_groups</span><span class="p">[</span><span class="n">axis</span><span class="p">]</span> <span class="o">=</span> <span class="n">groups</span>
+        <span class="n">samples</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="n">parameters</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">parameters</span><span class="o">.</span><span class="n">device</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">low</span><span class="p">,</span> <span class="n">high</span><span class="p">,</span> <span class="n">indices</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">:</span>
+            <span class="n">shared</span> <span class="o">=</span> <span class="n">_sample_distribution_tensor</span><span class="p">(</span><span class="n">rng</span><span class="p">,</span> <span class="n">low</span><span class="p">,</span> <span class="n">high</span><span class="p">,</span> <span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_distribution</span><span class="p">)</span>
+            <span class="n">samples</span><span class="p">[:,</span> <span class="n">indices</span><span class="p">]</span> <span class="o">=</span> <span class="n">shared</span>
+        <span class="k">return</span> <span class="n">samples</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_device</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage model-field DR rows wholly on the reset device.</span>
+
+<span class="sd">        The host path&#39;s finite/non-negative output check is deliberately</span>
+<span class="sd">        skipped here: validation is deferred to the backend commit contract</span>
+<span class="sd">        behind ``device_reset_randomization`` (mjwarp validates the dense</span>
+<span class="sd">        payload rows before applying them), which keeps this hot path free of</span>
+<span class="sd">        device synchronization.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="n">rows</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">count</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">device</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">TorchManagerRng</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">torch_rng</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_defaults</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_defaults</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">device</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_device_defaults</span> <span class="o">=</span> <span class="n">_device_reset_table</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_defaults</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_ranges</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_ranges</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">device</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_device_ranges</span> <span class="o">=</span> <span class="n">_device_reset_table</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ranges</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_device_axis_groups</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="n">defaults</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_defaults</span>
+        <span class="n">canonical_ndim</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_field_width</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="mi">2</span>
+        <span class="k">if</span> <span class="n">defaults</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="n">canonical_ndim</span><span class="p">:</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="n">defaults</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="o">*</span><span class="n">defaults</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="n">defaults</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">axis</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_axes</span><span class="p">:</span>
+            <span class="n">samples</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_axis_tensor</span><span class="p">(</span><span class="n">rng</span><span class="p">,</span> <span class="n">axis</span><span class="p">,</span> <span class="n">count</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_field_width</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">values</span> <span class="o">=</span> <span class="n">_apply_randomization_operation_tensor</span><span class="p">(</span>
+                    <span class="n">values</span><span class="p">,</span>
+                    <span class="n">samples</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_operation</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">values</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">axis</span><span class="p">]</span> <span class="o">=</span> <span class="n">_apply_randomization_operation_tensor</span><span class="p">(</span>
+                    <span class="n">values</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">axis</span><span class="p">],</span>
+                    <span class="n">samples</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_operation</span><span class="p">,</span>
+                <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_tensor</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span> <span class="n">rows</span><span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_sample_axis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span> <span class="n">axis</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">count</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="n">parameters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ranges</span><span class="p">[:,</span> <span class="n">axis</span><span class="p">]</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_shared_random</span><span class="p">:</span>
@@ -1053,6 +1216,11 @@
         <span class="n">shared_random</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">del</span> <span class="n">ranges</span><span class="p">,</span> <span class="n">asset_cfg</span><span class="p">,</span> <span class="n">distribution</span><span class="p">,</span> <span class="n">operation</span><span class="p">,</span> <span class="n">axes</span><span class="p">,</span> <span class="n">shared_random</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_supports_device_reset_tensor</span> <span class="ow">and</span> <span class="n">_device_reset_randomization_active</span><span class="p">(</span>
+            <span class="n">env</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="p">,</span> <span class="n">capable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_dr_capable</span>
+        <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_device</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">cast</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">))</span>
+            <span class="k">return</span>
         <span class="n">ids</span> <span class="o">=</span> <span class="n">resolve_env_ids</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">)</span>
         <span class="n">canonical_ndim</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_field_width</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="mi">2</span>
         <span class="n">default_values</span> <span class="o">=</span> <span class="n">_selected_reset_defaults</span><span class="p">(</span>
@@ -1091,6 +1259,7 @@
     <span class="n">_field_width</span> <span class="o">=</span> <span class="mi">3</span>
     <span class="n">_default_axes</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,)</span>
     <span class="n">_valid_axes</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="n">_supports_device_reset_tensor</span> <span class="o">=</span> <span class="kc">True</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_bind</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -1106,6 +1275,14 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">write_geom_friction_to_sim</span><span class="p">(</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_local_ids</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_term_name</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_write_tensor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">write_geom_friction_tensor_to_sim</span><span class="p">(</span>
             <span class="n">values</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_local_ids</span><span class="p">,</span>
             <span class="n">env_ids</span><span class="p">,</span>
@@ -1208,8 +1385,53 @@
                 <span class="n">asset_cfg</span><span class="o">.</span><span class="n">actuator_ids</span><span class="p">,</span>
                 <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;pd_gains&quot;</span><span class="p">,</span>
             <span class="p">)</span>
-        <span class="p">)</span></div>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_dr_capable</span> <span class="o">=</span> <span class="n">_probe_device_reset_randomization</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_kp</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_kd</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_device_gain_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Cache one immutable gain-default table on the reset device.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">_device_reset_table</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_device</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage PD gain DR rows wholly on the reset device.</span>
+
+<span class="sd">        Finite/non-negative output validation is deferred to the backend</span>
+<span class="sd">        commit contract behind ``device_reset_randomization`` (mjwarp</span>
+<span class="sd">        validates the dense payload rows before applying them), which keeps</span>
+<span class="sd">        this hot path free of device synchronization.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="n">rows</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">count</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">device</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">TorchManagerRng</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">torch_rng</span><span class="p">)</span>
+        <span class="n">shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span><span class="p">))</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_distribution</span> <span class="o">==</span> <span class="s2">&quot;log_uniform&quot;</span><span class="p">:</span>
+            <span class="n">kp</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_kp_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_kp_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="n">shape</span><span class="p">)</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span>
+            <span class="n">kd</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_kd_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_kd_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="n">shape</span><span class="p">)</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">kp</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_kp_range</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kp_range</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">shape</span><span class="p">)</span>
+            <span class="n">kd</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_kd_range</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kd_range</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">shape</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_operation</span> <span class="o">==</span> <span class="s2">&quot;scale&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_kp</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_kp</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">device</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_kp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_gain_table</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_default_kp</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_kd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_gain_table</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_default_kd</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+            <span class="n">default_kp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_kp</span>
+            <span class="n">default_kd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_kd</span>
+            <span class="k">assert</span> <span class="n">default_kp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">default_kd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">kp</span> <span class="o">=</span> <span class="n">kp</span> <span class="o">*</span> <span class="p">(</span><span class="n">default_kp</span> <span class="k">if</span> <span class="n">default_kp</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">default_kp</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">))</span>
+            <span class="n">kd</span> <span class="o">=</span> <span class="n">kd</span> <span class="o">*</span> <span class="p">(</span><span class="n">default_kd</span> <span class="k">if</span> <span class="n">default_kd</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">default_kd</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">write_actuator_gains_tensor_to_sim</span><span class="p">(</span>
+            <span class="n">kp</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
+            <span class="n">kd</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
+            <span class="n">actuator_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="o">=</span><span class="n">rows</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;pd_gains&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
 
 <div class="viewcode-block" id="PdGains.__call__">
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.PdGains.html#unilab.envs.mdp.events.PdGains.__call__">[docs]</a>
@@ -1224,6 +1446,11 @@
         <span class="n">operation</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;scale&quot;</span><span class="p">,</span> <span class="s2">&quot;abs&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;scale&quot;</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">del</span> <span class="n">kp_range</span><span class="p">,</span> <span class="n">kd_range</span><span class="p">,</span> <span class="n">asset_cfg</span><span class="p">,</span> <span class="n">distribution</span><span class="p">,</span> <span class="n">operation</span>
+        <span class="k">if</span> <span class="n">_device_reset_randomization_active</span><span class="p">(</span>
+            <span class="n">env</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="p">,</span> <span class="n">capable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_dr_capable</span>
+        <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_device</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">cast</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">))</span>
+            <span class="k">return</span>
         <span class="n">ids</span> <span class="o">=</span> <span class="n">resolve_env_ids</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">)</span>
         <span class="n">shape</span> <span class="o">=</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span><span class="p">))</span>
         <span class="n">kp</span> <span class="o">=</span> <span class="n">_sample_gain_range</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">rng</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kp_range</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_distribution</span><span class="p">)</span>
@@ -1256,7 +1483,7 @@
 <div class="viewcode-block" id="RandomizeRigidBodyMass">
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.RandomizeRigidBodyMass.html#unilab.envs.mdp.events.RandomizeRigidBodyMass">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">RandomizeRigidBodyMass</span><span class="p">(</span><span class="n">ManagerTermBase</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Community-compatible body-mass randomization via the reset payload.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Community-compatible body-mass randomization via reset/startup payloads.&quot;&quot;&quot;</span>
 
     <span class="n">_PARAMS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span>
         <span class="p">(</span>
@@ -1268,6 +1495,7 @@
             <span class="s2">&quot;min_mass&quot;</span><span class="p">,</span>
         <span class="p">)</span>
     <span class="p">)</span>
+    <span class="n">uses_startup_rows</span> <span class="o">=</span> <span class="kc">True</span>
 
 <div class="viewcode-block" id="RandomizeRigidBodyMass.__init__">
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.RandomizeRigidBodyMass.html#unilab.envs.mdp.events.RandomizeRigidBodyMass.__init__">[docs]</a>
@@ -1277,7 +1505,7 @@
         <span class="n">_validate_event_term</span><span class="p">(</span>
             <span class="n">cfg</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
-            <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;reset&quot;</span><span class="p">,</span>
+            <span class="n">mode</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;reset&quot;</span><span class="p">,</span> <span class="s2">&quot;startup&quot;</span><span class="p">),</span>
             <span class="n">allowed_params</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_PARAMS</span><span class="p">,</span>
             <span class="n">required_params</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;asset_cfg&quot;</span><span class="p">,</span> <span class="s2">&quot;mass_distribution_params&quot;</span><span class="p">,</span> <span class="s2">&quot;operation&quot;</span><span class="p">),</span>
         <span class="p">)</span>
@@ -1326,8 +1554,99 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_default_mass</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">bind_body_mass_write</span><span class="p">(</span>
             <span class="n">asset_cfg</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
-        <span class="p">)</span></div>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_dr_capable</span> <span class="o">=</span> <span class="n">_probe_device_reset_randomization</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_params</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_mass</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_startup</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;startup&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_startup_values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_startup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample every world once and replay the immutable startup table.</span>
+
+<span class="sd">        Manager startup always supplies every environment row. The event is</span>
+<span class="sd">        full-width so the backend pays its derived-constant refresh once and</span>
+<span class="sd">        later selected-row resets can omit this field entirely.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="n">resolve_env_ids</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">)</span>
+        <span class="n">expected_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">array_equal</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">expected_ids</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;EventManager term &#39;randomize_rigid_body_mass&#39; startup mode requires all &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;environment rows; got </span><span class="si">{</span><span class="n">ids</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2"> for </span><span class="si">{</span><span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="si">}</span><span class="s2"> environments&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_startup_values</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">samples</span> <span class="o">=</span> <span class="n">_sample_distribution</span><span class="p">(</span>
+                <span class="n">env</span><span class="o">.</span><span class="n">rng</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_distribution_params</span><span class="p">,</span>
+                <span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="o">.</span><span class="n">size</span><span class="p">),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_distribution</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">default_mass</span> <span class="o">=</span> <span class="n">_selected_reset_defaults</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_default_mass</span><span class="p">,</span>
+                <span class="n">ids</span><span class="p">,</span>
+                <span class="n">canonical_ndim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+                <span class="n">_apply_randomization_operation</span><span class="p">(</span><span class="n">default_mass</span><span class="p">,</span> <span class="n">samples</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_operation</span><span class="p">),</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_min_mass</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">values</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;EventManager term &#39;randomize_rigid_body_mass&#39; produced NaN or Inf &quot;</span>
+                    <span class="s2">&quot;startup values&quot;</span>
+                <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_startup_values</span> <span class="o">=</span> <span class="n">values</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">record_startup_body_mass_to_sim</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_startup_values</span><span class="p">,</span>
+            <span class="n">body_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="o">=</span><span class="n">ids</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;randomize_rigid_body_mass&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_device</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage body-mass DR rows wholly on the reset device.</span>
+
+<span class="sd">        The host path&#39;s min-mass clamp is preserved; further finite-value</span>
+<span class="sd">        validation is deferred to the backend commit contract behind</span>
+<span class="sd">        ``device_reset_randomization`` (mjwarp validates the dense payload</span>
+<span class="sd">        rows before applying them), which keeps this hot path free of device</span>
+<span class="sd">        synchronization.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="n">rows</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">count</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">device</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">TorchManagerRng</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">torch_rng</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_params</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_params</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">device</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_device_params</span> <span class="o">=</span> <span class="n">_device_reset_table</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_distribution_params</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_mass</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_mass</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">device</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_mass</span> <span class="o">=</span> <span class="n">_device_reset_table</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_default_mass</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_params</span>
+        <span class="n">samples</span> <span class="o">=</span> <span class="n">_sample_distribution_tensor</span><span class="p">(</span>
+            <span class="n">rng</span><span class="p">,</span>
+            <span class="n">params</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="n">params</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+            <span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="o">.</span><span class="n">size</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_distribution</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">defaults</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_mass</span>
+        <span class="n">default_rows</span> <span class="o">=</span> <span class="n">defaults</span> <span class="k">if</span> <span class="n">defaults</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">defaults</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="n">_apply_randomization_operation_tensor</span><span class="p">(</span>
+            <span class="n">default_rows</span><span class="p">,</span>
+            <span class="n">samples</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_operation</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="n">values</span><span class="o">.</span><span class="n">clamp_min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_min_mass</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">write_body_mass_tensor_to_sim</span><span class="p">(</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">body_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="o">=</span><span class="n">rows</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;randomize_rigid_body_mass&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
 
 <div class="viewcode-block" id="RandomizeRigidBodyMass.__call__">
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.RandomizeRigidBodyMass.html#unilab.envs.mdp.events.RandomizeRigidBodyMass.__call__">[docs]</a>
@@ -1350,6 +1669,14 @@
             <span class="n">recompute_inertia</span><span class="p">,</span>
             <span class="n">min_mass</span><span class="p">,</span>
         <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_startup</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_startup</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="n">_device_reset_randomization_active</span><span class="p">(</span>
+            <span class="n">env</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="p">,</span> <span class="n">capable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_dr_capable</span>
+        <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_device</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">cast</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">))</span>
+            <span class="k">return</span>
         <span class="n">ids</span> <span class="o">=</span> <span class="n">resolve_env_ids</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">)</span>
         <span class="n">samples</span> <span class="o">=</span> <span class="n">_sample_distribution</span><span class="p">(</span>
             <span class="n">env</span><span class="o">.</span><span class="n">rng</span><span class="p">,</span>
@@ -1506,7 +1833,13 @@
 <span class="sd">    The ``com_range`` param is re-resolved from the live term params on every</span>
 <span class="sd">    apply (not cached at construction), so step-staged curricula can widen the</span>
 <span class="sd">    range by updating the event term config between resets.</span>
+
+<span class="sd">    In startup mode the declared range is sampled once for every environment and</span>
+<span class="sd">    the resulting full-width table is replayed; later curriculum changes do not</span>
+<span class="sd">    retroactively alter the already-fixed per-env values.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">uses_startup_rows</span> <span class="o">=</span> <span class="kc">True</span>
 
 <div class="viewcode-block" id="RandomizeRigidBodyCom.__init__">
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.RandomizeRigidBodyCom.html#unilab.envs.mdp.events.RandomizeRigidBodyCom.__init__">[docs]</a>
@@ -1516,7 +1849,7 @@
         <span class="n">_validate_event_term</span><span class="p">(</span>
             <span class="n">cfg</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
-            <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;reset&quot;</span><span class="p">,</span>
+            <span class="n">mode</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;reset&quot;</span><span class="p">,</span> <span class="s2">&quot;startup&quot;</span><span class="p">),</span>
             <span class="n">allowed_params</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">((</span><span class="s2">&quot;com_range&quot;</span><span class="p">,</span> <span class="s2">&quot;asset_cfg&quot;</span><span class="p">)),</span>
             <span class="n">required_params</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;com_range&quot;</span><span class="p">,</span> <span class="s2">&quot;asset_cfg&quot;</span><span class="p">),</span>
         <span class="p">)</span>
@@ -1538,8 +1871,98 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_default_ipos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">bind_body_ipos_write</span><span class="p">(</span>
             <span class="n">asset_cfg</span><span class="o">.</span><span class="n">body_ids</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
-        <span class="p">)</span></div>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_dr_capable</span> <span class="o">=</span> <span class="n">_probe_device_reset_randomization</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_ipos</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_startup</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;startup&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_startup_values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_startup</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">com_range</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample every world once and commit the immutable startup table.&quot;&quot;&quot;</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="n">resolve_env_ids</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">)</span>
+        <span class="n">expected_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">array_equal</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">expected_ids</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;EventManager term &#39;randomize_rigid_body_com&#39; startup mode requires all &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;environment rows; got </span><span class="si">{</span><span class="n">ids</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2"> for </span><span class="si">{</span><span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="si">}</span><span class="s2"> environments&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_startup_values</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ranges</span> <span class="o">=</span> <span class="n">_axis_ranges</span><span class="p">(</span>
+                <span class="n">com_range</span><span class="p">,</span>
+                <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;randomize_rigid_body_com&quot;</span><span class="p">,</span>
+                <span class="n">name</span><span class="o">=</span><span class="s2">&quot;com_range&quot;</span><span class="p">,</span>
+                <span class="n">keys</span><span class="o">=</span><span class="n">_XYZ_KEYS</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">offsets</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span>
+                <span class="n">ranges</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span>
+                <span class="n">ranges</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">],</span>
+                <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">default_ipos</span> <span class="o">=</span> <span class="n">_selected_reset_defaults</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_default_ipos</span><span class="p">,</span>
+                <span class="n">ids</span><span class="p">,</span>
+                <span class="n">canonical_ndim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">default_ipos</span> <span class="o">+</span> <span class="n">offsets</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;EventManager term &#39;randomize_rigid_body_com&#39; produced NaN or Inf &quot;</span>
+                    <span class="s2">&quot;startup values&quot;</span>
+                <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_startup_values</span> <span class="o">=</span> <span class="n">values</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">record_startup_body_ipos_to_sim</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_startup_values</span><span class="p">,</span>
+            <span class="n">body_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="o">=</span><span class="n">ids</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;randomize_rigid_body_com&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_device</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">com_range</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage additive CoM offsets wholly on the reset device.</span>
+
+<span class="sd">        ``com_range`` is re-resolved from the live term params on every apply</span>
+<span class="sd">        (curricula can stage it); the resulting tiny bounds table is re-uploaded</span>
+<span class="sd">        per reset. Finite-value validation is deferred to the backend commit</span>
+<span class="sd">        contract behind ``device_reset_randomization`` (mjwarp validates the</span>
+<span class="sd">        dense payload rows before applying them), which keeps this hot path</span>
+<span class="sd">        free of device synchronization.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="n">rows</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">count</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">device</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">TorchManagerRng</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">torch_rng</span><span class="p">)</span>
+        <span class="n">ranges</span> <span class="o">=</span> <span class="n">_axis_ranges</span><span class="p">(</span>
+            <span class="n">com_range</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;randomize_rigid_body_com&quot;</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="s2">&quot;com_range&quot;</span><span class="p">,</span>
+            <span class="n">keys</span><span class="o">=</span><span class="n">_XYZ_KEYS</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">bounds</span> <span class="o">=</span> <span class="n">_device_reset_table</span><span class="p">(</span><span class="n">ranges</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_ipos</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_ipos</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">device</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_ipos</span> <span class="o">=</span> <span class="n">_device_reset_table</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_default_ipos</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+        <span class="n">offsets</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">bounds</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">bounds</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">],</span> <span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="n">defaults</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_default_ipos</span>
+        <span class="n">default_rows</span> <span class="o">=</span> <span class="n">defaults</span> <span class="k">if</span> <span class="n">defaults</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span> <span class="k">else</span> <span class="n">defaults</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="p">(</span><span class="n">default_rows</span> <span class="o">+</span> <span class="n">offsets</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:])</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">write_body_ipos_tensor_to_sim</span><span class="p">(</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">body_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="o">=</span><span class="n">rows</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;randomize_rigid_body_com&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
 
 <div class="viewcode-block" id="RandomizeRigidBodyCom.__call__">
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.RandomizeRigidBodyCom.html#unilab.envs.mdp.events.RandomizeRigidBodyCom.__call__">[docs]</a>
@@ -1551,6 +1974,14 @@
         <span class="n">asset_cfg</span><span class="p">:</span> <span class="n">SceneEntityCfg</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">del</span> <span class="n">asset_cfg</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_startup</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_startup</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">,</span> <span class="n">com_range</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="n">_device_reset_randomization_active</span><span class="p">(</span>
+            <span class="n">env</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="p">,</span> <span class="n">capable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_dr_capable</span>
+        <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_device</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">cast</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">),</span> <span class="n">com_range</span><span class="p">)</span>
+            <span class="k">return</span>
         <span class="n">ranges</span> <span class="o">=</span> <span class="n">_axis_ranges</span><span class="p">(</span>
             <span class="n">com_range</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;randomize_rigid_body_com&quot;</span><span class="p">,</span>

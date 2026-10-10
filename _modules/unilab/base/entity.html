@@ -549,7 +549,14 @@
     <span class="n">TensorProcessTopology</span><span class="p">,</span>
     <span class="n">tensor_device_matches</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">IntervalRandomizationPlan</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">,</span>
+    <span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span>
+    <span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">,</span>
+    <span class="n">RESET_TERM_KD</span><span class="p">,</span>
+    <span class="n">RESET_TERM_KP</span><span class="p">,</span>
+    <span class="n">IntervalRandomizationPlan</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.utils.rotation</span><span class="w"> </span><span class="kn">import</span> <span class="n">np_quat_apply</span><span class="p">,</span> <span class="n">np_quat_apply_inverse</span><span class="p">,</span> <span class="n">np_yaw_from_quat</span>
 
@@ -3379,6 +3386,16 @@
         <span class="p">)</span></div>
 
 
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset_state_tensor_active</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether the active env-owned reset transaction composes device tensor rows.</span>
+
+<span class="sd">        Manager terms probe this before choosing the device-resident DR staging</span>
+<span class="sd">        path: a host-composed reset (including the packed host bridge and the</span>
+<span class="sd">        NumPy ``scoped_device_tensor`` commit) must keep the NumPy write path.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">tensor_active</span>
+
 <div class="viewcode-block" id="Entity.bind_actuator_gain_write">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.bind_actuator_gain_write">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">bind_actuator_gain_write</span><span class="p">(</span>
@@ -3442,6 +3459,46 @@
             <span class="n">resolved_env_ids</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span><span class="p">[</span><span class="n">local_ids</span><span class="p">],</span>
             <span class="n">kp</span><span class="p">,</span>
+            <span class="n">kd</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Entity.write_actuator_gains_tensor_to_sim">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.write_actuator_gains_tensor_to_sim">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_actuator_gains_tensor_to_sim</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">kp</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">kd</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">actuator_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;pd_gains&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage device-resident entity actuator gains in the tensor transaction.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
+                <span class="s2">&quot;reset actuator-gain write&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;actuator metadata or the env-owned reset transaction was not materialized&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="n">local_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_local_actuator_ids</span><span class="p">(</span>
+            <span class="n">actuator_ids</span><span class="p">,</span>
+            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;reset actuator-gain write&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor reset actuator-gain write requires device row indices&quot;</span><span class="p">)</span>
+        <span class="n">backend_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span><span class="p">[</span><span class="n">local_ids</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">write_randomization_tensor</span><span class="p">(</span>
+            <span class="n">RESET_TERM_KP</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="p">,</span>
+            <span class="n">backend_ids</span><span class="p">,</span>
+            <span class="n">kp</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">write_randomization_tensor</span><span class="p">(</span>
+            <span class="n">RESET_TERM_KD</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="p">,</span>
+            <span class="n">backend_ids</span><span class="p">,</span>
             <span class="n">kd</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
         <span class="p">)</span></div>
@@ -3851,6 +3908,37 @@
         <span class="p">)</span></div>
 
 
+<div class="viewcode-block" id="Entity.write_geom_friction_tensor_to_sim">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.write_geom_friction_tensor_to_sim">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_geom_friction_tensor_to_sim</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">values</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">geom_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;geom_friction&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage device-resident entity geom friction in the tensor transaction.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geom_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
+                <span class="s2">&quot;reset geom-friction write&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;geom metadata or the env-owned reset transaction was not materialized&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="n">local_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_local_geom_ids</span><span class="p">(</span>
+            <span class="n">geom_ids</span><span class="p">,</span>
+            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;reset geom-friction write&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor reset geom-friction write requires device row indices&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">write_randomization_tensor</span><span class="p">(</span>
+            <span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_geom_ids</span><span class="p">[</span><span class="n">local_ids</span><span class="p">],</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="Entity.bind_body_mass_write">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.bind_body_mass_write">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">bind_body_mass_write</span><span class="p">(</span>
@@ -3894,6 +3982,63 @@
         <span class="p">)</span></div>
 
 
+<div class="viewcode-block" id="Entity.record_startup_body_mass_to_sim">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.record_startup_body_mass_to_sim">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">record_startup_body_mass_to_sim</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;randomize_rigid_body_mass&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage a startup body-mass write and promote its committed baseline.&quot;&quot;&quot;</span>
+        <span class="n">reset_state</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">backend_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_bind_body_randomization</span><span class="p">(</span>
+            <span class="n">body_ids</span><span class="p">,</span>
+            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;reset body-mass write&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">normalized_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_reset_env_ids</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+        <span class="n">reset_state</span><span class="o">.</span><span class="n">write_body_mass</span><span class="p">(</span>
+            <span class="n">normalized_ids</span><span class="p">,</span>
+            <span class="n">backend_ids</span><span class="p">,</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">reset_state</span><span class="o">.</span><span class="n">record_startup_randomization</span><span class="p">(</span>
+            <span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span>
+            <span class="n">normalized_ids</span><span class="p">,</span>
+            <span class="n">backend_ids</span><span class="p">,</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Entity.write_body_mass_tensor_to_sim">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.write_body_mass_tensor_to_sim">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_body_mass_tensor_to_sim</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">values</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;randomize_rigid_body_mass&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage device-resident entity body masses in the tensor transaction.&quot;&quot;&quot;</span>
+        <span class="n">reset_state</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">backend_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_bind_body_randomization</span><span class="p">(</span>
+            <span class="n">body_ids</span><span class="p">,</span>
+            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;reset body-mass write&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor reset body-mass write requires device row indices&quot;</span><span class="p">)</span>
+        <span class="n">reset_state</span><span class="o">.</span><span class="n">write_randomization_tensor</span><span class="p">(</span>
+            <span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="p">,</span>
+            <span class="n">backend_ids</span><span class="p">,</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="Entity.bind_body_ipos_write">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.bind_body_ipos_write">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">bind_body_ipos_write</span><span class="p">(</span>
@@ -3931,6 +4076,63 @@
         <span class="p">)</span>
         <span class="n">reset_state</span><span class="o">.</span><span class="n">write_body_ipos</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_reset_env_ids</span><span class="p">(</span><span class="n">env_ids</span><span class="p">),</span>
+            <span class="n">backend_ids</span><span class="p">,</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Entity.record_startup_body_ipos_to_sim">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.record_startup_body_ipos_to_sim">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">record_startup_body_ipos_to_sim</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;randomize_rigid_body_com&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage a startup body-CoM write and promote its committed baseline.&quot;&quot;&quot;</span>
+        <span class="n">reset_state</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">backend_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_bind_body_randomization</span><span class="p">(</span>
+            <span class="n">body_ids</span><span class="p">,</span>
+            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;reset body-ipos write&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">normalized_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_reset_env_ids</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+        <span class="n">reset_state</span><span class="o">.</span><span class="n">write_body_ipos</span><span class="p">(</span>
+            <span class="n">normalized_ids</span><span class="p">,</span>
+            <span class="n">backend_ids</span><span class="p">,</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">reset_state</span><span class="o">.</span><span class="n">record_startup_randomization</span><span class="p">(</span>
+            <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">,</span>
+            <span class="n">normalized_ids</span><span class="p">,</span>
+            <span class="n">backend_ids</span><span class="p">,</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Entity.write_body_ipos_tensor_to_sim">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.write_body_ipos_tensor_to_sim">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_body_ipos_tensor_to_sim</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">values</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;randomize_rigid_body_com&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage device-resident entity inertial positions in the tensor transaction.&quot;&quot;&quot;</span>
+        <span class="n">reset_state</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">backend_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_bind_body_randomization</span><span class="p">(</span>
+            <span class="n">body_ids</span><span class="p">,</span>
+            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;reset body-ipos write&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor reset body-ipos write requires device row indices&quot;</span><span class="p">)</span>
+        <span class="n">reset_state</span><span class="o">.</span><span class="n">write_randomization_tensor</span><span class="p">(</span>
+            <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="p">,</span>
             <span class="n">backend_ids</span><span class="p">,</span>
             <span class="n">values</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
