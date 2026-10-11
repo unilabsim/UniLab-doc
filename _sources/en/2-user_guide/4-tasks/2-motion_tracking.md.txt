@@ -15,7 +15,7 @@ and selected off-policy paths.
 
 Each task ships a default motion clip in its Hydra task-owner YAML. Hydra is the
 configuration entry point; the selected owner is materialized into the shared
-`ManagerBasedRlEnvCfg` and then consumed by the NumPy Manager-Based runtime.
+`ManagerBasedRlEnvCfg` and then consumed by the tensor-only Manager-Based runtime.
 
 | CLI Task | Registered Env | Default Motion | Owner Evidence |
 | --- | --- | --- | --- |

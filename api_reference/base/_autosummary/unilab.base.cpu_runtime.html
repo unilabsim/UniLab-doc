@@ -422,22 +422,16 @@
 <p>Multi-rank off-policy data-parallel runs partition host CPUs so each rank’s
 collector owns one contiguous block (<code class="docutils literal notranslate"><span class="pre">training.dp_collector_cpu_ids</span></code>, routed
 into <code class="docutils literal notranslate"><span class="pre">EnvCfg.cpu_ids</span></code>). The MuJoCo BatchEnvPool already pins its physics
-workers to that block, but the collector’s host-side compute did not follow:
-Numba parallel kernels (<code class="docutils literal notranslate"><span class="pre">unisim.backend.body_state</span></code> and the
-motion-tracking kernels) size their pool from the host CPU count and leave
-placement to the OS, so they drift across rank boundaries and compete with
-sibling ranks’ pinned physics workers.</p>
+workers to that block, but the collector’s existing host-side native pools did
+not follow and could drift across rank boundaries to compete with sibling
+ranks’ pinned physics workers.</p>
 <p><code class="docutils literal notranslate"><span class="pre">apply_env_cpu_runtime</span></code> is the generic env-level counterpart, applied once on
-the env-construction cold path — before managers, backend materialization, or
-the first Numba parallel call exist:</p>
+the env-construction cold path, before managers and backend materialization:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">os.sched_setaffinity</span></code> pins the calling thread to the block, and every
-already-running thread (e.g. BLAS pools spawned at <code class="docutils literal notranslate"><span class="pre">import</span> <span class="pre">numpy</span></code>) is
-pinned individually via <code class="docutils literal notranslate"><span class="pre">/proc/self/task</span></code>; threads spawned later
-(including Numba’s lazily-launched pool) inherit the mask.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">numba.set_num_threads(len(cpu_ids))</span></code> sizes Numba’s pool to the block
-instead of the host, unless the operator pinned <code class="docutils literal notranslate"><span class="pre">NUMBA_NUM_THREADS</span></code>
-(mirroring the motion-kernel runtime policy).</p></li>
+already-running thread (e.g. BLAS pools spawned by a backend dependency) is
+pinned individually via <code class="docutils literal notranslate"><span class="pre">/proc/self/task</span></code>; threads spawned later inherit
+the mask.</p></li>
 </ul>
 <p>The function is backend-agnostic: <code class="docutils literal notranslate"><span class="pre">EnvCfg.cpu_ids</span></code> is the single source of
 truth, so any backend whose env declares a block gets the same confinement.</p>
@@ -455,9 +449,9 @@ truth, so any backend whose env declares a block gets the same confinement.</p>
 <dt class="sig sig-object py" id="unilab.base.cpu_runtime.apply_env_cpu_runtime">
 <span class="sig-prename descclassname"><span class="pre">unilab.base.cpu_runtime.</span></span><span class="sig-name descname"><span class="pre">apply_env_cpu_runtime</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cpu_ids</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/unilab/base/cpu_runtime.html#apply_env_cpu_runtime"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#unilab.base.cpu_runtime.apply_env_cpu_runtime" title="Link to this definition">¶</a></dt>
 <dd><p>Confine this process’s host-side compute to the env-owned CPU block.</p>
-<p>Cold path only: call from env construction, before the backend pool,
-managers, or any Numba parallel kernel exist. <code class="docutils literal notranslate"><span class="pre">None</span></code> (the single-rank
-default) is a no-op so the default path stays bit-identical.</p>
+<p>Cold path only: call from env construction, before the backend pool or
+managers exist. <code class="docutils literal notranslate"><span class="pre">None</span></code> (the single-rank default) is a no-op so the
+default path keeps default OS scheduling.</p>
 <p>Structural validation (non-empty, unique, non-negative ints) is owned by
 <code class="docutils literal notranslate"><span class="pre">EnvCfg.validate</span></code>; this function fails closed on CPU ids that are not
 available to the process.</p>

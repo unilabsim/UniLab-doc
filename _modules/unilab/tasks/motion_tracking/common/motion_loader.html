@@ -523,15 +523,14 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sequence</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Literal</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">cast</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.assets.hub</span><span class="w"> </span><span class="kn">import</span> <span class="n">resolve_motion_files</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.utils.rotation</span><span class="w"> </span><span class="kn">import</span> <span class="n">np_quat_angular_velocity</span><span class="p">,</span> <span class="n">np_quat_ensure_continuity</span>
 
 
 <div class="viewcode-block" id="MotionData">
@@ -540,13 +539,13 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">MotionData</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Container for motion data at specific frame(s).&quot;&quot;&quot;</span>
 
-    <span class="n">joint_pos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (N, num_joints)</span>
-    <span class="n">joint_vel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (N, num_joints)</span>
-    <span class="n">body_pos_w</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (N, num_bodies, 3)</span>
-    <span class="n">body_quat_w</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (N, num_bodies, 4)</span>
-    <span class="n">body_lin_vel_w</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (N, num_bodies, 3)</span>
-    <span class="n">body_ang_vel_w</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (N, num_bodies, 3)</span>
-    <span class="n">joint_torque</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># (N, num_joints), None when the NPZ has no torque</span></div>
+    <span class="c1"># Device-resident Torch carriers owned by TensorMotionCommand.</span>
+    <span class="n">joint_pos</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>  <span class="c1"># (N, num_joints)</span>
+    <span class="n">joint_vel</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>  <span class="c1"># (N, num_joints)</span>
+    <span class="n">body_pos_w</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>  <span class="c1"># (N, num_bodies, 3)</span>
+    <span class="n">body_quat_w</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>  <span class="c1"># (N, num_bodies, 4)</span>
+    <span class="n">body_lin_vel_w</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>  <span class="c1"># (N, num_bodies, 3)</span>
+    <span class="n">body_ang_vel_w</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>  <span class="c1"># (N, num_bodies, 3)</span></div>
 
 
 
@@ -581,6 +580,92 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_quat_ensure_continuity</span><span class="p">(</span><span class="n">q</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Flip quaternion signs in a time sequence to keep adjacent dots positive.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">q</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">q</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Expected quaternion sequence with shape (T, 4), got </span><span class="si">{</span><span class="n">q</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+        <span class="k">if</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">result</span><span class="p">[</span><span class="n">index</span> <span class="o">-</span> <span class="mi">1</span><span class="p">],</span> <span class="n">result</span><span class="p">[</span><span class="n">index</span><span class="p">]))</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="n">result</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">*=</span> <span class="o">-</span><span class="mf">1.0</span>
+    <span class="k">return</span> <span class="n">result</span>
+
+
+<div class="viewcode-block" id="ensure_quat_continuity">
+<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.ensure_quat_continuity.html#unilab.tasks.motion_tracking.common.motion_loader.ensure_quat_continuity">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">ensure_quat_continuity</span><span class="p">(</span><span class="n">q</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Public cold-motion continuation helper for conversion scripts.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_quat_ensure_continuity</span><span class="p">(</span><span class="n">q</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_quat_conjugate</span><span class="p">(</span><span class="n">q</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">result</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:]</span> <span class="o">*=</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="k">return</span> <span class="n">result</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_quat_mul</span><span class="p">(</span><span class="n">q1</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">q2</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="n">w1</span><span class="p">,</span> <span class="n">x1</span><span class="p">,</span> <span class="n">y1</span><span class="p">,</span> <span class="n">z1</span> <span class="o">=</span> <span class="n">q1</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">q1</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q1</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="n">q1</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
+    <span class="n">w2</span><span class="p">,</span> <span class="n">x2</span><span class="p">,</span> <span class="n">y2</span><span class="p">,</span> <span class="n">z2</span> <span class="o">=</span> <span class="n">q2</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">q2</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q2</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="n">q2</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span>
+        <span class="p">[</span>
+            <span class="n">w1</span> <span class="o">*</span> <span class="n">w2</span> <span class="o">-</span> <span class="n">x1</span> <span class="o">*</span> <span class="n">x2</span> <span class="o">-</span> <span class="n">y1</span> <span class="o">*</span> <span class="n">y2</span> <span class="o">-</span> <span class="n">z1</span> <span class="o">*</span> <span class="n">z2</span><span class="p">,</span>
+            <span class="n">w1</span> <span class="o">*</span> <span class="n">x2</span> <span class="o">+</span> <span class="n">x1</span> <span class="o">*</span> <span class="n">w2</span> <span class="o">+</span> <span class="n">y1</span> <span class="o">*</span> <span class="n">z2</span> <span class="o">-</span> <span class="n">z1</span> <span class="o">*</span> <span class="n">y2</span><span class="p">,</span>
+            <span class="n">w1</span> <span class="o">*</span> <span class="n">y2</span> <span class="o">-</span> <span class="n">x1</span> <span class="o">*</span> <span class="n">z2</span> <span class="o">+</span> <span class="n">y1</span> <span class="o">*</span> <span class="n">w2</span> <span class="o">+</span> <span class="n">z1</span> <span class="o">*</span> <span class="n">x2</span><span class="p">,</span>
+            <span class="n">w1</span> <span class="o">*</span> <span class="n">z2</span> <span class="o">+</span> <span class="n">x1</span> <span class="o">*</span> <span class="n">y2</span> <span class="o">-</span> <span class="n">y1</span> <span class="o">*</span> <span class="n">x2</span> <span class="o">+</span> <span class="n">z1</span> <span class="o">*</span> <span class="n">w2</span><span class="p">,</span>
+        <span class="p">],</span>
+        <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_quat_to_axis_angle</span><span class="p">(</span><span class="n">q</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="n">sign</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">q</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+    <span class="n">q</span> <span class="o">=</span> <span class="n">q</span> <span class="o">*</span> <span class="n">sign</span>
+    <span class="n">xyz</span> <span class="o">=</span> <span class="n">q</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:]</span>
+    <span class="n">w</span> <span class="o">=</span> <span class="n">q</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">xyz_norm</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">xyz</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">half_angle</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">xyz_norm</span><span class="p">,</span> <span class="n">w</span><span class="p">)</span>
+    <span class="n">angle</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">half_angle</span>
+    <span class="n">small</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">angle</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">1.0e-6</span>
+    <span class="n">safe_angle</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">small</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">angle</span><span class="p">)</span>
+    <span class="n">sin_half_over_angle</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="n">small</span><span class="p">,</span>
+        <span class="mf">0.5</span> <span class="o">-</span> <span class="n">angle</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="mf">48.0</span><span class="p">,</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">half_angle</span><span class="p">)</span> <span class="o">/</span> <span class="n">safe_angle</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">xyz</span> <span class="o">/</span> <span class="n">sin_half_over_angle</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_quat_angular_velocity</span><span class="p">(</span><span class="n">q</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">dt</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Estimate angular velocity from a shortest-arc quaternion sequence.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">q</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">q</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Expected quaternion sequence with shape (T, 4), got </span><span class="si">{</span><span class="n">q</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">dt</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;dt must be positive, got </span><span class="si">{</span><span class="n">dt</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">rotations</span> <span class="o">=</span> <span class="n">_quat_ensure_continuity</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+    <span class="n">num_frames</span> <span class="o">=</span> <span class="n">rotations</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">omega</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">num_frames</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">rotations</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">num_frames</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">omega</span>
+
+    <span class="k">if</span> <span class="n">num_frames</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="n">q_rel</span> <span class="o">=</span> <span class="n">_quat_mul</span><span class="p">(</span><span class="n">rotations</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">_quat_conjugate</span><span class="p">(</span><span class="n">rotations</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+        <span class="n">sign</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">q_rel</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="n">omega</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">_quat_to_axis_angle</span><span class="p">((</span><span class="n">q_rel</span> <span class="o">*</span> <span class="n">sign</span><span class="p">)[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:])[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="n">dt</span>
+        <span class="k">return</span> <span class="n">omega</span>
+
+    <span class="n">q_prev</span> <span class="o">=</span> <span class="n">rotations</span><span class="p">[:</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span>
+    <span class="n">q_next</span> <span class="o">=</span> <span class="n">rotations</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
+    <span class="n">q_rel</span> <span class="o">=</span> <span class="n">_quat_mul</span><span class="p">(</span><span class="n">q_next</span><span class="p">,</span> <span class="n">_quat_conjugate</span><span class="p">(</span><span class="n">q_prev</span><span class="p">))</span>
+    <span class="n">omega</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">_quat_to_axis_angle</span><span class="p">(</span><span class="n">q_rel</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">dt</span><span class="p">)</span>
+    <span class="n">omega</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">omega</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">omega</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">omega</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">omega</span>
+
+
 <div class="viewcode-block" id="InterpolatedMotion">
 <a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.InterpolatedMotion.html#unilab.tasks.motion_tracking.common.motion_loader.InterpolatedMotion">[docs]</a>
 <span class="nd">@dataclass</span>
@@ -608,7 +693,7 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Numerically differentiate a trajectory into base/dof velocities.&quot;&quot;&quot;</span>
     <span class="n">base_lin_vels</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">base_poss</span><span class="p">,</span> <span class="n">dt</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
     <span class="n">dof_vels</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">dof_poss</span><span class="p">,</span> <span class="n">dt</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">base_ang_vels</span> <span class="o">=</span> <span class="n">np_quat_angular_velocity</span><span class="p">(</span><span class="n">base_rots</span><span class="p">,</span> <span class="n">dt</span><span class="p">)</span>
+    <span class="n">base_ang_vels</span> <span class="o">=</span> <span class="n">_quat_angular_velocity</span><span class="p">(</span><span class="n">base_rots</span><span class="p">,</span> <span class="n">dt</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">base_lin_vels</span><span class="p">,</span> <span class="n">base_ang_vels</span><span class="p">,</span> <span class="n">dof_vels</span></div>
 
 
@@ -663,7 +748,7 @@
         <span class="n">base_rots</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">quat_slerp</span><span class="p">(</span>
             <span class="n">base_rots_input</span><span class="p">[</span><span class="n">index_0</span><span class="p">[</span><span class="n">i</span><span class="p">]],</span> <span class="n">base_rots_input</span><span class="p">[</span><span class="n">index_1</span><span class="p">[</span><span class="n">i</span><span class="p">]],</span> <span class="n">blend</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
         <span class="p">)</span>
-    <span class="n">base_rots</span> <span class="o">=</span> <span class="n">np_quat_ensure_continuity</span><span class="p">(</span><span class="n">base_rots</span><span class="p">)</span>
+    <span class="n">base_rots</span> <span class="o">=</span> <span class="n">_quat_ensure_continuity</span><span class="p">(</span><span class="n">base_rots</span><span class="p">)</span>
 
     <span class="c1"># Linear interpolation for joint positions</span>
     <span class="n">dof_poss</span> <span class="o">=</span> <span class="p">(</span>
@@ -692,7 +777,7 @@
 
 <div class="viewcode-block" id="MotionLoader.__init__">
 <a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.MotionLoader.html#unilab.tasks.motion_tracking.common.motion_loader.MotionLoader.__init__">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motion_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">body_indices</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">motion_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">body_indices</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize motion loader.</span>
 
 <span class="sd">        Args:</span>
@@ -710,8 +795,6 @@
         <span class="n">body_quat_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">body_lin_vel_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">body_ang_vel_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">joint_torque_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">joint_torque_limit_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">clip_lengths</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">fps</span> <span class="o">=</span> <span class="mi">0</span>
@@ -727,14 +810,6 @@
                 <span class="n">body_quat_w</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;body_quat_w&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
                 <span class="n">body_lin_vel_w</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;body_lin_vel_w&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
                 <span class="n">body_ang_vel_w</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;body_ang_vel_w&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-                <span class="n">joint_torque</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="n">data</span><span class="p">[</span><span class="s2">&quot;joint_torque&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span> <span class="k">if</span> <span class="s2">&quot;joint_torque&quot;</span> <span class="ow">in</span> <span class="n">data</span> <span class="k">else</span> <span class="kc">None</span>
-                <span class="p">)</span>
-                <span class="n">joint_torque_limit</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="n">data</span><span class="p">[</span><span class="s2">&quot;joint_torque_limit&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-                    <span class="k">if</span> <span class="s2">&quot;joint_torque_limit&quot;</span> <span class="ow">in</span> <span class="n">data</span>
-                    <span class="k">else</span> <span class="kc">None</span>
-                <span class="p">)</span>
 
             <span class="k">if</span> <span class="n">body_indices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">body_pos_w</span> <span class="o">=</span> <span class="n">body_pos_w</span><span class="p">[:,</span> <span class="n">body_indices</span><span class="p">]</span>
@@ -760,22 +835,6 @@
                     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                         <span class="sa">f</span><span class="s2">&quot;Motion file &#39;</span><span class="si">{</span><span class="n">motion_path</span><span class="si">}</span><span class="s2">&#39; has inconsistent frame counts for &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
                     <span class="p">)</span>
-            <span class="k">if</span> <span class="n">joint_torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
-                <span class="n">joint_torque</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">num_frames</span> <span class="ow">or</span> <span class="n">joint_torque</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">joint_pos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
-            <span class="p">):</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Motion file &#39;</span><span class="si">{</span><span class="n">motion_path</span><span class="si">}</span><span class="s2">&#39; has &#39;joint_torque&#39; shape &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">joint_torque</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">, expected (</span><span class="si">{</span><span class="n">num_frames</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">joint_pos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="n">joint_torque_limit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
-                <span class="n">joint_torque_limit</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="n">joint_pos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],)</span>
-                <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">joint_torque_limit</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
-                <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">joint_torque_limit</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">)</span>
-            <span class="p">):</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Motion file &#39;</span><span class="si">{</span><span class="n">motion_path</span><span class="si">}</span><span class="s2">&#39; has invalid &#39;joint_torque_limit&#39;; expected &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">joint_pos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2"> finite positive entries, got </span><span class="si">{</span><span class="n">joint_torque_limit</span><span class="si">}</span><span class="s2">&quot;</span>
-                <span class="p">)</span>
 
             <span class="k">if</span> <span class="n">clip_idx</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">fps</span> <span class="o">=</span> <span class="n">fps</span>
@@ -807,14 +866,6 @@
             <span class="n">body_quat_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">body_quat_w</span><span class="p">)</span>
             <span class="n">body_lin_vel_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">body_lin_vel_w</span><span class="p">)</span>
             <span class="n">body_ang_vel_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">body_ang_vel_w</span><span class="p">)</span>
-            <span class="k">if</span> <span class="p">(</span><span class="n">joint_torque</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="n">joint_torque_limit</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">):</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Motion file &#39;</span><span class="si">{</span><span class="n">motion_path</span><span class="si">}</span><span class="s2">&#39; has incomplete torque data; &#39;joint_torque&#39; &quot;</span>
-                    <span class="s2">&quot;and &#39;joint_torque_limit&#39; must be provided together&quot;</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="n">joint_torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">joint_torque_limit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">joint_torque_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">joint_torque</span><span class="p">)</span>
-                <span class="n">joint_torque_limit_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">joint_torque_limit</span><span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">clip_lengths</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">clip_lengths</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">num_clips</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">clip_lengths</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
@@ -829,26 +880,6 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">body_quat_w</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">body_quat_list</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">body_lin_vel_w</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">body_lin_vel_list</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">body_ang_vel_w</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">body_ang_vel_list</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">joint_torque</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">joint_torque_limit</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">joint_torque_list</span><span class="p">)</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_clips</span><span class="p">:</span>
-            <span class="n">torque_limit</span> <span class="o">=</span> <span class="n">joint_torque_limit_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="k">for</span> <span class="n">clip_limit</span> <span class="ow">in</span> <span class="n">joint_torque_limit_list</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">clip_limit</span><span class="p">,</span> <span class="n">torque_limit</span><span class="p">):</span>
-                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                        <span class="s2">&quot;Motion clips have inconsistent &#39;joint_torque_limit&#39; values; &quot;</span>
-                        <span class="s2">&quot;all clips must share the same per-joint torque limits&quot;</span>
-                    <span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">joint_torque</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">joint_torque_list</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">joint_torque_limit</span> <span class="o">=</span> <span class="n">torque_limit</span>
-        <span class="k">elif</span> <span class="n">joint_torque_list</span><span class="p">:</span>
-            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="s2">&quot;Motion files have inconsistent torque data presence &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">joint_torque_list</span><span class="p">)</span><span class="si">}</span><span class="s2"> of </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">num_clips</span><span class="si">}</span><span class="s2"> clips provide &#39;joint_torque&#39;); &quot;</span>
-                <span class="s2">&quot;treating the whole motion as torque-free&quot;</span><span class="p">,</span>
-                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-            <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">num_frames</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">joint_pos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span></div>
 
@@ -877,370 +908,46 @@
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">clip_indices</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span></div>
 
 
-    <span class="nd">@property</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">has_joint_torque</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether every clip provided joint torque references.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">joint_torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<div class="viewcode-block" id="MotionLoader.motion_features_torch">
+<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.MotionLoader.html#unilab.tasks.motion_tracking.common.motion_loader.MotionLoader.motion_features_torch">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">motion_features_torch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the immutable motion feature table on the requested device.</span>
 
-<div class="viewcode-block" id="MotionLoader.make_motion_data_buffer">
-<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.MotionLoader.html#unilab.tasks.motion_tracking.common.motion_loader.MotionLoader.make_motion_data_buffer">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">make_motion_data_buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_frames</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MotionData</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Allocate a reusable ``MotionData`` buffer for frame-index gathers.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="n">MotionData</span><span class="p">(</span>
-            <span class="n">joint_pos</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">num_frames</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_joints</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">joint_pos</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span>
-            <span class="n">joint_vel</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">num_frames</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_joints</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">joint_vel</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span>
-            <span class="n">body_pos_w</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">num_frames</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_bodies</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">body_pos_w</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span>
-            <span class="n">body_quat_w</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">num_frames</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_bodies</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">body_quat_w</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span>
-            <span class="n">body_lin_vel_w</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
-                <span class="p">(</span><span class="n">num_frames</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_bodies</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">body_lin_vel_w</span><span class="o">.</span><span class="n">dtype</span>
-            <span class="p">),</span>
-            <span class="n">body_ang_vel_w</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
-                <span class="p">(</span><span class="n">num_frames</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_bodies</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">body_ang_vel_w</span><span class="o">.</span><span class="n">dtype</span>
-            <span class="p">),</span>
-            <span class="n">joint_torque</span><span class="o">=</span><span class="p">(</span>
-                <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">num_frames</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_joints</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">joint_torque</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">joint_torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                <span class="k">else</span> <span class="kc">None</span>
-            <span class="p">),</span>
+<span class="sd">        NPZ parsing and validation remain inside this cold-path leaf. Runtime</span>
+<span class="sd">        consumers receive one contiguous float32 table with columns packed in</span>
+<span class="sd">        the documented motion-feature order rather than mutable NumPy arrays.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">arrays</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">joint_pos</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">joint_vel</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">body_pos_w</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">body_quat_w</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">body_lin_vel_w</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">body_ang_vel_w</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">host</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">arrays</span><span class="p">],</span>
+            <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">host</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MotionLoader.clip_offsets_torch">
+<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.MotionLoader.html#unilab.tasks.motion_tracking.common.motion_loader.MotionLoader.clip_offsets_torch">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clip_offsets_torch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return immutable clip start frames as a device-resident Torch table.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">clip_offsets</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span>
         <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="MotionLoader.get_motion_at_frame">
-<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.MotionLoader.html#unilab.tasks.motion_tracking.common.motion_loader.MotionLoader.get_motion_at_frame">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_motion_at_frame</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">frame_idx</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">out</span><span class="p">:</span> <span class="n">MotionData</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MotionData</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get motion data at specified frame indices.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            frame_idx: Frame indices (N,)</span>
-<span class="sd">            out: Optional reusable output buffer.</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            MotionData at specified frames</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">joint_pos</span><span class="p">,</span> <span class="n">frame_idx</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="o">.</span><span class="n">joint_pos</span><span class="p">)</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">joint_vel</span><span class="p">,</span> <span class="n">frame_idx</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="o">.</span><span class="n">joint_vel</span><span class="p">)</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">body_pos_w</span><span class="p">,</span> <span class="n">frame_idx</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="o">.</span><span class="n">body_pos_w</span><span class="p">)</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">body_quat_w</span><span class="p">,</span> <span class="n">frame_idx</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="o">.</span><span class="n">body_quat_w</span><span class="p">)</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">body_lin_vel_w</span><span class="p">,</span> <span class="n">frame_idx</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="o">.</span><span class="n">body_lin_vel_w</span><span class="p">)</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">body_ang_vel_w</span><span class="p">,</span> <span class="n">frame_idx</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="o">.</span><span class="n">body_ang_vel_w</span><span class="p">)</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">joint_torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">out</span><span class="o">.</span><span class="n">joint_torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">np</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">joint_torque</span><span class="p">,</span> <span class="n">frame_idx</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="o">.</span><span class="n">joint_torque</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">out</span>
-
-        <span class="k">return</span> <span class="n">MotionData</span><span class="p">(</span>
-            <span class="n">joint_pos</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">joint_pos</span><span class="p">[</span><span class="n">frame_idx</span><span class="p">],</span>
-            <span class="n">joint_vel</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">joint_vel</span><span class="p">[</span><span class="n">frame_idx</span><span class="p">],</span>
-            <span class="n">body_pos_w</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">body_pos_w</span><span class="p">[</span><span class="n">frame_idx</span><span class="p">],</span>
-            <span class="n">body_quat_w</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">body_quat_w</span><span class="p">[</span><span class="n">frame_idx</span><span class="p">],</span>
-            <span class="n">body_lin_vel_w</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">body_lin_vel_w</span><span class="p">[</span><span class="n">frame_idx</span><span class="p">],</span>
-            <span class="n">body_ang_vel_w</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">body_ang_vel_w</span><span class="p">[</span><span class="n">frame_idx</span><span class="p">],</span>
-            <span class="n">joint_torque</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">joint_torque</span><span class="p">[</span><span class="n">frame_idx</span><span class="p">]</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">joint_torque</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
+<div class="viewcode-block" id="MotionLoader.clip_end_frames_torch">
+<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.MotionLoader.html#unilab.tasks.motion_tracking.common.motion_loader.MotionLoader.clip_end_frames_torch">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clip_end_frames_torch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return immutable clip end frames as a device-resident Torch table.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">clip_end_frames</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span>
         <span class="p">)</span></div>
-</div>
-
-
-
-<div class="viewcode-block" id="MotionSampler">
-<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.MotionSampler.html#unilab.tasks.motion_tracking.common.motion_loader.MotionSampler">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">MotionSampler</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Handles motion frame sampling with different strategies.&quot;&quot;&quot;</span>
-
-<div class="viewcode-block" id="MotionSampler.__init__">
-<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.MotionSampler.html#unilab.tasks.motion_tracking.common.motion_loader.MotionSampler.__init__">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">motion_loader</span><span class="p">:</span> <span class="n">MotionLoader</span><span class="p">,</span>
-        <span class="n">mode</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;start&quot;</span><span class="p">,</span> <span class="s2">&quot;clip_start&quot;</span><span class="p">,</span> <span class="s2">&quot;uniform&quot;</span><span class="p">,</span> <span class="s2">&quot;adaptive&quot;</span><span class="p">,</span> <span class="s2">&quot;mixed&quot;</span><span class="p">],</span>
-        <span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-        <span class="n">bin_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">adaptive_lambda</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.8</span><span class="p">,</span>
-        <span class="n">adaptive_kernel_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
-        <span class="n">adaptive_uniform_ratio</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.1</span><span class="p">,</span>
-        <span class="n">adaptive_alpha</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.001</span><span class="p">,</span>
-        <span class="n">start_ratio</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
-        <span class="n">rng</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize motion sampler.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            motion_loader: Motion loader instance</span>
-<span class="sd">            mode: Sampling mode (&quot;start&quot;, &quot;clip_start&quot;, &quot;uniform&quot;, &quot;adaptive&quot;, &quot;mixed&quot;)</span>
-<span class="sd">            num_envs: Number of parallel environments</span>
-<span class="sd">            bin_count: Number of bins for adaptive sampling (auto if None)</span>
-<span class="sd">            adaptive_lambda: Decay factor for adaptive kernel</span>
-<span class="sd">            adaptive_kernel_size: Kernel size for adaptive sampling</span>
-<span class="sd">            adaptive_uniform_ratio: Uniform sampling ratio for adaptive mode</span>
-<span class="sd">            adaptive_alpha: EMA alpha for failure count updates</span>
-<span class="sd">            start_ratio: Fraction of envs forced to frame 0 in &quot;mixed&quot; mode</span>
-<span class="sd">                (remaining envs are uniformly sampled). Lets buffer concentrate</span>
-<span class="sd">                launch-transition samples while keeping motion-clip coverage.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">start_ratio</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;start_ratio must be in [0, 1], got </span><span class="si">{</span><span class="n">start_ratio</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span> <span class="o">=</span> <span class="n">motion_loader</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="n">mode</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span> <span class="o">=</span> <span class="n">num_envs</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">start_ratio</span> <span class="o">=</span> <span class="n">start_ratio</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">rng</span> <span class="o">=</span> <span class="n">rng</span>
-
-        <span class="c1"># Current frame indices for each environment</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_frames</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_clip_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_clip_end_frames</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span>
-            <span class="n">num_envs</span><span class="p">,</span> <span class="n">motion_loader</span><span class="o">.</span><span class="n">clip_end_frames</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span>
-        <span class="p">)</span>
-
-        <span class="c1"># Adaptive sampling parameters</span>
-        <span class="k">if</span> <span class="n">bin_count</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># Auto-compute bin count based on motion length and FPS</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">num_frames</span> <span class="o">//</span> <span class="n">motion_loader</span><span class="o">.</span><span class="n">fps</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span> <span class="o">=</span> <span class="n">bin_count</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">adaptive_lambda</span> <span class="o">=</span> <span class="n">adaptive_lambda</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">adaptive_kernel_size</span> <span class="o">=</span> <span class="n">adaptive_kernel_size</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">adaptive_uniform_ratio</span> <span class="o">=</span> <span class="n">adaptive_uniform_ratio</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">adaptive_alpha</span> <span class="o">=</span> <span class="n">adaptive_alpha</span>
-
-        <span class="c1"># Failure tracking for adaptive sampling</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">bin_failed_count</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_current_bin_failed</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-
-        <span class="c1"># Precompute adaptive kernel</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-            <span class="p">[</span><span class="n">adaptive_lambda</span><span class="o">**</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">adaptive_kernel_size</span><span class="p">)],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span>
-        <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
-
-        <span class="c1"># Metrics</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_entropy</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_prob</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_bin</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_done_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span></div>
-
-
-<div class="viewcode-block" id="MotionSampler.sample_frames">
-<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.MotionSampler.html#unilab.tasks.motion_tracking.common.motion_loader.MotionSampler.sample_frames">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">sample_frames</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample motion frames for specified environments.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            env_ids: Environment indices to sample for</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            Sampled frame indices</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;start&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_start</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;clip_start&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_clip_start</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;uniform&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_uniform</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;adaptive&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_adaptive</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;mixed&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_mixed</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown sampling mode: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">mode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
-
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_sample_start</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Always start from the global first frame (historical behavior).&quot;&quot;&quot;</span>
-        <span class="n">frames</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">env_ids</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_set_sampled_frames</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">frames</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">frames</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_sample_clip_start</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Start from the first frame of a randomly chosen clip.&quot;&quot;&quot;</span>
-        <span class="n">frames</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">num_clips</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="n">frames</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">env_ids</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">clip_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span>
-                    <span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">num_clips</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">env_ids</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span>
-                <span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">clip_indices</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">integers</span><span class="p">(</span>
-                    <span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">num_clips</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">env_ids</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span>
-                <span class="p">)</span>
-            <span class="n">frames</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">clip_offsets</span><span class="p">[</span><span class="n">clip_indices</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_set_sampled_frames</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">frames</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">frames</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_sample_uniform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample uniformly across motion.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">frames</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span>
-                <span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">num_frames</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">env_ids</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span>
-            <span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">frames</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">integers</span><span class="p">(</span>
-                <span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">num_frames</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">env_ids</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span>
-            <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_set_sampled_frames</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">frames</span><span class="p">)</span>
-
-        <span class="c1"># Update metrics</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_entropy</span> <span class="o">=</span> <span class="mf">1.0</span>  <span class="c1"># Maximum entropy for uniform</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_prob</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_bin</span> <span class="o">=</span> <span class="mf">0.5</span>  <span class="c1"># No specific bin preference</span>
-
-        <span class="k">return</span> <span class="n">frames</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_sample_mixed</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Per-env Bernoulli mix of ``start`` (frame 0) and ``uniform``.</span>
-
-<span class="sd">        Each env independently lands on frame 0 with probability ``start_ratio``</span>
-<span class="sd">        and on a uniformly sampled frame otherwise. This concentrates buffer</span>
-<span class="sd">        coverage on the launch transition (frame 0 -&gt; apex) while preserving</span>
-<span class="sd">        uniform RSI&#39;s whole-clip coverage everywhere else.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
-        <span class="n">random_values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">uniform_frames</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">num_frames</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">uniform_frames</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">integers</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">num_frames</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
-        <span class="n">use_start</span> <span class="o">=</span> <span class="n">random_values</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_ratio</span>
-        <span class="n">frames</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
-            <span class="n">use_start</span><span class="p">,</span>
-            <span class="mi">0</span><span class="p">,</span>
-            <span class="n">uniform_frames</span><span class="p">,</span>
-        <span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_set_sampled_frames</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">frames</span><span class="p">)</span>
-
-        <span class="c1"># Metrics: mixture of a degenerate start mass and a uniform spread.</span>
-        <span class="c1"># Reflect the start over-representation in top1.</span>
-        <span class="n">start_mass</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_ratio</span> <span class="o">+</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_ratio</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_prob</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">start_mass</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_bin</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="k">if</span> <span class="n">start_mass</span> <span class="o">&gt;=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="mf">1e-9</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">sampling_entropy</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">uniform_mass</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_ratio</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span>
-            <span class="n">H</span> <span class="o">=</span> <span class="o">-</span><span class="n">start_mass</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">start_mass</span> <span class="o">+</span> <span class="mf">1e-12</span><span class="p">)</span>
-            <span class="n">H</span> <span class="o">-=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">uniform_mass</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">uniform_mass</span> <span class="o">+</span> <span class="mf">1e-12</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">sampling_entropy</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="nb">float</span><span class="p">(</span><span class="n">H</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span><span class="p">))</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="mf">1.0</span>
-            <span class="p">)</span>
-
-        <span class="k">return</span> <span class="n">frames</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_sample_adaptive</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample adaptively based on failure statistics.&quot;&quot;&quot;</span>
-        <span class="c1"># Compute sampling probabilities</span>
-        <span class="n">sampling_probs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_failed_count</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">adaptive_uniform_ratio</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span><span class="p">)</span>
-
-        <span class="c1"># Apply smoothing kernel (non-causal convolution)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">adaptive_kernel_size</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="c1"># Pad and convolve</span>
-            <span class="n">padded</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">sampling_probs</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">adaptive_kernel_size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;edge&quot;</span><span class="p">)</span>
-            <span class="n">sampling_probs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">convolve</span><span class="p">(</span><span class="n">padded</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;valid&quot;</span><span class="p">)</span>
-
-        <span class="c1"># With no failure statistics yet, a zero uniform floor leaves every bin</span>
-        <span class="c1"># at weight zero. Initialize that cold-start state as uniform.</span>
-        <span class="n">sampling_weight_sum</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sampling_probs</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
-        <span class="k">if</span> <span class="n">sampling_weight_sum</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
-            <span class="n">sampling_probs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">sampling_probs</span> <span class="o">=</span> <span class="n">sampling_probs</span> <span class="o">/</span> <span class="n">sampling_weight_sum</span>
-
-        <span class="c1"># Sample bins</span>
-        <span class="n">sampled_bins</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">env_ids</span><span class="p">),</span> <span class="n">p</span><span class="o">=</span><span class="n">sampling_probs</span><span class="p">)</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span> <span class="ow">is</span> <span class="kc">None</span>
-            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">env_ids</span><span class="p">),</span> <span class="n">p</span><span class="o">=</span><span class="n">sampling_probs</span><span class="p">)</span>
-        <span class="p">)</span>
-
-        <span class="c1"># Add random offset within bin</span>
-        <span class="n">bin_offsets</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">env_ids</span><span class="p">))</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span> <span class="ow">is</span> <span class="kc">None</span>
-            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">env_ids</span><span class="p">))</span>
-        <span class="p">)</span>
-        <span class="n">frames</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="p">(</span><span class="n">sampled_bins</span> <span class="o">+</span> <span class="n">bin_offsets</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">num_frames</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">_set_sampled_frames</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">frames</span><span class="p">)</span>
-
-        <span class="c1"># Update metrics</span>
-        <span class="n">H</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">sampling_probs</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">sampling_probs</span> <span class="o">+</span> <span class="mf">1e-12</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
-        <span class="n">H_norm</span> <span class="o">=</span> <span class="n">H</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span><span class="p">)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="mf">1.0</span>
-        <span class="n">pmax_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">sampling_probs</span><span class="p">)</span>
-        <span class="n">pmax</span> <span class="o">=</span> <span class="n">sampling_probs</span><span class="p">[</span><span class="n">pmax_idx</span><span class="p">]</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_entropy</span> <span class="o">=</span> <span class="n">H_norm</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_prob</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">pmax</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_bin</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">pmax_idx</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span>
-
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">frames</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-
-<div class="viewcode-block" id="MotionSampler.update_failure_stats">
-<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.MotionSampler.html#unilab.tasks.motion_tracking.common.motion_loader.MotionSampler.update_failure_stats">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">update_failure_stats</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">terminated</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">current_frames</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update failure statistics for adaptive sampling.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            terminated: Boolean array indicating which environments terminated</span>
-<span class="sd">            current_frames: Optional current frame indices (uses internal if None)</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">!=</span> <span class="s2">&quot;adaptive&quot;</span><span class="p">:</span>
-            <span class="k">return</span>
-
-        <span class="k">if</span> <span class="n">current_frames</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">current_frames</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_frames</span>
-
-        <span class="c1"># Find which bins failed</span>
-        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">terminated</span><span class="p">):</span>
-            <span class="n">bin_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span>
-                <span class="p">(</span><span class="n">current_frames</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span><span class="p">)</span> <span class="o">//</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">num_frames</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
-                <span class="mi">0</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="n">failed_bins</span> <span class="o">=</span> <span class="n">bin_indices</span><span class="p">[</span><span class="n">terminated</span><span class="p">]</span>
-
-            <span class="c1"># Count failures per bin</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_current_bin_failed</span><span class="p">[:]</span> <span class="o">=</span> <span class="mi">0</span>
-            <span class="k">for</span> <span class="n">bin_idx</span> <span class="ow">in</span> <span class="n">failed_bins</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_current_bin_failed</span><span class="p">[</span><span class="n">bin_idx</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
-
-            <span class="c1"># Update EMA of failure counts</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">bin_failed_count</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">adaptive_alpha</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_bin_failed</span>
-                <span class="o">+</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">adaptive_alpha</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_failed_count</span>
-            <span class="p">)</span></div>
-
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_set_sampled_frames</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">frames</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_frames</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="n">frames</span>
-        <span class="n">clip_indices</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">get_clip_indices</span><span class="p">(</span><span class="n">frames</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_clip_indices</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="n">clip_indices</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_clip_end_frames</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">clip_end_frames</span><span class="p">[</span><span class="n">clip_indices</span><span class="p">]</span>
-
-<div class="viewcode-block" id="MotionSampler.step">
-<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.MotionSampler.html#unilab.tasks.motion_tracking.common.motion_loader.MotionSampler.step">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Advance selected frames by one step and return their clip-end rows.&quot;&quot;&quot;</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span> <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">env_ids</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">current_frames</span><span class="p">[</span><span class="n">ids</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
-
-        <span class="c1"># Find environments that reached the end of their current clip.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_done_mask</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_done_mask</span><span class="p">[</span><span class="n">ids</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_frames</span><span class="p">[</span><span class="n">ids</span><span class="p">]</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_clip_end_frames</span><span class="p">[</span><span class="n">ids</span><span class="p">]</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_done_mask</span><span class="p">)</span></div>
-
-
-<div class="viewcode-block" id="MotionSampler.get_current_motion">
-<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.motion_loader.MotionSampler.html#unilab.tasks.motion_tracking.common.motion_loader.MotionSampler.get_current_motion">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_current_motion</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">out</span><span class="p">:</span> <span class="n">MotionData</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MotionData</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get motion data at current frames for all environments.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">motion_loader</span><span class="o">.</span><span class="n">get_motion_at_frame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">current_frames</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="p">)</span></div>
 </div>
 
 </pre></div>

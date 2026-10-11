@@ -173,7 +173,7 @@ for a production task name with no entry, so adding a production registration
 requires an explicit migration decision.
 
 - 36 tasks are **Compatible** (`target=complete`): the Hydra owner YAML
-  materializes the canonical NumPy Manager-Based runtime.
+  materializes the canonical tensor-only Manager-Based runtime.
 
 ## Repository evidence
 

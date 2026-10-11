@@ -12,8 +12,8 @@ G1 动作追踪任务位于 `src/unilab/tasks/motion_tracking/` 下，并通过
 ## Task Owners
 
 每个 task 都在 Hydra task owner YAML 中定义默认 motion 片段。Hydra 是唯一配置入口；
-选中的 owner 会被物化为共享的 `ManagerBasedRlEnvCfg`，再由 NumPy Manager-Based
-runtime 执行。
+选中的 owner 会被物化为共享的 `ManagerBasedRlEnvCfg`，再由 tensor-only
+Manager-Based runtime 执行。
 
 | CLI Task | Registered Env | 默认 motion | Owner Evidence |
 | --- | --- | --- | --- |

@@ -153,7 +153,7 @@ entry 的 production task 名称抛出 `KeyError`，因此新增 production 注�
 迁移决策。
 
 - 36 个 task 为 **Compatible**（`target=complete`）：Hydra owner YAML 物化 canonical
-  NumPy Manager-Based runtime。
+  tensor-only Manager-Based runtime。
 
 ## 仓库证据
 

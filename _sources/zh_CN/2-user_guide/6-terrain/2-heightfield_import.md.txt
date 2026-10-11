@@ -6,7 +6,6 @@
 
 - `src/unilab/terrains/heightfield_terrains.py`
 - `unisim.terrain.generator`
-- `src/unilab/tasks/locomotion/common/height_scan.py`
 - `tests/utils/test_xml_utils.py`
 - `unisim.backend.mujoco.xml`
 - `unisim.backend.motrix.scene`

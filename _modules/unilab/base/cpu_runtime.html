@@ -523,23 +523,17 @@
 <span class="sd">Multi-rank off-policy data-parallel runs partition host CPUs so each rank&#39;s</span>
 <span class="sd">collector owns one contiguous block (``training.dp_collector_cpu_ids``, routed</span>
 <span class="sd">into ``EnvCfg.cpu_ids``). The MuJoCo BatchEnvPool already pins its physics</span>
-<span class="sd">workers to that block, but the collector&#39;s host-side compute did not follow:</span>
-<span class="sd">Numba parallel kernels (``unisim.backend.body_state`` and the</span>
-<span class="sd">motion-tracking kernels) size their pool from the host CPU count and leave</span>
-<span class="sd">placement to the OS, so they drift across rank boundaries and compete with</span>
-<span class="sd">sibling ranks&#39; pinned physics workers.</span>
+<span class="sd">workers to that block, but the collector&#39;s existing host-side native pools did</span>
+<span class="sd">not follow and could drift across rank boundaries to compete with sibling</span>
+<span class="sd">ranks&#39; pinned physics workers.</span>
 
 <span class="sd">``apply_env_cpu_runtime`` is the generic env-level counterpart, applied once on</span>
-<span class="sd">the env-construction cold path — before managers, backend materialization, or</span>
-<span class="sd">the first Numba parallel call exist:</span>
+<span class="sd">the env-construction cold path, before managers and backend materialization:</span>
 
 <span class="sd">- ``os.sched_setaffinity`` pins the calling thread to the block, and every</span>
-<span class="sd">  already-running thread (e.g. BLAS pools spawned at ``import numpy``) is</span>
-<span class="sd">  pinned individually via ``/proc/self/task``; threads spawned later</span>
-<span class="sd">  (including Numba&#39;s lazily-launched pool) inherit the mask.</span>
-<span class="sd">- ``numba.set_num_threads(len(cpu_ids))`` sizes Numba&#39;s pool to the block</span>
-<span class="sd">  instead of the host, unless the operator pinned ``NUMBA_NUM_THREADS``</span>
-<span class="sd">  (mirroring the motion-kernel runtime policy).</span>
+<span class="sd">  already-running thread (e.g. BLAS pools spawned by a backend dependency) is</span>
+<span class="sd">  pinned individually via ``/proc/self/task``; threads spawned later inherit</span>
+<span class="sd">  the mask.</span>
 
 <span class="sd">The function is backend-agnostic: ``EnvCfg.cpu_ids`` is the single source of</span>
 <span class="sd">truth, so any backend whose env declares a block gets the same confinement.</span>
@@ -557,10 +551,10 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_confine_existing_threads</span><span class="p">(</span><span class="n">ids</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Pin already-running threads; later threads inherit the caller&#39;s mask.</span>
 
-<span class="sd">    Native pools spawned before env construction (OpenBLAS spawns its workers</span>
-<span class="sd">    at ``import numpy``) would otherwise keep the host-wide mask and compete</span>
-<span class="sd">    with sibling ranks&#39; pinned CPUs. Threads may exit between listing and</span>
-<span class="sd">    pinning; those races are ignored.</span>
+<span class="sd">    Native pools spawned before env construction (for example, OpenBLAS workers</span>
+<span class="sd">    started by a backend dependency) would otherwise keep the host-wide mask and</span>
+<span class="sd">    compete with sibling ranks&#39; pinned CPUs. Threads may exit between listing</span>
+<span class="sd">    and pinning; those races are ignored.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Resolved at call time (not import) so tests can monkeypatch the seam;</span>
     <span class="c1"># ``getattr`` keeps this checkable on platforms where typeshed hides the</span>
@@ -580,9 +574,9 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">apply_env_cpu_runtime</span><span class="p">(</span><span class="n">cpu_ids</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Confine this process&#39;s host-side compute to the env-owned CPU block.</span>
 
-<span class="sd">    Cold path only: call from env construction, before the backend pool,</span>
-<span class="sd">    managers, or any Numba parallel kernel exist. ``None`` (the single-rank</span>
-<span class="sd">    default) is a no-op so the default path stays bit-identical.</span>
+<span class="sd">    Cold path only: call from env construction, before the backend pool or</span>
+<span class="sd">    managers exist. ``None`` (the single-rank default) is a no-op so the</span>
+<span class="sd">    default path keeps default OS scheduling.</span>
 
 <span class="sd">    Structural validation (non-empty, unique, non-negative ints) is owned by</span>
 <span class="sd">    ``EnvCfg.validate``; this function fails closed on CPU ids that are not</span>
@@ -607,21 +601,7 @@
     <span class="k">else</span><span class="p">:</span>
         <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
             <span class="s2">&quot;EnvCfg.cpu_ids process confinement requires os.sched_setaffinity &quot;</span>
-            <span class="s2">&quot;(Linux); only the Numba thread cap is applied&quot;</span><span class="p">,</span>
-            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-        <span class="p">)</span>
-
-    <span class="k">if</span> <span class="s2">&quot;NUMBA_NUM_THREADS&quot;</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">:</span>
-        <span class="k">return</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">numba</span><span class="w"> </span><span class="kn">import</span> <span class="n">set_num_threads</span>
-
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">set_num_threads</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">))</span>
-    <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-        <span class="c1"># len(ids) &lt;= NUMBA_NUM_THREADS holds whenever the pool default came</span>
-        <span class="c1"># from this host&#39;s CPU count; warn instead of failing env construction.</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;EnvCfg.cpu_ids Numba thread cap to </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span><span class="si">}</span><span class="s2"> rejected: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;(Linux); CPU confinement is unavailable&quot;</span><span class="p">,</span>
             <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
         <span class="p">)</span></div>
 

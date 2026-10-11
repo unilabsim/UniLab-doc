@@ -17,8 +17,10 @@ Torch，并保留现有 `TorchEnvState`、Hydra owner YAML、`SimBackend`、regi
   物化为 plain typed cfg，Python 不保留 task config mirror。
 - 未知字段、无法解析的 target/callable、抽象或错误 cfg 类型直接报错；DictConfig 和解析
   不进入 reset/step，scripts 不解释 task 业务规则。
-- manager carrier、term return、env ID 和 entity view 使用 Torch tensor（仅未迁移 term
-  保留显式 NumPy host boundary），core 不依赖 Warp、runner、learner 或 IPC。
+- manager carrier、term return、env ID 和 entity view 使用 Torch tensor；`managers` 与
+  `envs` production source 禁止 NumPy import 与 Torch↔NumPy conversion。cold NPZ
+  MotionLoader 是 task runtime 的唯一 NumPy leaf，base owner 层只在显式
+  adapter/reset-host boundary 内消化 legacy NumPy format。
 - `SceneEntityCfg` 在冷路径通过 base scene/entity facade 解析；facade 只调用正式
   `SimBackend` contract，热路径复用缓存 ID/view。
 - named-sensor observation term 在构造时通过 `EntityScene.bind_sensor_data(...)` 绑定

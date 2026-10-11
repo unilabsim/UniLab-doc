@@ -24,8 +24,8 @@
 
 - 地形生成器形状与数值行为：
   `tests/terrains/test_terrain_generator.py`
-- Rough locomotion 高度扫描与 spawn 行为：
-  `tests/envs/locomotion/test_terrain_spawn.py`
+- Backend terrain materialization contract：
+  `tests/base/test_backend_conformance.py`
 - 后端 materialization 边界：`tests/utils/test_xml_utils.py`
 
 ## 仓库内证据
@@ -33,4 +33,3 @@
 - 地形配置与 preset：`src/unilab/terrains/config.py`
 - 地形生成器：`unisim.terrain.generator`
 - Heightfield 地形类型：`src/unilab/terrains/heightfield_terrains.py`
-- 高度扫描辅助工具：`src/unilab/tasks/locomotion/common/height_scan.py`
