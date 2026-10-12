@@ -10,12 +10,14 @@ Manager-Based event term 是 UniLab 唯一的 DR lifecycle。任务 provider 协
   forward 与 CUDA graph capture 前完成 realization。
 - **Startup：** Manager 构造完成后，backend 先 materialize，event term 再采样
   一个 full-width per-environment 表，并在 read-plan 绑定、第一次 reset 或 step
-  之前复用公开的 `SimBackend.set_state_tensor(..., randomization=...)` boundary 提交。
-  已提交 rows 成为本地 reset baseline，因此后续 selected-row reset 会保留未写入
-  的 startup 值。Startup 是显式 opt-in，用连续分布覆盖换取 steady-state reset
-  路径中的 full-model derived-constant refresh。
+  之前复用与 reset DR 相同的 backend-owned packed reset 事务
+  （`SimBackend.begin_packed_reset()`）提交。提交成功后，packed composer 将
+  已提交行的 staged 字段提升为其持久 reset baseline，因此后续 selected-row
+  reset 会保留未写入的 startup 值。Startup 是显式 opt-in，用连续分布覆盖换取
+  steady-state reset 路径中的 full-model derived-constant refresh。
 - **Reset：** event term 通过 Entity binding 写入 `ResetStateTransaction`；
-  transaction 只调用一次 `SimBackend.set_state_tensor(..., randomization=...)`。
+  transaction 将全部 staged 写入组合进 backend-owned packed 事务，并恰好提交
+  一次。
 - **Interval：** event term 通过公开 `SimBackend` contract 使用 backend-owned
   interval plan。
 
@@ -27,6 +29,9 @@ Backend 差异是显式 capability，不是 task-side 分支：
 - `supported_interval_terms`
 - fixed-variant layout
 - per-environment playback 支持
+- `TensorLifecycleCapabilities.packed_reset` 与 `SimBackend.begin_packed_reset()`：
+  Manager-Based reset 与 startup DR 生命周期的必需 capability；缺失声明会在 env
+  构造时 fail closed。
 
 未声明支持的请求 term 会携带 backend 与 term 名称 fail closed。Manager code 不
 import MuJoCo 或 mjbatch，也不访问 backend model/pool。
@@ -44,11 +49,11 @@ import MuJoCo 或 mjbatch，也不访问 backend model/pool。
 - canonical model table，例如 `body_mass` 的 `(nbody,)`；
 - per-environment fixed-variant table，例如 `(num_envs, nbody)`。
 
-对 selected reset subset，event term 使用对应 env rows 作为 baseline。只写部分
-model columns 时，transaction 会用同一 env row 填充未写列，再构造一个 dense
-payload。缺失能力、未支持 term、非 floating 表、非法 tail、首维不是 `num_envs`
-的 per-env 表均 fail closed。该边界移除了 UniLab 侧为 inertia 默认值重新 compile
-MuJoCo XML 的路径。
+对 selected reset subset，packed composer 持有的 baseline 是权威来源。只写部分
+model columns 时，只有这些列会被 stage；未写列保留 composer 的 per-env
+baseline，并由 backend-owned composer 在唯一一次提交时合并。缺失能力、未支持
+term、非 floating 表、非法 tail、首维不是 `num_envs` 的 per-env 表均 fail
+closed。该边界移除了 UniLab 侧为 inertia 默认值重新 compile MuJoCo XML 的路径。
 
 ## Interval Terms
 

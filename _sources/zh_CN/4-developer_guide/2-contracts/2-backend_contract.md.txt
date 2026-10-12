@@ -37,7 +37,9 @@ Issue #1599 的 M2 消费层将 UniSim 物理实体声明与 UniLab 逻辑 selec
 
 既有 `ResetStateTransaction` 为 mapped scene 暂存一次公共 `SceneResetRequest`。缺失字段、未选实体和环境保持不变。逐环境默认值来自 `get_entity_default_state`，`restore_default_controls` 在同次提交中恢复 keyframe control，控制值不必等于关节位置。Manager term 不接触引擎私有 tensor 或资产解析。当前消费边界为标量 hinge/slide 和一次事务共用选中环境集合；不支持的 DR/mocap 混写或行模式明确拒绝。
 
-对于 tensor 能力可用的标量 reset，当 backend 声明 `TensorLifecycleCapabilities.packed_reset` 时，Manager 将组合委托给 UniSim 公共 packed reset 事务。UniSim 拥有全宽 device 状态 staging、选中列合并、已提交模型字段 baseline、声明 `packed_reset_mocap` 时的选中 mocap staging，以及唯一公共提交边界；Manager 只保留面向 term 的校验与行域所有权。未声明 mocap 能力的 backend 上，tensor mocap 写入快速失败。
+对于 tensor 能力可用的标量 reset，`TensorLifecycleCapabilities.packed_reset` 是 Manager-Based 运行时的必需 capability，而不是可选 fast path：backend 未声明该能力时 `ManagerBasedRlEnv` 在初始化即 fail closed；缺少该声明或缺少 `SimBackend.begin_packed_reset()` 时，`ResetStateTransaction.declare_packed_reset_device` 抛出 `NotImplementedError`。Manager 将全部 reset-mode 状态、模型字段与 mocap 写入组合进 UniSim 公共 packed reset 事务；UniSim 拥有全宽 device 状态 staging、选中列合并、已提交模型字段 baseline、声明 `packed_reset_mocap` 时的选中 mocap staging，以及唯一公共提交边界。composer 按声明 device 缓存复用，其 baseline 跨 reset 持久；Manager 只保留面向 term 的校验与行域所有权。不存在 non-packed fallback：UniLab 不再消费 `SimBackend.set_state_tensor_mask()`，未声明 mocap 能力的 backend 上 tensor mocap 写入快速失败。
+
+Owner-subset command 生命周期仍以 fixed-width bool mask 作为输入 carrier，记录实际写入 mask 的并集，并只请求 packed composer 提交这些行；未写入的 active rows 保留 backend 状态。
 
 `tests/envs/test_multi_entity_consumer.py` 为 MuJoCo 和 IsaacSim 注册同一个 primitive task，并使用同一个可 pickle 的 EnvFactory。测试检查观测/动作维度、被动关节、局部 reset、variants 和 kinematic mirror。portable-profile fixture 还组合 robot、被动 object、table 与 collision-free mirror，并使用非 round-robin 的 N5/K2 assignment `[1,1,0,1,0]`。原生 IsaacSim case 通过 `UNILAB_TEST_M2_ISAACSIM=1` 启用。消费层 contract 要求已发布的 `unisim-core>=1.7.3`。默认与 ROCm lock profile 解析已发布的 registry 包。实现和验证边界见 [UniSim roadmap #154](https://github.com/unilabsim/unisim/issues/154) 与 [UniSim contract #155](https://github.com/unilabsim/unisim/issues/155)。
 

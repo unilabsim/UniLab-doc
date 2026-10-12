@@ -10,15 +10,17 @@ provider protocol and the environment does not carry a DR manager.
   Backends realize it before their first forward and before CUDA graph capture.
 - **Startup:** after manager construction, the backend materializes and event
   terms sample one full-width per-environment table. They commit through the
-  same public `SimBackend.set_state_tensor(..., randomization=...)` boundary as reset
-  DR before read-plan binding, the first reset, or a step. The committed rows
-  become the local reset baseline, so later selected-row resets preserve
-  unwritten startup values. Startup is opt-in and exchanges continuous
+  same backend-owned packed reset transaction
+  (`SimBackend.begin_packed_reset()`) as reset DR before read-plan binding,
+  the first reset, or a step. When that commit succeeds, the packed composer
+  promotes the staged fields of the committed rows into its persistent reset
+  baseline, so later selected-row resets preserve unwritten startup values.
+  Startup is opt-in and exchanges continuous
   distribution coverage for removing full-model derived-constant refreshes from
   the steady-state reset path.
 - **Reset:** event terms write through Entity bindings into
-  `ResetStateTransaction`; the transaction calls
-  `SimBackend.set_state_tensor(..., randomization=...)` once.
+  `ResetStateTransaction`; the transaction composes all staged writes in the
+  backend-owned packed transaction and commits through it exactly once.
 - **Interval:** event terms use backend-owned interval plans through the public
   `SimBackend` contract.
 
@@ -30,6 +32,10 @@ Backend differences are explicit capabilities, not task-side branches:
 - `supported_interval_terms`
 - fixed-variant layouts
 - per-environment playback support
+- `TensorLifecycleCapabilities.packed_reset` with
+  `SimBackend.begin_packed_reset()`: required for the Manager-Based reset and
+  startup DR lifecycle; a missing declaration fails closed at env
+  construction.
 
 An unadvertised requested term fails closed with the backend and term named.
 Manager code never imports MuJoCo or mjbatch and never accesses a backend model
@@ -50,9 +56,10 @@ and has one of two layouts:
 - canonical model table, such as `(nbody,)` for `body_mass`;
 - per-environment fixed-variant table, such as `(num_envs, nbody)`.
 
-For a selected reset subset, event terms use the corresponding per-env rows as
-their baseline. A write to a subset of model columns fills every unwritten
-column from that same env row before the transaction builds one dense payload.
+For a selected reset subset, the packed composer's baseline is authoritative.
+A write to a subset of model columns stages only those columns; unwritten
+columns keep the composer's per-env baseline, which the backend-owned composer
+merges at its single commit.
 Missing capabilities, unsupported terms, non-floating tables, invalid tails, and
 per-env tables whose first dimension is not `num_envs` fail closed. This removes
 the former UniLab-side MuJoCo recompilation used to obtain inertia defaults.

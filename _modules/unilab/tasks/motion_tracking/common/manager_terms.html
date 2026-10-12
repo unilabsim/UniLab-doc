@@ -1454,6 +1454,15 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">joint_default_bias</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="p">)</span>
+        <span class="c1"># MotionCommand bypasses CommandTerm.reset, so refresh the resample</span>
+        <span class="c1"># timer here: a stale zero timer would force a spurious full-width</span>
+        <span class="c1"># resample at the next compute, overwriting frames the reset just</span>
+        <span class="c1"># sampled (and rows owned by an active owner-subset transaction).</span>
+        <span class="n">resample_lower</span><span class="p">,</span> <span class="n">resample_upper</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resampling_time_range</span>
+        <span class="n">sampled</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span>
+            <span class="n">resample_lower</span><span class="p">,</span> <span class="n">resample_upper</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">time_left</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">sampled</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">time_left</span><span class="p">))</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_resample_command</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_resample_ingested_mask</span> <span class="o">=</span> <span class="n">reset_mask</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_payload_validated</span> <span class="o">=</span> <span class="kc">False</span>
@@ -1489,6 +1498,10 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_resample_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Full-width motion sampling and masked state publication.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
+            <span class="c1"># No selected rows: skip sampling entirely so reset diagnostics only</span>
+            <span class="c1"># count real sampler dispatches (issue #2285 lifecycle contract).</span>
+            <span class="k">return</span>
         <span class="n">sampler_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">frames</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tensor_sampler</span><span class="o">.</span><span class="n">sample_frames</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">generator</span><span class="p">)</span>
         <span class="n">packet</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_motion_packet</span><span class="p">(</span><span class="n">frames</span><span class="p">)</span>

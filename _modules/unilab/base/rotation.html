@@ -518,17 +518,20 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for unilab.base.rotation</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;NumPy host-bound rotation helpers owned by the base/reset boundary.</span>
+<span></span><span class="sd">&quot;&quot;&quot;Rotation helpers owned by the base/reset boundary.</span>
 
-<span class="sd">These helpers are intentionally private to ``unilab.base``. They serve the</span>
-<span class="sd">explicit reset/entity host boundary; task cold loaders own their data-format</span>
-<span class="sd">conversion locally rather than depending on this transition shim. No</span>
-<span class="sd">compatibility import for ``unilab.utils.rotation`` is retained.</span>
+<span class="sd">The ``np_*`` helpers are intentionally private to ``unilab.base``. They serve</span>
+<span class="sd">the explicit reset/entity host boundary; task cold loaders own their</span>
+<span class="sd">data-format conversion locally rather than depending on this transition shim.</span>
+<span class="sd">``quat_apply_inverse`` is the Torch counterpart used by the packed reset</span>
+<span class="sd">transaction&#39;s device-side pose/velocity encoding. No compatibility import for</span>
+<span class="sd">``unilab.utils.rotation`` is retained.</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
 
 <div class="viewcode-block" id="np_quat_mul">
@@ -1064,6 +1067,20 @@
         <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="k">return</span> <span class="n">rel_pos</span><span class="p">,</span> <span class="n">rel_quat</span></div>
+
+
+
+<div class="viewcode-block" id="quat_apply_inverse">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.rotation.html#unilab.base.rotation.quat_apply_inverse">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">quat_apply_inverse</span><span class="p">(</span><span class="n">quat_wxyz</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">vector</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Rotate vectors by the inverse of broadcast-compatible wxyz quaternions.&quot;&quot;&quot;</span>
+    <span class="n">quat</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">quat_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">],</span> <span class="o">-</span><span class="n">quat_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">quat_xyz</span> <span class="o">=</span> <span class="n">quat</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">vector</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&lt;</span> <span class="n">quat_xyz</span><span class="o">.</span><span class="n">ndim</span><span class="p">:</span>
+        <span class="n">vector</span> <span class="o">=</span> <span class="n">vector</span><span class="o">.</span><span class="n">expand_as</span><span class="p">(</span><span class="n">quat_xyz</span><span class="p">)</span>
+    <span class="n">cross</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">quat_xyz</span><span class="p">,</span> <span class="n">vector</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">second_cross</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">quat_xyz</span><span class="p">,</span> <span class="n">cross</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">vector</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">quat</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">cross</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">second_cross</span></div>
 
 </pre></div>
         </article>
