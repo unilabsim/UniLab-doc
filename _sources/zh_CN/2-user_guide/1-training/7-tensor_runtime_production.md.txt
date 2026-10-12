@@ -197,6 +197,59 @@ uv run --no-sync python -c "import torch; print(torch.__version__, torch.version
 
 `torch.version.hip` 必须为 `None`，CUDA 必须可用，且可见设备数必须为 1。
 
+## 后端 CUDA Graph 诊断
+
+训练 artifact 会记录物理 backend 的 tensor runtime 诊断。
+`TorchEnv.get_backend_runtime_diagnostics()`（`src/unilab/base/torch_env.py`）
+是采集边界：一个 public cold-path 方法，把 backend 的
+`SimBackend.get_tensor_runtime_diagnostics()`（unisim 公开契约）序列化为
+纯 JSON。uni_rl off-policy collector 在启动时调用它，并把 payload 发布到
+`runtime_manifest.backend_diagnostics`；PPO 没有 runtime manifest，因此
+PPO 训练脚本（`src/unilab/scripts/train_rsl_rl.py`）把同样的 payload 作为
+顶层 `backend_diagnostics` 字段写入 `run_summary.json`。
+
+payload 形状：
+
+```json
+"backend_diagnostics": {
+  "available": true,
+  "backend_type": "mjwarp",
+  "diagnostics": {
+    "cuda_graph": {"requested": true, "enabled": false, "disable_reason": "..."},
+    "selected_reset_sensor_refresh": {"requested": true, "enabled": true, "disable_reason": null},
+    "device_reset_randomization": {"requested": true, "enabled": true, "disable_reason": null}
+  }
+}
+```
+
+- `requested`：该优化已被请求（MJWarp 总是请求 CUDA graph）。
+- `enabled`：该优化实际生效（例如 fixed-address CUDA graph replay）。
+- `disable_reason`：backend 自有的 fallback 原因；`enabled` 为 false 时
+  必为非空字符串，`enabled` 为 true 时必为 `null`。
+
+当 env 或 backend 不提供诊断时，payload 是显式的 unavailable 标记，绝不
+是裸 `null`：
+
+```json
+"backend_diagnostics": {"available": false, "backend_type": "...", "unavailable_reason": "..."}
+```
+
+与 `runtime_manifest.cuda_process_sharing` 一样，该 section 是
+runtime-manifest v1 的 producer diagnostic，不是稳定标量契约；uni_rl
+runtime manifest schema 在该 section 存在时会 fail-closed 校验。这些诊断
+仅用于 observability：不改变 CUDA graph 启用策略，也不是验收 gate。它们是
+collector/env 启动时采集的 cold-path 快照，描述初始化状态，不描述 per-step
+行为。
+
+| 现象 | 首要处理 |
+| --- | --- |
+| 某项优化 `enabled: false` | 读取 `disable_reason` 获取 backend 自有的 fallback 原因（graph capture 失败、拓扑不支持等）；run 仍然有效，只是按 eager 方式 step。 |
+| `available: false` | 查看 `unavailable_reason`：要么 backend 未声明 tensor runtime 诊断（CPU MuJoCo 等非 tensor backend 上属预期），要么诊断 probe 抛出异常（包含异常类型）。 |
+
+已知限制：unisim 尚未暴露 CUDA graph 版本或 eager-fallback 事件计数。
+serializer 会自动透传未来的 dataclass 字段，因此该 section 会随 unisim 的
+扩展而增长。
+
 ## 资产
 
 G1 mesh 与纹理来自 asset hub。离线 benchmark 前先预取：
@@ -265,7 +318,9 @@ run 目录必须包含：
 `run_summary.json` 必须携带 metric schema `1` 与内嵌 runtime-manifest
 schema `1`。manifest 记录有效 runtime limits、发生预算决策时的 inference /
 tensor memory budget、collector/backend device、inference-flight 状态、
-replay-ingress 状态与 shutdown diagnostics。字段与兼容契约见
+replay-ingress 状态、shutdown diagnostics，以及 backend tensor runtime 诊断
+（`runtime_manifest.backend_diagnostics`；PPO run 以顶层
+`backend_diagnostics` 携带同样的 payload）。字段与兼容契约见
 {doc}`3-logging`。
 
 soak JSON 是自包含 monitor evidence，artifact schema 为 `0.3.0`。当前 head

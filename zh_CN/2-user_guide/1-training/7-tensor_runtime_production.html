@@ -646,6 +646,66 @@ daemon；训练验证不关心该 daemon 由哪个显式部署工具启动。</p
 <p><code class="docutils literal notranslate"><span class="pre">torch.version.hip</span></code> 必须为 <code class="docutils literal notranslate"><span class="pre">None</span></code>，CUDA 必须可用，且可见设备数必须为 1。</p>
 </section>
 </section>
+<section id="cuda-graph">
+<h2>后端 CUDA Graph 诊断<a class="headerlink" href="#cuda-graph" title="Link to this heading">¶</a></h2>
+<p>训练 artifact 会记录物理 backend 的 tensor runtime 诊断。
+<code class="docutils literal notranslate"><span class="pre">TorchEnv.get_backend_runtime_diagnostics()</span></code>（<code class="docutils literal notranslate"><span class="pre">src/unilab/base/torch_env.py</span></code>）
+是采集边界：一个 public cold-path 方法，把 backend 的
+<code class="docutils literal notranslate"><span class="pre">SimBackend.get_tensor_runtime_diagnostics()</span></code>（unisim 公开契约）序列化为
+纯 JSON。uni_rl off-policy collector 在启动时调用它，并把 payload 发布到
+<code class="docutils literal notranslate"><span class="pre">runtime_manifest.backend_diagnostics</span></code>；PPO 没有 runtime manifest，因此
+PPO 训练脚本（<code class="docutils literal notranslate"><span class="pre">src/unilab/scripts/train_rsl_rl.py</span></code>）把同样的 payload 作为
+顶层 <code class="docutils literal notranslate"><span class="pre">backend_diagnostics</span></code> 字段写入 <code class="docutils literal notranslate"><span class="pre">run_summary.json</span></code>。</p>
+<p>payload 形状：</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="nt">&quot;backend_diagnostics&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;backend_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mjwarp&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;diagnostics&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;cuda_graph&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;requested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;disable_reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;selected_reset_sensor_refresh&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;requested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;disable_reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;device_reset_randomization&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;requested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;disable_reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">requested</span></code>：该优化已被请求（MJWarp 总是请求 CUDA graph）。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">enabled</span></code>：该优化实际生效（例如 fixed-address CUDA graph replay）。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">disable_reason</span></code>：backend 自有的 fallback 原因；<code class="docutils literal notranslate"><span class="pre">enabled</span></code> 为 false 时
+必为非空字符串，<code class="docutils literal notranslate"><span class="pre">enabled</span></code> 为 true 时必为 <code class="docutils literal notranslate"><span class="pre">null</span></code>。</p></li>
+</ul>
+<p>当 env 或 backend 不提供诊断时，payload 是显式的 unavailable 标记，绝不
+是裸 <code class="docutils literal notranslate"><span class="pre">null</span></code>：</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="nt">&quot;backend_diagnostics&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;backend_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;unavailable_reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>与 <code class="docutils literal notranslate"><span class="pre">runtime_manifest.cuda_process_sharing</span></code> 一样，该 section 是
+runtime-manifest v1 的 producer diagnostic，不是稳定标量契约；uni_rl
+runtime manifest schema 在该 section 存在时会 fail-closed 校验。这些诊断
+仅用于 observability：不改变 CUDA graph 启用策略，也不是验收 gate。它们是
+collector/env 启动时采集的 cold-path 快照，描述初始化状态，不描述 per-step
+行为。</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>现象</p></th>
+<th class="head"><p>首要处理</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>某项优化 <code class="docutils literal notranslate"><span class="pre">enabled:</span> <span class="pre">false</span></code></p></td>
+<td><p>读取 <code class="docutils literal notranslate"><span class="pre">disable_reason</span></code> 获取 backend 自有的 fallback 原因（graph capture 失败、拓扑不支持等）；run 仍然有效，只是按 eager 方式 step。</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">available:</span> <span class="pre">false</span></code></p></td>
+<td><p>查看 <code class="docutils literal notranslate"><span class="pre">unavailable_reason</span></code>：要么 backend 未声明 tensor runtime 诊断（CPU MuJoCo 等非 tensor backend 上属预期），要么诊断 probe 抛出异常（包含异常类型）。</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>已知限制：unisim 尚未暴露 CUDA graph 版本或 eager-fallback 事件计数。
+serializer 会自动透传未来的 dataclass 字段，因此该 section 会随 unisim 的
+扩展而增长。</p>
+</section>
 <section id="id2">
 <h2>资产<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
 <p>G1 mesh 与纹理来自 asset hub。离线 benchmark 前先预取：</p>
@@ -723,7 +783,9 @@ log 目录、环境数与迭代数。它为 <code class="docutils literal notran
 <p><code class="docutils literal notranslate"><span class="pre">run_summary.json</span></code> 必须携带 metric schema <code class="docutils literal notranslate"><span class="pre">1</span></code> 与内嵌 runtime-manifest
 schema <code class="docutils literal notranslate"><span class="pre">1</span></code>。manifest 记录有效 runtime limits、发生预算决策时的 inference /
 tensor memory budget、collector/backend device、inference-flight 状态、
-replay-ingress 状态与 shutdown diagnostics。字段与兼容契约见
+replay-ingress 状态、shutdown diagnostics，以及 backend tensor runtime 诊断
+（<code class="docutils literal notranslate"><span class="pre">runtime_manifest.backend_diagnostics</span></code>；PPO run 以顶层
+<code class="docutils literal notranslate"><span class="pre">backend_diagnostics</span></code> 携带同样的 payload）。字段与兼容契约见
 <a class="reference internal" href="3-logging.html"><span class="doc">日志</span></a>。</p>
 <p>soak JSON 是自包含 monitor evidence，artifact schema 为 <code class="docutils literal notranslate"><span class="pre">0.3.0</span></code>。当前 head
 通过必须满足：</p>
@@ -957,6 +1019,7 @@ wire。</p>
 <li><a class="reference internal" href="#id1">拓扑模式与当前限制</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#cuda-graph">后端 CUDA Graph 诊断</a></li>
 <li><a class="reference internal" href="#id2">资产</a></li>
 <li><a class="reference internal" href="#canonical-soak">Canonical 长 Soak</a></li>
 <li><a class="reference internal" href="#artifact">必需 Artifact</a></li>

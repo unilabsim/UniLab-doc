@@ -187,6 +187,13 @@ replay-ingress 计数/耗时，以及存在该预算时的 CUDA inference IPC ev
 `replay_ingress.high_water_occupancy` 的窗口语义不同：inference 最大值是相对上一次
 成功发布的 collector report，replay-ingress high-water 是整个 run 的累计高水位。
 未列入稳定契约的字段（包括 `runtime_manifest.shutdown`）在 v1 中都是实验性诊断。
+`runtime_manifest.backend_diagnostics` 就是这样一项诊断：由
+`TorchEnv.get_backend_runtime_diagnostics()` 序列化的物理 backend tensor runtime
+快照（每项优化的 `requested`/`enabled`/`disable_reason`，包括 CUDA graph 状态）；
+uni_rl manifest schema 在该 section 存在时会 fail-closed 校验，但其内容仍归
+producer 所有。PPO 路径没有 runtime manifest，因此其训练脚本把同样的 payload 作为
+顶层 `backend_diagnostics` 字段写入 `run_summary.json`。payload 形状与故障排查见
+{doc}`7-tensor_runtime_production`。
 
 Soak artifact `0.3.0` 顶层新增两个异常 shutdown 字段。通过时
 `failure_classification` 必须为 `null`，且 `shutdown.classification` 必须是

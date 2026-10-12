@@ -213,6 +213,63 @@ uv run --no-sync python -c "import torch; print(torch.__version__, torch.version
 `torch.version.hip` must be `None`, CUDA must be available, and the visible
 device count must be one.
 
+## Backend CUDA Graph Diagnostics
+
+Training artifacts record the physics backend's tensor runtime diagnostics.
+`TorchEnv.get_backend_runtime_diagnostics()` (`src/unilab/base/torch_env.py`)
+is the collection boundary: a public cold-path method that serializes the
+backend's `SimBackend.get_tensor_runtime_diagnostics()` (the unisim public
+contract) into plain JSON. The uni_rl off-policy collector calls it at startup
+and publishes the payload into `runtime_manifest.backend_diagnostics`; the PPO
+training script (`src/unilab/scripts/train_rsl_rl.py`) writes the same payload
+as a top-level `backend_diagnostics` key in `run_summary.json` because PPO has
+no runtime manifest.
+
+Payload shape:
+
+```json
+"backend_diagnostics": {
+  "available": true,
+  "backend_type": "mjwarp",
+  "diagnostics": {
+    "cuda_graph": {"requested": true, "enabled": false, "disable_reason": "..."},
+    "selected_reset_sensor_refresh": {"requested": true, "enabled": true, "disable_reason": null},
+    "device_reset_randomization": {"requested": true, "enabled": true, "disable_reason": null}
+  }
+}
+```
+
+- `requested`: the optimization was requested (MJWarp always requests CUDA
+  graph).
+- `enabled`: the optimization is actually active (for example, fixed-address
+  CUDA graph replay).
+- `disable_reason`: the backend-owned fallback cause; always present and
+  non-empty when `enabled` is false, always `null` when true.
+
+When the env or backend exposes no diagnostics, the payload is an explicit
+unavailable marker, never a bare `null`:
+
+```json
+"backend_diagnostics": {"available": false, "backend_type": "...", "unavailable_reason": "..."}
+```
+
+Like `runtime_manifest.cuda_process_sharing`, this section is a
+runtime-manifest v1 producer diagnostic, not a stable scalar contract; the
+uni_rl runtime manifest schema validates the section fail-closed when it is
+present. The diagnostics are observability only: they do not change CUDA graph
+enablement policy and are not an acceptance gate. They are a cold-path snapshot
+taken at collector/env startup; they describe initialization, not per-step
+behavior.
+
+| Observation | First action |
+| --- | --- |
+| `enabled: false` for an optimization | Read `disable_reason` for the backend-owned fallback cause (graph capture failure, unsupported topology, and so on); the run is still valid, it just steps eagerly. |
+| `available: false` | Check `unavailable_reason`: either the backend declares no tensor runtime diagnostics (expected on non-tensor backends such as CPU MuJoCo) or the diagnostic probe raised (the exception type is included). |
+
+Known limitation: unisim does not yet expose the CUDA graph version or
+eager-fallback event counts. The serializer forwards future dataclass fields
+automatically, so the section grows when unisim adds them.
+
 ## Assets
 
 G1 meshes and textures are downloaded from the asset hub. Pre-fetch them before
@@ -288,7 +345,9 @@ The run directory must contain:
 `run_summary.json` must carry metric schema `1` and an embedded runtime-manifest
 schema `1`. The manifest records effective runtime limits, inference and tensor
 memory budgets when a budget decision is made, the collector/backend device,
-inference-flight state, replay-ingress state, and shutdown diagnostics. See
+inference-flight state, replay-ingress state, shutdown diagnostics, and the
+backend tensor runtime diagnostics (`runtime_manifest.backend_diagnostics`; PPO
+runs carry the same payload as a top-level `backend_diagnostics`). See
 {doc}`3-logging` for the field and compatibility contract.
 
 The soak JSON is self-contained monitor evidence with artifact schema `0.3.0`.

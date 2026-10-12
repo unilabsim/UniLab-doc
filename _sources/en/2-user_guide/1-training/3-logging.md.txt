@@ -207,7 +207,15 @@ accelerator binding. `inference_flight.max_*` and
 `replay_ingress.high_water_occupancy` have distinct window semantics: inference maxima
 are since the previous successfully published collector report, while replay-ingress
 high-water occupancy is cumulative for the run. All fields not listed as stable,
-including `runtime_manifest.shutdown`, are experimental diagnostics in v1.
+including `runtime_manifest.shutdown`, are experimental diagnostics in v1. One such
+diagnostic is `runtime_manifest.backend_diagnostics`, the physics-backend tensor
+runtime snapshot (per-optimization `requested`/`enabled`/`disable_reason`, including
+CUDA graph state) serialized by `TorchEnv.get_backend_runtime_diagnostics()`; the
+uni_rl manifest schema validates the section fail-closed when it is present, but its
+contents remain producer-owned. The PPO path has no runtime manifest, so its training
+script writes the same payload as a top-level `backend_diagnostics` key in
+`run_summary.json`. See {doc}`7-tensor_runtime_production` for the payload shape and
+troubleshooting.
 
 Soak artifact `0.3.0` adds two top-level abnormal-shutdown fields. On a passed
 run, `failure_classification` is `null` and `shutdown.classification` must be
