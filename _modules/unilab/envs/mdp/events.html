@@ -1311,6 +1311,8 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">PdGains</span><span class="p">(</span><span class="n">_UnsupportedResetRandomizationTerm</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Pinned-mjlab-compatible PD gain randomization on UniLab reset payloads.&quot;&quot;&quot;</span>
 
+    <span class="n">mask_reset_supported</span> <span class="o">=</span> <span class="kc">True</span>
+
 <div class="viewcode-block" id="PdGains.__init__">
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.PdGains.html#unilab.envs.mdp.events.PdGains.__init__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cfg</span><span class="p">:</span> <span class="n">EventTermCfg</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">):</span>
@@ -1366,6 +1368,50 @@
                 <span class="n">asset_cfg</span><span class="o">.</span><span class="n">actuator_ids</span><span class="p">,</span>
                 <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;pd_gains&quot;</span><span class="p">,</span>
             <span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PdGains.reset">
+<a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.PdGains.html#unilab.envs.mdp.events.PdGains.reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span>
+        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample full-width final gains and commit only masked rows.&quot;&quot;&quot;</span>
+        <span class="k">del</span> <span class="n">kwargs</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">(),</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span><span class="p">))</span>
+        <span class="n">kp</span> <span class="o">=</span> <span class="n">_sample_gain_range</span><span class="p">(</span>
+            <span class="n">_require_torch_rng</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;pd_gains&quot;</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kp_range</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_distribution</span>
+        <span class="p">)</span>
+        <span class="n">kd</span> <span class="o">=</span> <span class="n">_sample_gain_range</span><span class="p">(</span>
+            <span class="n">_require_torch_rng</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;pd_gains&quot;</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kd_range</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_distribution</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_operation</span> <span class="o">==</span> <span class="s2">&quot;scale&quot;</span><span class="p">:</span>
+            <span class="n">default_kp</span> <span class="o">=</span> <span class="n">_selected_reset_defaults_tensor</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_default_kp</span><span class="p">,</span>
+                <span class="n">ids</span><span class="p">,</span>
+                <span class="n">canonical_ndim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="n">kp</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">default_kd</span> <span class="o">=</span> <span class="n">_selected_reset_defaults_tensor</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_default_kd</span><span class="p">,</span>
+                <span class="n">ids</span><span class="p">,</span>
+                <span class="n">canonical_ndim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="n">kd</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">kp</span> <span class="o">=</span> <span class="n">kp</span> <span class="o">*</span> <span class="n">default_kp</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">kp</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">kp</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">kd</span> <span class="o">=</span> <span class="n">kd</span> <span class="o">*</span> <span class="n">default_kd</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">kd</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">kd</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">kp</span> <span class="o">=</span> <span class="n">kp</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+        <span class="n">kd</span> <span class="o">=</span> <span class="n">kd</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">write_actuator_gains_tensor_mask</span><span class="p">(</span>
+            <span class="n">reset_mask</span><span class="p">,</span>
+            <span class="n">kp</span><span class="p">,</span>
+            <span class="n">kd</span><span class="p">,</span>
+            <span class="n">actuator_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;pd_gains&quot;</span><span class="p">,</span>
         <span class="p">)</span></div>
 
 

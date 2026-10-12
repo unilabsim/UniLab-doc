@@ -733,8 +733,8 @@
     <span class="n">selected_reset_publication</span><span class="p">:</span> <span class="n">SelectedResetPublication</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">requires_post_construction_publication_barrier</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">tracked_body_views</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
-    <span class="c1"># Issue #2285 research-only declarations. They are deliberately not part of</span>
-    <span class="c1"># the production selected-row contract until the benchmark decision lands.</span>
+    <span class="c1"># Fixed-width mask reset declarations. They require the public</span>
+    <span class="c1"># ``set_state_tensor_mask`` semantics and authoritative selected-row views.</span>
     <span class="n">mask_selected_reset</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">mask_selected_reset_full_refresh</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
 
@@ -825,11 +825,21 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">selected_reset</span>
             <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">selected_reset_publication</span> <span class="ow">is</span> <span class="n">SelectedResetPublication</span><span class="o">.</span><span class="n">AUTHORITATIVE_VIEWS</span>
             <span class="ow">and</span> <span class="p">{</span><span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="s2">&quot;qvel&quot;</span><span class="p">}</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">state_fields</span><span class="p">)</span>
-            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">execution</span> <span class="ow">is</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">DEVICE_RESIDENT</span>
-            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">data_plane</span> <span class="ow">is</span> <span class="n">TensorDataPlane</span><span class="o">.</span><span class="n">DIRECT</span>
+            <span class="ow">and</span> <span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">execution</span> <span class="ow">is</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">DEVICE_RESIDENT</span>
+                    <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">data_plane</span> <span class="ow">is</span> <span class="n">TensorDataPlane</span><span class="o">.</span><span class="n">DIRECT</span>
+                <span class="p">)</span>
+                <span class="ow">or</span> <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">execution</span> <span class="ow">is</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">HOST_BRIDGE</span>
+                    <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_topology</span> <span class="ow">is</span> <span class="n">TensorProcessTopology</span><span class="o">.</span><span class="n">IN_PROCESS</span>
+                    <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">data_plane</span> <span class="ow">is</span> <span class="n">TensorDataPlane</span><span class="o">.</span><span class="n">HOST_BRIDGE</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
         <span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;mask-selected reset requires authoritative direct device-resident reset&quot;</span>
+                <span class="s2">&quot;mask-selected reset requires authoritative direct device-resident or &quot;</span>
+                <span class="s2">&quot;in-process host-bridge reset&quot;</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask_selected_reset_full_refresh</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask_selected_reset</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;mask-selected full refresh requires mask-selected reset&quot;</span><span class="p">)</span>
@@ -1908,25 +1918,20 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Set state selected by a fixed-width boolean mask.</span>
 
-<span class="sd">        This is the temporary research boundary for unilabsim/UniLab#2285. It</span>
-<span class="sd">        is intentionally separate from ``set_state_tensor`` while reset-row</span>
-<span class="sd">        compaction is being evaluated. ``reset_mask`` is a contiguous</span>
-<span class="sd">        one-dimensional boolean Torch tensor with shape ``(num_envs,)`` on the</span>
-<span class="sd">        adapter&#39;s declared device. ``qpos`` and ``qvel`` are full-width</span>
-<span class="sd">        contiguous float32 tensors with shapes ``(num_envs, nq)`` and</span>
-<span class="sd">        ``(num_envs, nv)``; adapters select only rows for which ``reset_mask``</span>
-<span class="sd">        is true. ``full_refresh`` requests a full-batch derived-state refresh</span>
-<span class="sd">        for the upper-bound experiment; adapters remain free to satisfy it with</span>
-<span class="sd">        an equivalent eager refresh and must fail closed if that publication is</span>
-<span class="sd">        unavailable.</span>
+<span class="sd">        ``reset_mask`` is a contiguous one-dimensional boolean Torch tensor with</span>
+<span class="sd">        shape ``(num_envs,)``. ``qpos`` and ``qvel`` are full-width contiguous</span>
+<span class="sd">        float32 tensors with shapes ``(num_envs, nq)`` and ``(num_envs, nv)``.</span>
+<span class="sd">        All three share one accepted Torch device and contain finite values.</span>
+<span class="sd">        The adapter changes qpos/qvel/time only for true rows and preserves</span>
+<span class="sd">        every false row. It publishes authoritative selected state before</span>
+<span class="sd">        returning; any row materialization required by the engine belongs</span>
+<span class="sd">        behind this backend boundary.</span>
 
-<span class="sd">        ``full_refresh`` selects Experimental C&#39;s full-batch derived-state</span>
-<span class="sd">        refresh. The current research slice does not accept reset</span>
-<span class="sd">        randomization; callers must use the existing selected-row API when DR</span>
-<span class="sd">        is required.</span>
-
-<span class="sd">        This method is not yet a production contract. Adapters that do not</span>
-<span class="sd">        implement it fail closed rather than compacting the mask on the host.</span>
+<span class="sd">        ``full_refresh=True`` requests an eager equivalent full-batch</span>
+<span class="sd">        derived-state/publication refresh. It is valid only where</span>
+<span class="sd">        ``TensorLifecycleCapabilities.mask_selected_reset_full_refresh`` is</span>
+<span class="sd">        declared. This state-only boundary rejects reset randomization;</span>
+<span class="sd">        randomized callers use the selected-row or packed reset contracts.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">backend_type</span><span class="si">}</span><span class="s2"> does not support mask-driven tensor state writes: &quot;</span>

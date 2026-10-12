@@ -674,6 +674,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span><span class="p">:</span> <span class="n">TorchPackedResetComposer</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_write_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_dr_columns</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]],</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_dr_committed</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_root_columns</span><span class="p">:</span> <span class="p">(</span>
@@ -839,12 +840,22 @@
                 <span class="s2">&quot;fixed-width tensor reset mask must live on the declared reset device &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">; got </span><span class="si">{</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_tensor_default_state</span><span class="p">(</span><span class="s2">&quot;begin_tensor&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">capabilities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_tensor_capabilities</span><span class="p">()</span>
+        <span class="c1"># Event resets compose through the packed transaction. Step-owner</span>
+        <span class="c1"># commands may select a dynamic subset, so declaring backends keep the</span>
+        <span class="c1"># fixed-width bool mask as their public commit carrier.</span>
+        <span class="n">owner_native_reset</span> <span class="o">=</span> <span class="n">owner_subset</span> <span class="ow">and</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">mask_selected_reset</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_tensor_default_state</span><span class="p">(</span>
+            <span class="s2">&quot;begin_tensor&quot;</span><span class="p">,</span>
+            <span class="n">use_packed</span><span class="o">=</span><span class="ow">not</span> <span class="n">owner_native_reset</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">owner_native_reset</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">as_tuple</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_write_mask</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_reset_tensor_staging_rows</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_write_mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span> <span class="k">if</span> <span class="n">owner_native_reset</span> <span class="k">else</span> <span class="kc">None</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_reset_tensor_staging_mask</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active_mask</span> <span class="o">=</span> <span class="n">reset_mask</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mask_full_refresh</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">full_refresh</span><span class="p">)</span>
@@ -1641,13 +1652,12 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage a packed transaction&#39;s full-width final DR table by mask.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_tensor_mask_write</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;write_randomization_tensor_mask&quot;</span><span class="p">)</span>
         <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span>
-        <span class="k">if</span> <span class="n">transaction</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">transaction</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; reset randomization is unsupported by &quot;</span>
                 <span class="s2">&quot;the fixed-width mask reset transaction&quot;</span>
             <span class="p">)</span>
         <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span>
-        <span class="k">assert</span> <span class="n">rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="n">tail</span> <span class="o">=</span> <span class="n">_randomization_term_tail</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
         <span class="n">base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_tensor_randomization_default</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">term_name</span><span class="p">)</span>
         <span class="n">resolved</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_columns</span><span class="p">(</span>
@@ -1731,7 +1741,14 @@
         <span class="n">active_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active_mask</span>
         <span class="k">if</span> <span class="n">active_mask</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;fixed-width default reset requires an active mask transaction&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">active_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">reset_mask</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_owner_subset</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">bool</span><span class="p">((</span><span class="n">reset_mask</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">active_mask</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; attempted default reset outside &quot;</span>
+                    <span class="s2">&quot;the active mask&quot;</span>
+                <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_record_tensor_write_mask</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">active_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">reset_mask</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; attempted default reset outside the active mask&quot;</span>
             <span class="p">)</span>
@@ -1742,6 +1759,12 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
             <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_requesting_terms</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">term_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># The packed composer restored selected rows to defaults in begin_state.</span>
+            <span class="c1"># Force those staged defaults through its single public commit boundary.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_state_staging</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_has_writes</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">return</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_qpos</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_qvel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_qpos_default</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -1893,7 +1916,9 @@
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span>
-        <span class="k">if</span> <span class="n">transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_owner_subset</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_record_tensor_write_mask</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span>
             <span class="k">assert</span> <span class="n">rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="n">transaction</span><span class="o">.</span><span class="n">write_state</span><span class="p">(</span>
@@ -2030,9 +2055,9 @@
             <span class="n">transaction</span><span class="o">.</span><span class="n">write_state</span><span class="p">(</span>
                 <span class="n">rows</span><span class="p">,</span>
                 <span class="n">qpos_columns</span><span class="o">=</span><span class="n">qpos_columns_t</span><span class="p">,</span>
-                <span class="n">qpos_values</span><span class="o">=</span><span class="n">root_state</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)[:,</span> <span class="p">:</span><span class="mi">7</span><span class="p">],</span>
+                <span class="n">qpos_values</span><span class="o">=</span><span class="n">root_state</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)[:,</span> <span class="p">:</span><span class="mi">7</span><span class="p">]</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
                 <span class="n">qvel_columns</span><span class="o">=</span><span class="n">qvel_columns_t</span><span class="p">,</span>
-                <span class="n">qvel_values</span><span class="o">=</span><span class="n">root_state</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)[:,</span> <span class="mi">7</span><span class="p">:</span><span class="mi">13</span><span class="p">],</span>
+                <span class="n">qvel_values</span><span class="o">=</span><span class="n">root_state</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)[:,</span> <span class="mi">7</span><span class="p">:</span><span class="mi">13</span><span class="p">]</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
             <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_has_writes</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">return</span>
@@ -2051,14 +2076,28 @@
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;ManagerBased tensor mask </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> requires an active mask reset&quot;</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="n">reset_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active_mask</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ManagerBased tensor mask </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> must use the transaction mask&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_owner_subset</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;ManagerBased tensor mask </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> does not support owner subsets&quot;</span>
-            <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_tensor_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">mask_selected_reset</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;ManagerBased tensor mask </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> requires mask_selected_reset for &quot;</span>
+                    <span class="s2">&quot;owner subsets&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="nb">bool</span><span class="p">((</span><span class="n">reset_mask</span> <span class="o">&amp;</span> <span class="o">~</span><span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active_mask</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;ManagerBased tensor mask </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> attempted a write outside &quot;</span>
+                    <span class="s2">&quot;the active mask&quot;</span>
+                <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">reset_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active_mask</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ManagerBased tensor mask </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> must use the transaction mask&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_requesting_terms</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">capability</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active_mask</span>
+        <span class="k">return</span> <span class="n">reset_mask</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_record_tensor_write_mask</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Extend the bool-mask carrier for one native owner-subset commit.&quot;&quot;&quot;</span>
+        <span class="n">write_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_write_mask</span>
+        <span class="k">if</span> <span class="n">write_mask</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;native owner tensor reset has no fixed-width write mask&quot;</span><span class="p">)</span>
+        <span class="n">write_mask</span><span class="o">.</span><span class="n">logical_or_</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
 
 <div class="viewcode-block" id="ResetStateTransaction.write_motion_state_tensor">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.write_motion_state_tensor">[docs]</a>
@@ -2118,15 +2157,17 @@
             <span class="n">layout</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span>
         <span class="p">)</span>
         <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span>
-        <span class="k">if</span> <span class="n">transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_owner_subset</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_record_tensor_write_mask</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span>
             <span class="k">assert</span> <span class="n">rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="n">transaction</span><span class="o">.</span><span class="n">write_state</span><span class="p">(</span>
                 <span class="n">rows</span><span class="p">,</span>
                 <span class="n">qpos_columns</span><span class="o">=</span><span class="n">root_qpos_columns</span><span class="p">,</span>
-                <span class="n">qpos_values</span><span class="o">=</span><span class="n">root_state</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)[:,</span> <span class="p">:</span><span class="mi">7</span><span class="p">],</span>
+                <span class="n">qpos_values</span><span class="o">=</span><span class="n">root_state</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)[:,</span> <span class="p">:</span><span class="mi">7</span><span class="p">]</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
                 <span class="n">qvel_columns</span><span class="o">=</span><span class="n">root_qvel_columns</span><span class="p">,</span>
-                <span class="n">qvel_values</span><span class="o">=</span><span class="n">root_state</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)[:,</span> <span class="mi">7</span><span class="p">:</span><span class="mi">13</span><span class="p">],</span>
+                <span class="n">qvel_values</span><span class="o">=</span><span class="n">root_state</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)[:,</span> <span class="mi">7</span><span class="p">:</span><span class="mi">13</span><span class="p">]</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
             <span class="p">)</span>
             <span class="n">transaction</span><span class="o">.</span><span class="n">write_state</span><span class="p">(</span>
                 <span class="n">rows</span><span class="p">,</span>
@@ -2413,7 +2454,7 @@
                     <span class="s2">&quot;entity writes remain an explicit migration boundary&quot;</span>
                 <span class="p">)</span>
             <span class="n">capabilities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_tensor_capabilities</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">if</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">packed_reset</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                         <span class="s2">&quot;packed reset requires the backend&#39;s declared &#39;packed_reset&#39; capability&quot;</span>
@@ -2444,7 +2485,14 @@
                         <span class="s2">&quot;&#39;SimBackend.begin_packed_reset&#39; is unavailable for term(s) &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">terms</span><span class="si">}</span><span class="s2">] on backend &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">backend_type</span><span class="si">}</span><span class="s2">&#39;: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span>
                     <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
-            <span class="k">if</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">execution</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">DEVICE_RESIDENT</span><span class="p">:</span>
+            <span class="n">native_host_bridge</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">capabilities</span><span class="o">.</span><span class="n">mask_selected_reset</span>
+                <span class="ow">and</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">execution</span> <span class="ow">is</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">HOST_BRIDGE</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">capabilities</span><span class="o">.</span><span class="n">execution</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">DEVICE_RESIDENT</span>
+                <span class="ow">and</span> <span class="ow">not</span> <span class="n">native_host_bridge</span>
+            <span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                     <span class="s2">&quot;fixed-width reset requires DEVICE_RESIDENT tensor execution; &quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;backend &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">backend_type</span><span class="si">}</span><span class="s2">&#39; declares </span><span class="si">{</span><span class="n">capabilities</span><span class="o">.</span><span class="n">execution</span><span class="si">}</span><span class="s2">&quot;</span>
@@ -2466,7 +2514,10 @@
                 <span class="p">)</span>
             <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_qpos</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_qvel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="n">reset_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active_mask</span>
+            <span class="n">reset_mask</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_write_mask</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_owner_subset</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active_mask</span>
+            <span class="p">)</span>
+            <span class="k">assert</span> <span class="n">reset_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
                 <span class="n">set_state_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">set_state_tensor_mask</span>
@@ -2560,10 +2611,10 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_qpos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">default_qpos</span><span class="o">.</span><span class="n">size</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">default_qpos</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_qvel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">default_qvel</span><span class="o">.</span><span class="n">size</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">default_qvel</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_materialize_tensor_default_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_materialize_tensor_default_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">use_packed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Materialize immutable default state and full-width device staging.&quot;&quot;&quot;</span>
         <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span>
-        <span class="k">if</span> <span class="n">transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">use_packed</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_default_state</span><span class="p">(</span><span class="n">term_name</span><span class="p">)</span>
             <span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span>
             <span class="k">if</span> <span class="n">device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -2645,7 +2696,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_tensor_state_staging</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return active full-width qpos/qvel staging from the owning layer.&quot;&quot;&quot;</span>
         <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span>
-        <span class="k">if</span> <span class="n">transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">cast</span><span class="p">(</span><span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="n">transaction</span><span class="o">.</span><span class="n">state_views</span><span class="p">())</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_qpos</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_qvel</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;device tensor reset state staging is not materialized&quot;</span><span class="p">)</span>
@@ -3505,7 +3556,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_mask_full_refresh</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_has_writes</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_owner_subset</span> <span class="o">=</span> <span class="kc">False</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span> <span class="o">=</span> <span class="kc">None</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_rows</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_write_mask</span> <span class="o">=</span> <span class="kc">None</span></div>
 
 
 
