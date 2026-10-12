@@ -834,6 +834,22 @@
     <span class="n">context</span><span class="o">.</span><span class="n">phase</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">samples</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">context</span><span class="o">.</span><span class="n">phase</span><span class="o">.</span><span class="n">dtype</span><span class="p">))</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_resample_gait_mask</span><span class="p">(</span><span class="n">env</span><span class="p">:</span> <span class="n">_G1Env</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">_G1GaitContext</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">rng_owner</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;torch_rng&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rng_owner</span><span class="p">,</span> <span class="n">TorchManagerRng</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;G1 gait phase reset requires the Manager-owned Torch generator&quot;</span><span class="p">)</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">phase</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">left</span> <span class="o">=</span> <span class="n">rng_owner</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span> <span class="p">(</span><span class="n">count</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">context</span><span class="o">.</span><span class="n">init_mode</span> <span class="o">==</span> <span class="s2">&quot;independent&quot;</span><span class="p">:</span>
+        <span class="n">right</span> <span class="o">=</span> <span class="n">rng_owner</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span> <span class="p">(</span><span class="n">count</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">right</span> <span class="o">=</span> <span class="n">left</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span>
+    <span class="n">samples</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">left</span><span class="p">,</span> <span class="n">right</span><span class="p">),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">context</span><span class="o">.</span><span class="n">phase</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">samples</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">context</span><span class="o">.</span><span class="n">phase</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span> <span class="n">context</span><span class="o">.</span><span class="n">phase</span><span class="p">)</span>
+    <span class="p">)</span>
+
+
 <div class="viewcode-block" id="G1GaitPhase">
 <a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.locomotion.g1.manager_terms.G1GaitPhase.html#unilab.tasks.locomotion.g1.G1GaitPhase">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">G1GaitPhase</span><span class="p">(</span><span class="n">ManagerTermBase</span><span class="p">):</span>
@@ -867,14 +883,8 @@
 
 <div class="viewcode-block" id="G1GaitPhase.reset">
 <a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.locomotion.g1.manager_terms.G1GaitPhase.html#unilab.tasks.locomotion.g1.G1GaitPhase.reset">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">rows</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="nb">slice</span><span class="p">):</span>
-            <span class="n">rows</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="o">.</span><span class="n">device</span><span class="p">)[</span><span class="n">env_ids</span><span class="p">]</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">rows</span> <span class="o">=</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="o">.</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">_resample_gait</span><span class="p">(</span><span class="n">cast</span><span class="p">(</span><span class="s2">&quot;_G1Env&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_context</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span></div>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">_resample_gait_mask</span><span class="p">(</span><span class="n">cast</span><span class="p">(</span><span class="s2">&quot;_G1Env&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_context</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">)</span></div>
 </div>
 
 
@@ -1097,8 +1107,8 @@
 
 <div class="viewcode-block" id="feet_air_time.reset">
 <a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.locomotion.g1.manager_terms.feet_air_time.html#unilab.tasks.locomotion.g1.feet_air_time.reset">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_air_time</span><span class="p">[</span><span class="n">env_ids</span> <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">)]</span> <span class="o">=</span> <span class="mf">0.0</span></div>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_air_time</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="mf">0.0</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="feet_air_time.__call__">
@@ -1444,6 +1454,12 @@
                 <span class="sa">f</span><span class="s2">&quot;joint count </span><span class="si">{</span><span class="n">position</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
         <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_weights</span> <span class="o">*</span> <span class="p">(</span><span class="n">position</span> <span class="o">-</span> <span class="n">default</span><span class="p">)</span><span class="o">.</span><span class="n">square</span><span class="p">())</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="weighted_pose.reset">
+<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.locomotion.g1.manager_terms.weighted_pose.html#unilab.tasks.locomotion.g1.weighted_pose.reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">del</span> <span class="n">reset_mask</span></div>
 </div>
 
 
@@ -1492,7 +1508,6 @@
 <a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.locomotion.g1.manager_terms.G1VelocityCommand.html#unilab.tasks.locomotion.g1.G1VelocityCommand">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">G1VelocityCommand</span><span class="p">(</span><span class="n">UniformVelocityCommand</span><span class="p">):</span>
     <span class="n">cfg</span><span class="p">:</span> <span class="n">G1VelocityCommandCfg</span>  <span class="c1"># pyright: ignore[reportIncompatibleVariableOverride]</span>
-    <span class="n">uses_tensor_reset_rows</span> <span class="o">=</span> <span class="kc">True</span>
 
 <div class="viewcode-block" id="G1VelocityCommand.__init__">
 <a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.locomotion.g1.manager_terms.G1VelocityCommand.html#unilab.tasks.locomotion.g1.G1VelocityCommand.__init__">[docs]</a>
@@ -1509,13 +1524,19 @@
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">env</span><span class="p">)</span></div>
 
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_resample_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_resample_command</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resample_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_resample_command</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
         <span class="n">tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_command</span>
         <span class="k">assert</span> <span class="n">tensor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="n">planar</span> <span class="o">=</span> <span class="n">tensor</span><span class="p">[</span><span class="n">env_ids</span><span class="p">,</span> <span class="p">:</span><span class="mi">2</span><span class="p">]</span>
+        <span class="n">planar</span> <span class="o">=</span> <span class="n">tensor</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">2</span><span class="p">]</span>
         <span class="n">moving</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">vector_norm</span><span class="p">(</span><span class="n">planar</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_planar_dead_zone</span>
-        <span class="n">tensor</span><span class="p">[</span><span class="n">env_ids</span><span class="p">,</span> <span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">planar</span> <span class="o">*</span> <span class="n">moving</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span></div>
+        <span class="n">tensor</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">planar</span> <span class="o">*</span> <span class="n">moving</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">planar</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_merge_samples_masked</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">samples</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">moving</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">vector_norm</span><span class="p">(</span><span class="n">samples</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">2</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_planar_dead_zone</span>
+        <span class="n">samples</span> <span class="o">=</span> <span class="n">samples</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+        <span class="n">samples</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">*=</span> <span class="n">moving</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_merge_samples_masked</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">)</span></div>
 
 
 
@@ -1647,7 +1668,50 @@
             <span class="s2">&quot;average_episode_length&quot;</span><span class="p">:</span> <span class="n">average_value</span><span class="p">,</span>
             <span class="s2">&quot;penalty_scale&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_scale</span><span class="p">,</span>
         <span class="p">}</span></div>
-</div>
+
+
+<div class="viewcode-block" id="G1PenaltyCurriculum.reset">
+<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.locomotion.g1.manager_terms.G1PenaltyCurriculum.html#unilab.tasks.locomotion.g1.G1PenaltyCurriculum.reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Mask boundary for the global curriculum state.&quot;&quot;&quot;</span>
+        <span class="k">del</span> <span class="n">reset_mask</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__call_reset__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">env</span><span class="p">:</span> <span class="n">_G1Env</span><span class="p">,</span>
+        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">params</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fixed-shape curriculum update at reset.&quot;&quot;&quot;</span>
+        <span class="k">del</span> <span class="n">params</span>
+        <span class="n">reset_buf</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">reset_buf</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reset_buf</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> requires reset_buf to be a Torch tensor&quot;</span><span class="p">)</span>
+        <span class="n">done_mask</span> <span class="o">=</span> <span class="n">reset_buf</span> <span class="o">&amp;</span> <span class="n">reset_mask</span>
+        <span class="n">episode_lengths</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">episode_length_buf</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">episode_lengths</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> requires episode_length_buf to be a Torch tensor&quot;</span><span class="p">)</span>
+        <span class="n">done_count</span> <span class="o">=</span> <span class="n">done_mask</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tracker</span><span class="o">.</span><span class="n">update_mask</span><span class="p">(</span><span class="n">episode_lengths</span><span class="p">,</span> <span class="n">done_mask</span><span class="p">)</span>
+
+        <span class="n">average</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracker</span><span class="o">.</span><span class="n">average</span>
+        <span class="n">average_value</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">average</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+        <span class="n">changed</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">done_count</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">average_value</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_level_down_threshold</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_current_scale</span> <span class="o">*=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_degree</span>
+                <span class="n">changed</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">elif</span> <span class="n">average_value</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_level_up_threshold</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_current_scale</span> <span class="o">*=</span> <span class="mf">1.0</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_degree</span>
+                <span class="n">changed</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">changed</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_current_scale</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_current_scale</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_min_scale</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_max_scale</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_scale</span><span class="p">()</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;average_episode_length&quot;</span><span class="p">:</span> <span class="n">average_value</span><span class="p">,</span>
+            <span class="s2">&quot;penalty_scale&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_scale</span><span class="p">,</span>
+        <span class="p">}</span></div>
 
 
 
@@ -1696,38 +1760,26 @@
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;G1WalkResetOwner requires the Manager Torch RNG&quot;</span><span class="p">)</span></div>
 
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-        <span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">,</span> <span class="s2">&quot;device&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)))</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">num_envs</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">,</span> <span class="s2">&quot;num_envs&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
-        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
-
 <div class="viewcode-block" id="G1WalkResetOwner.reset_transaction">
 <a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.locomotion.g1.manager_terms.G1WalkResetOwner.html#unilab.tasks.locomotion.g1.G1WalkResetOwner.reset_transaction">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset_transaction</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset_transaction</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
         <span class="n">env</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="s2">&quot;_G1Env&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">)</span>
-        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rows</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
-        <span class="n">extras</span><span class="p">,</span> <span class="n">_commands</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
-            <span class="n">Any</span><span class="p">,</span>
-            <span class="n">env</span><span class="o">.</span><span class="n">command_manager</span><span class="p">,</span>
-        <span class="p">)</span><span class="o">.</span><span class="n">reset_command_state</span><span class="p">(</span>
-            <span class="n">rows</span><span class="p">,</span>
-            <span class="n">publish_metrics</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-            <span class="n">validate_commands</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">return</span> <span class="n">cast</span><span class="p">(</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span> <span class="n">extras</span><span class="p">)</span></div>
+        <span class="n">command</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">command_manager</span><span class="o">.</span><span class="n">get_term</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cfg</span><span class="o">.</span><span class="n">command_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">callable</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">command</span><span class="p">,</span> <span class="s2">&quot;reset&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;G1WalkResetOwner command &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cfg</span><span class="o">.</span><span class="n">command_name</span><span class="si">}</span><span class="s2">&#39; does not define &quot;</span>
+                <span class="s2">&quot;the mask-preserving reset boundary&quot;</span>
+            <span class="p">)</span>
+        <span class="n">command</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{}</span></div>
 
 
 <div class="viewcode-block" id="G1WalkResetOwner.reset_committed">
 <a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.locomotion.g1.manager_terms.G1WalkResetOwner.html#unilab.tasks.locomotion.g1.G1WalkResetOwner.reset_committed">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset_committed</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset_committed</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
         <span class="n">env</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="s2">&quot;_G1Env&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">)</span>
-        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rows</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
-        <span class="n">cast</span><span class="p">(</span><span class="n">Any</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">action_manager</span><span class="p">)</span><span class="o">.</span><span class="n">clear_action_state</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
-        <span class="n">clear_metrics</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">metrics_manager</span><span class="p">,</span> <span class="s2">&quot;clear_episode_state&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">clear_metrics</span><span class="p">):</span>
-            <span class="n">clear_metrics</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+        <span class="n">env</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">clear_action_state</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
+        <span class="n">env</span><span class="o">.</span><span class="n">metrics_manager</span><span class="o">.</span><span class="n">clear_episode_state</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
         <span class="k">return</span> <span class="p">{}</span></div>
 </div>
 
@@ -1968,6 +2020,13 @@
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">entity_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cfg</span><span class="o">.</span><span class="n">entity_name</span>
+
+<div class="viewcode-block" id="G1WalkTerminationPack.reset">
+<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.locomotion.g1.manager_terms.G1WalkTerminationPack.html#unilab.tasks.locomotion.g1.G1WalkTerminationPack.reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Mask boundary for the stateless termination pack.&quot;&quot;&quot;</span>
+        <span class="k">del</span> <span class="n">reset_mask</span></div>
+
 
 <div class="viewcode-block" id="G1WalkTerminationPack.__call__">
 <a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.locomotion.g1.manager_terms.G1WalkTerminationPack.html#unilab.tasks.locomotion.g1.G1WalkTerminationPack.__call__">[docs]</a>

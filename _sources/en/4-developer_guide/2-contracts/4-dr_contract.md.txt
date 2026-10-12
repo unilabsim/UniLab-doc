@@ -10,7 +10,7 @@ provider protocol and the environment does not carry a DR manager.
   Backends realize it before their first forward and before CUDA graph capture.
 - **Startup:** after manager construction, the backend materializes and event
   terms sample one full-width per-environment table. They commit through the
-  same public `SimBackend.set_state(..., randomization=...)` boundary as reset
+  same public `SimBackend.set_state_tensor(..., randomization=...)` boundary as reset
   DR before read-plan binding, the first reset, or a step. The committed rows
   become the local reset baseline, so later selected-row resets preserve
   unwritten startup values. Startup is opt-in and exchanges continuous
@@ -18,7 +18,7 @@ provider protocol and the environment does not carry a DR manager.
   the steady-state reset path.
 - **Reset:** event terms write through Entity bindings into
   `ResetStateTransaction`; the transaction calls
-  `SimBackend.set_state(..., randomization=...)` once.
+  `SimBackend.set_state_tensor(..., randomization=...)` once.
 - **Interval:** event terms use backend-owned interval plans through the public
   `SimBackend` contract.
 

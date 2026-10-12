@@ -602,6 +602,10 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">apply_actions</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span>
 
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+
     <span class="nd">@property</span>
     <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">raw_action</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
@@ -688,29 +692,50 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_term</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ActionTerm</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_terms</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
-        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">env_ids</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">clear_action_state</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">clear_action_state</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
         <span class="k">return</span> <span class="p">{}</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">clear_action_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Clear selected manager and term action state without logging.</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clear_action_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Clear fixed-width manager and term action state without logging.</span>
 
 <span class="sd">        Reset owners consume this boundary when they own the action reset pass.</span>
-<span class="sd">        It preserves the exact generic reset state mutation while leaving the</span>
-<span class="sd">        ordinary reset extras contract to the caller.</span>
+<span class="sd">        Manager-owned histories are mask-cleared. Each action term must provide</span>
+<span class="sd">        its own mask-preserving boundary; there is no selected-row fallback.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">env_ids</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
-        <span class="c1"># Reset action history.</span>
-        <span class="n">selector</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_selector</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_prev_action</span><span class="p">[</span><span class="n">selector</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_prev_prev_action</span><span class="p">[</span><span class="n">selector</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_action</span><span class="p">[</span><span class="n">selector</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="c1"># Reset action terms.</span>
-        <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_terms</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
-            <span class="n">term</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">env_ids</span><span class="o">=</span><span class="n">env_ids</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_reset_mask</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
+        <span class="n">expanded</span> <span class="o">=</span> <span class="n">reset_mask</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_prev_action</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">expanded</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_prev_action</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prev_action</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_prev_prev_action</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+                <span class="n">expanded</span><span class="p">,</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_prev_prev_action</span><span class="p">),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_prev_prev_action</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_action</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">expanded</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_action</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_action</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">term</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_terms</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">callable</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">&quot;reset&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)):</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;ActionManager term &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; does not define the &quot;</span>
+                    <span class="s2">&quot;mask-preserving reset boundary&quot;</span>
+                <span class="p">)</span>
+            <span class="n">term</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_reset_mask</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span>
+            <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span>
+            <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bool</span>
+            <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;ActionManager reset mask must have shape </span><span class="si">{</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,)</span><span class="si">}</span><span class="s2">, &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;bool dtype, and device </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">process_action</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">action</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Store the raw policy output and route slices to each action term.</span>
@@ -754,26 +779,6 @@
             <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="ne">NotImplementedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="nb">type</span><span class="p">(</span><span class="n">exc</span><span class="p">)(</span><span class="sa">f</span><span class="s2">&quot;ActionManager term &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
             <span class="n">idx</span> <span class="o">+=</span> <span class="n">term</span><span class="o">.</span><span class="n">action_dim</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_reset_selector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span> <span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="nb">slice</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">env_ids</span>
-        <span class="k">if</span> <span class="p">(</span>
-            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
-            <span class="ow">or</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span>
-            <span class="ow">or</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">dtype</span>
-            <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span>
-            <span class="p">}</span>
-        <span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;ActionManager reset rows must be one-dimensional integers&quot;</span><span class="p">)</span>
-        <span class="n">rows</span> <span class="o">=</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="ow">and</span> <span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">rows</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">IndexError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ActionManager reset rows out of range: </span><span class="si">{</span><span class="n">rows</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">rows</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">apply_action</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Write processed actions to entity actuator targets.</span>

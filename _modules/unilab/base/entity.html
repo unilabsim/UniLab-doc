@@ -549,6 +549,12 @@
     <span class="n">TensorProcessTopology</span><span class="p">,</span>
     <span class="n">tensor_device_matches</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.interval</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">INTERVAL_TERM_BODY_ANGULAR_VELOCITY_DELTA</span><span class="p">,</span>
+    <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span>
+    <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">,</span>
+    <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">,</span>
     <span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span>
@@ -556,9 +562,10 @@
     <span class="n">RESET_TERM_KD</span><span class="p">,</span>
     <span class="n">RESET_TERM_KP</span><span class="p">,</span>
     <span class="n">IntervalRandomizationPlan</span><span class="p">,</span>
+    <span class="n">IntervalTermOp</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.rotation</span><span class="w"> </span><span class="kn">import</span> <span class="n">np_quat_apply</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.rotation</span><span class="w"> </span><span class="kn">import</span> <span class="n">np_quat_apply</span><span class="p">,</span> <span class="n">np_quat_apply_inverse_batched</span>
 
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.reset_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">ResetStateTransaction</span>
@@ -638,6 +645,12 @@
     <span class="k">return</span> <span class="n">index</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_host_array</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_readonly_array</span><span class="p">(</span><span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
     <span class="n">result</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">flags</span><span class="o">.</span><span class="n">writeable</span><span class="p">:</span>
@@ -689,7 +702,7 @@
     <span class="k">return</span> <span class="p">[</span><span class="n">item</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">matches</span><span class="p">],</span> <span class="p">[</span><span class="n">item</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">matches</span><span class="p">]</span>
 
 
-<span class="n">_StateReadKey</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span>
+<span class="n">_StateReadKey</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span>
 
 
 <div class="viewcode-block" id="EntityTensorStateView">
@@ -737,6 +750,7 @@
     <span class="p">(</span><span class="s2">&quot;lin_vel_w&quot;</span><span class="p">,</span> <span class="s2">&quot;track_linvel_w_&quot;</span><span class="p">),</span>
     <span class="p">(</span><span class="s2">&quot;ang_vel_w&quot;</span><span class="p">,</span> <span class="s2">&quot;track_angvel_w_&quot;</span><span class="p">),</span>
 <span class="p">)</span>
+<span class="n">_TRACKED_BODY_SENSOR_PREFIXES</span> <span class="o">=</span> <span class="p">{</span><span class="n">field</span><span class="p">:</span> <span class="n">prefix</span> <span class="k">for</span> <span class="n">field</span><span class="p">,</span> <span class="n">prefix</span> <span class="ow">in</span> <span class="n">_TENSOR_BODY_SENSOR_FIELDS</span><span class="p">}</span>
 <span class="n">_TENSOR_SENSOR_WIDTHS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;pos_w&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;quat_w&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span> <span class="s2">&quot;lin_vel_w&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;ang_vel_w&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">}</span>
 
 
@@ -786,7 +800,7 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Phase-scoped packed tensor reads for one ``EntityScene``.</span>
 
 <span class="sd">    The plan is the Manager read boundary. A phase calls ``refresh()`` (or</span>
-<span class="sd">    ``refresh_selected()`` after a selected reset) once and then slices entity</span>
+<span class="sd">    ``refresh_selected()`` after a mask reset) once and then slices entity</span>
 <span class="sd">    views from the resulting packet. Host-bridge execution therefore performs</span>
 <span class="sd">    one packed H2D transfer per read phase regardless of the number of terms,</span>
 <span class="sd">    entities, sensors, or bodies.</span>
@@ -896,7 +910,7 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish stable device-resident views without another sensor crossing.</span>
 
 <span class="sd">        The first device-resident refresh owns the public adapter projection</span>
-<span class="sd">        crossing. Stable aliases remain live after selected reset, so a</span>
+<span class="sd">        crossing. Stable aliases remain live after mask reset, so a</span>
 <span class="sd">        subsequent read phase can republish them without repeating one</span>
 <span class="sd">        Python/DLPack boundary per sensor family.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -956,7 +970,11 @@
         <span class="n">names</span> <span class="o">=</span> <span class="n">owner</span><span class="o">.</span><span class="n">_joint_names</span>
         <span class="k">assert</span> <span class="n">names</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">qpos_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_joint_state_qpos_indices</span><span class="p">(</span><span class="n">names</span><span class="p">)</span>
+            <span class="n">qpos_ids</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">owner</span><span class="o">.</span><span class="n">_reset_joint_qpos_ids</span>
+                <span class="k">if</span> <span class="n">owner</span><span class="o">.</span><span class="n">_reset_joint_qpos_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_joint_state_qpos_indices</span><span class="p">(</span><span class="n">names</span><span class="p">)</span>
+            <span class="p">)</span>
             <span class="n">qvel_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_joint_state_qvel_indices</span><span class="p">(</span><span class="n">names</span><span class="p">)</span>
         <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">NotImplementedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="n">owner</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span><span class="s2">&quot;scene joint tensor state layout&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">))</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
@@ -1354,6 +1372,7 @@
         <span class="o">*</span><span class="p">,</span>
         <span class="n">root_body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">joint_pos_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">joint_qpos_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">joint_vel_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">default_root_state</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">default_root_state_error</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
@@ -1362,6 +1381,8 @@
         <span class="n">soft_joint_pos_limits</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">gravity_vec_w</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">root_body_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">body_names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">actuator_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">actuator_ctrl_range</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">control_buffer</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
@@ -1375,6 +1396,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_root_body_ids</span> <span class="o">=</span> <span class="n">root_body_ids</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_root_body_state_key</span> <span class="o">=</span> <span class="n">_state_selector_key</span><span class="p">(</span><span class="n">root_body_ids</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_joint_pos_index</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">joint_pos_ids</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_as_column_index</span><span class="p">(</span><span class="n">joint_pos_ids</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_joint_qpos_index</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="kc">None</span> <span class="k">if</span> <span class="n">joint_qpos_ids</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_as_column_index</span><span class="p">(</span><span class="n">joint_qpos_ids</span><span class="p">)</span>
+        <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_joint_vel_index</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">joint_vel_ids</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_as_column_index</span><span class="p">(</span><span class="n">joint_vel_ids</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_default_root_state</span> <span class="o">=</span> <span class="n">default_root_state</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_default_root_state_error</span> <span class="o">=</span> <span class="n">default_root_state_error</span>
@@ -1394,6 +1418,8 @@
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span> <span class="o">=</span> <span class="n">body_ids</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_body_state_key</span> <span class="o">=</span> <span class="n">_state_selector_key</span><span class="p">(</span><span class="n">body_ids</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_root_body_name</span> <span class="o">=</span> <span class="n">root_body_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_body_names</span> <span class="o">=</span> <span class="n">body_names</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span> <span class="o">=</span> <span class="n">actuator_ids</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ctrl_range</span> <span class="o">=</span> <span class="n">actuator_ctrl_range</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_control_buffer</span> <span class="o">=</span> <span class="n">control_buffer</span>
@@ -1425,71 +1451,95 @@
             <span class="p">)</span>
         <span class="k">return</span> <span class="n">value</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_state_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;state_view:</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">cached</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state_read_cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cached</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">cached</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">views</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_state_views</span><span class="p">((</span><span class="n">field</span><span class="p">,),</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">_host_array</span><span class="p">(</span><span class="n">views</span><span class="p">[</span><span class="n">field</span><span class="p">])</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="ne">NotImplementedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Entity &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_entity_name</span><span class="si">}</span><span class="s2">&#39; capability &#39;</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">&#39; tensor state view is &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;unavailable on backend &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend_type</span><span class="si">}</span><span class="s2">&#39;: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state_read_cache</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">value</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_tracked_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;tracked_view:</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">names</span><span class="p">)</span>
+        <span class="n">cached</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state_read_cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cached</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">cached</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">sensor_prefix</span> <span class="o">=</span> <span class="n">_TRACKED_BODY_SENSOR_PREFIXES</span><span class="p">[</span><span class="n">field</span><span class="p">]</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">_host_array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_sensor_view</span><span class="p">(</span><span class="n">sensor_prefix</span> <span class="o">+</span> <span class="n">name</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span>
+            <span class="p">]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">values</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">values</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="ne">NotImplementedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Entity &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_entity_name</span><span class="si">}</span><span class="s2">&#39; tracked body &#39;</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">&#39; tensor view is &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;unavailable on backend &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend_type</span><span class="si">}</span><span class="s2">&#39;: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+        <span class="n">expected</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">_TENSOR_SENSOR_WIDTHS</span><span class="p">[</span><span class="n">field</span><span class="p">])</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">names</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+            <span class="k">else</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">names</span><span class="p">),</span>
+                <span class="n">_TENSOR_SENSOR_WIDTHS</span><span class="p">[</span><span class="n">field</span><span class="p">],</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Entity &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_entity_name</span><span class="si">}</span><span class="s2">&#39; tracked body &#39;</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">&#39; tensor view has &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;shape </span><span class="si">{</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">; expected </span><span class="si">{</span><span class="n">expected</span><span class="si">}</span><span class="s2"> and finite values&quot;</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state_read_cache</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">value</span>
+
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_root_link_pos_w</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Root world position host adapter (explicit backend/test-only path).&quot;&quot;&quot;</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_ids</span><span class="p">,</span> <span class="s2">&quot;root body state&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_getter</span><span class="p">(</span>
-            <span class="s2">&quot;body_pos_w&quot;</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_body_pos_w</span><span class="p">,</span>
-            <span class="n">ids</span><span class="p">,</span>
-            <span class="n">selector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_state_key</span><span class="p">,</span>
-        <span class="p">)[:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_name</span><span class="p">,</span> <span class="s2">&quot;root body state&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_table</span><span class="p">(</span><span class="s2">&quot;pos_w&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,))</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_root_link_quat_w</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Root world quaternion host adapter (explicit backend/test-only path).&quot;&quot;&quot;</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_ids</span><span class="p">,</span> <span class="s2">&quot;root body state&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_getter</span><span class="p">(</span>
-            <span class="s2">&quot;body_quat_w&quot;</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_body_quat_w</span><span class="p">,</span>
-            <span class="n">ids</span><span class="p">,</span>
-            <span class="n">selector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_state_key</span><span class="p">,</span>
-        <span class="p">)[:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_name</span><span class="p">,</span> <span class="s2">&quot;root body state&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_table</span><span class="p">(</span><span class="s2">&quot;quat_w&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,))</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_root_link_lin_vel_w</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Root world linear velocity host adapter (backend/test-only path).&quot;&quot;&quot;</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_ids</span><span class="p">,</span> <span class="s2">&quot;root body state&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_getter</span><span class="p">(</span>
-            <span class="s2">&quot;body_lin_vel_w&quot;</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_body_lin_vel_w</span><span class="p">,</span>
-            <span class="n">ids</span><span class="p">,</span>
-            <span class="n">selector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_state_key</span><span class="p">,</span>
-        <span class="p">)[:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_name</span><span class="p">,</span> <span class="s2">&quot;root body state&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_table</span><span class="p">(</span><span class="s2">&quot;lin_vel_w&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,))</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_root_link_ang_vel_w</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Root world angular velocity host adapter (backend/test-only path).&quot;&quot;&quot;</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_ids</span><span class="p">,</span> <span class="s2">&quot;root body state&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_getter</span><span class="p">(</span>
-            <span class="s2">&quot;body_ang_vel_w&quot;</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_body_ang_vel_w</span><span class="p">,</span>
-            <span class="n">ids</span><span class="p">,</span>
-            <span class="n">selector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_state_key</span><span class="p">,</span>
-        <span class="p">)[:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_name</span><span class="p">,</span> <span class="s2">&quot;root body state&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_table</span><span class="p">(</span><span class="s2">&quot;ang_vel_w&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,))</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_root_link_lin_vel_b</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Root body-frame linear velocity host adapter (backend/test-only).&quot;&quot;&quot;</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_ids</span><span class="p">,</span> <span class="s2">&quot;root body state&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_getter</span><span class="p">(</span>
-            <span class="s2">&quot;body_lin_vel_b&quot;</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_body_lin_vel_b</span><span class="p">,</span>
-            <span class="n">ids</span><span class="p">,</span>
-            <span class="n">selector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_state_key</span><span class="p">,</span>
-        <span class="p">)[:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_name</span><span class="p">,</span> <span class="s2">&quot;root body state&quot;</span><span class="p">)</span>
+        <span class="n">quat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_table</span><span class="p">(</span><span class="s2">&quot;quat_w&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,))</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_table</span><span class="p">(</span><span class="s2">&quot;lin_vel_w&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,))</span>
+        <span class="k">return</span> <span class="n">np_quat_apply_inverse_batched</span><span class="p">(</span><span class="n">quat</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_root_link_ang_vel_b</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Root body-frame angular velocity host adapter (backend/test-only).&quot;&quot;&quot;</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_ids</span><span class="p">,</span> <span class="s2">&quot;root body state&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_getter</span><span class="p">(</span>
-            <span class="s2">&quot;body_ang_vel_b&quot;</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_body_ang_vel_b</span><span class="p">,</span>
-            <span class="n">ids</span><span class="p">,</span>
-            <span class="n">selector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_state_key</span><span class="p">,</span>
-        <span class="p">)[:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_name</span><span class="p">,</span> <span class="s2">&quot;root body state&quot;</span><span class="p">)</span>
+        <span class="n">quat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_table</span><span class="p">(</span><span class="s2">&quot;quat_w&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,))</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_table</span><span class="p">(</span><span class="s2">&quot;ang_vel_w&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,))</span>
+        <span class="k">return</span> <span class="n">np_quat_apply_inverse_batched</span><span class="p">(</span><span class="n">quat</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_gravity_vec_w</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
@@ -1542,14 +1592,14 @@
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_joint_pos</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Joint position host adapter (backend/test-only; packed views are public).&quot;&quot;&quot;</span>
-        <span class="n">index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_joint_pos_index</span><span class="p">,</span> <span class="s2">&quot;joint position&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_getter</span><span class="p">(</span><span class="s2">&quot;dof_pos&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_dof_pos</span><span class="p">)[:,</span> <span class="n">index</span><span class="p">]</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_joint_qpos_index</span><span class="p">,</span> <span class="s2">&quot;joint position&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state_table</span><span class="p">(</span><span class="s2">&quot;qpos&quot;</span><span class="p">)[:,</span> <span class="n">index</span><span class="p">]</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_joint_vel</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Joint velocity host adapter (backend/test-only; packed views are public).&quot;&quot;&quot;</span>
         <span class="n">index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_joint_vel_index</span><span class="p">,</span> <span class="s2">&quot;joint velocity&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_getter</span><span class="p">(</span><span class="s2">&quot;dof_vel&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_dof_vel</span><span class="p">)[:,</span> <span class="n">index</span><span class="p">]</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state_table</span><span class="p">(</span><span class="s2">&quot;qvel&quot;</span><span class="p">)[:,</span> <span class="n">index</span><span class="p">]</span>
 
 <div class="viewcode-block" id="EntityData.default_joint_pos_torch">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.EntityData.html#unilab.base.entity.EntityData.default_joint_pos_torch">[docs]</a>
@@ -1651,18 +1701,20 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_encoder_bias_tensor</span> <span class="o">=</span> <span class="n">values</span></div>
 
 
-<div class="viewcode-block" id="EntityData.update_encoder_bias_tensor">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.EntityData.html#unilab.base.entity.EntityData.update_encoder_bias_tensor">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">update_encoder_bias_tensor</span><span class="p">(</span>
+<div class="viewcode-block" id="EntityData.update_encoder_bias_tensor_mask">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.EntityData.html#unilab.base.entity.EntityData.update_encoder_bias_tensor_mask">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update_encoder_bias_tensor_mask</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-        <span class="n">rows</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">columns</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">values</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update selected authoritative encoder-bias cells on one device.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Merge full-width authoritative encoder-bias values by mask.&quot;&quot;&quot;</span>
         <span class="n">bias</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoder_bias_tensor</span>
-        <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">bias</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;encoder-bias rows must live on </span><span class="si">{</span><span class="n">bias</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">; got </span><span class="si">{</span><span class="n">rows</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">bias</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;encoder-bias mask must live on </span><span class="si">{</span><span class="n">bias</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">; got </span><span class="si">{</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
         <span class="k">if</span> <span class="n">columns</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">bias</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;encoder-bias columns must live on </span><span class="si">{</span><span class="n">bias</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">; got </span><span class="si">{</span><span class="n">columns</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span>
@@ -1671,13 +1723,14 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;encoder-bias values must live on </span><span class="si">{</span><span class="n">bias</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">; got </span><span class="si">{</span><span class="n">values</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">values</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">bias</span><span class="o">.</span><span class="n">dtype</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">values</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">():</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;encoder-bias values must be contiguous and match the bias dtype&quot;</span><span class="p">)</span>
-        <span class="n">expected</span> <span class="o">=</span> <span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">numel</span><span class="p">(),</span> <span class="n">columns</span><span class="o">.</span><span class="n">numel</span><span class="p">())</span>
+        <span class="n">expected</span> <span class="o">=</span> <span class="p">(</span><span class="n">bias</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">columns</span><span class="o">.</span><span class="n">numel</span><span class="p">())</span>
         <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="n">expected</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;encoder-bias values have shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">; expected </span><span class="si">{</span><span class="n">expected</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
-        <span class="n">selected</span> <span class="o">=</span> <span class="n">bias</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">index_copy</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">columns</span><span class="p">,</span> <span class="n">values</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">bias</span><span class="o">.</span><span class="n">dtype</span><span class="p">))</span>
-        <span class="n">bias</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">selected</span><span class="p">)</span></div>
+        <span class="n">selected</span> <span class="o">=</span> <span class="n">bias</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">columns</span><span class="p">)</span>
+        <span class="n">merged</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">values</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">bias</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span> <span class="n">selected</span><span class="p">)</span>
+        <span class="n">bias</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">columns</span><span class="p">,</span> <span class="n">merged</span><span class="p">)</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_tensor_control_device</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
@@ -1694,46 +1747,26 @@
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_body_link_pos_w</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Body world position host adapter (backend/test-only).&quot;&quot;&quot;</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="p">,</span> <span class="s2">&quot;body state&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_getter</span><span class="p">(</span>
-            <span class="s2">&quot;body_pos_w&quot;</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_body_pos_w</span><span class="p">,</span>
-            <span class="n">ids</span><span class="p">,</span>
-            <span class="n">selector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_state_key</span><span class="p">,</span>
-        <span class="p">)</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_names</span><span class="p">,</span> <span class="s2">&quot;body state&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_table</span><span class="p">(</span><span class="s2">&quot;pos_w&quot;</span><span class="p">,</span> <span class="n">names</span><span class="p">)</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_body_link_quat_w</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Body world quaternion host adapter (backend/test-only).&quot;&quot;&quot;</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="p">,</span> <span class="s2">&quot;body state&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_getter</span><span class="p">(</span>
-            <span class="s2">&quot;body_quat_w&quot;</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_body_quat_w</span><span class="p">,</span>
-            <span class="n">ids</span><span class="p">,</span>
-            <span class="n">selector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_state_key</span><span class="p">,</span>
-        <span class="p">)</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_names</span><span class="p">,</span> <span class="s2">&quot;body state&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_table</span><span class="p">(</span><span class="s2">&quot;quat_w&quot;</span><span class="p">,</span> <span class="n">names</span><span class="p">)</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_body_link_lin_vel_w</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Body world linear velocity host adapter (backend/test-only).&quot;&quot;&quot;</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="p">,</span> <span class="s2">&quot;body state&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_getter</span><span class="p">(</span>
-            <span class="s2">&quot;body_lin_vel_w&quot;</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_body_lin_vel_w</span><span class="p">,</span>
-            <span class="n">ids</span><span class="p">,</span>
-            <span class="n">selector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_state_key</span><span class="p">,</span>
-        <span class="p">)</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_names</span><span class="p">,</span> <span class="s2">&quot;body state&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_table</span><span class="p">(</span><span class="s2">&quot;lin_vel_w&quot;</span><span class="p">,</span> <span class="n">names</span><span class="p">)</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_body_link_ang_vel_w</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Body world angular velocity host adapter (backend/test-only).&quot;&quot;&quot;</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="p">,</span> <span class="s2">&quot;body state&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_getter</span><span class="p">(</span>
-            <span class="s2">&quot;body_ang_vel_w&quot;</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_body_ang_vel_w</span><span class="p">,</span>
-            <span class="n">ids</span><span class="p">,</span>
-            <span class="n">selector</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_state_key</span><span class="p">,</span>
-        <span class="p">)</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_names</span><span class="p">,</span> <span class="s2">&quot;body state&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_table</span><span class="p">(</span><span class="s2">&quot;ang_vel_w&quot;</span><span class="p">,</span> <span class="n">names</span><span class="p">)</span>
 
 <div class="viewcode-block" id="EntityData.write_ctrl">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.EntityData.html#unilab.base.entity.EntityData.write_ctrl">[docs]</a>
@@ -2076,6 +2109,12 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_joint_names</span><span class="p">,</span>
                 <span class="n">backend</span><span class="o">.</span><span class="n">get_joint_dof_vel_indices</span><span class="p">,</span>
             <span class="p">)</span>
+            <span class="n">state_qpos_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_ids</span><span class="p">(</span>
+                <span class="s2">&quot;joint position state layout&quot;</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_joint_names</span><span class="p">,</span>
+                <span class="n">backend</span><span class="o">.</span><span class="n">get_joint_state_qpos_indices</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qpos_ids</span> <span class="o">=</span> <span class="n">state_qpos_ids</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_joint_dof_ids</span> <span class="o">=</span> <span class="p">(</span><span class="n">joint_pos_ids</span><span class="p">,</span> <span class="n">joint_vel_ids</span><span class="p">)</span>
 
         <span class="n">body_ids</span> <span class="o">=</span> <span class="kc">None</span>
@@ -2119,7 +2158,7 @@
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_validate_joint_state</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">joint_pos_ids</span><span class="p">,</span> <span class="n">joint_vel_ids</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_body_state</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">root_body_ids</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_body_state</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">root_body_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_names</span><span class="p">)</span>
         <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_reset_root_layout</span><span class="p">,</span>
             <span class="n">default_root_state</span><span class="p">,</span>
@@ -2134,7 +2173,7 @@
         <span class="n">default_joint_vel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_default_joint_vel</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">joint_vel_ids</span><span class="p">)</span>
         <span class="n">soft_joint_pos_limits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_soft_joint_pos_limits</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">joint_pos_ids</span><span class="p">)</span>
         <span class="n">gravity_vec_w</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_gravity_vector</span><span class="p">(</span>
-            <span class="n">backend</span><span class="p">,</span> <span class="n">root_body_ids</span><span class="p">,</span> <span class="n">entity_defaults</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_entity_defaults</span>
+            <span class="n">backend</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">root_body_name</span><span class="p">,</span> <span class="n">entity_defaults</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_entity_defaults</span>
         <span class="p">)</span>
         <span class="n">actuator_ctrl_range</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_actuator_ctrl_range</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">actuator_ids</span><span class="p">)</span>
         <span class="p">(</span>
@@ -2169,6 +2208,7 @@
             <span class="n">backend</span><span class="p">,</span>
             <span class="n">root_body_ids</span><span class="o">=</span><span class="n">root_body_ids</span><span class="p">,</span>
             <span class="n">joint_pos_ids</span><span class="o">=</span><span class="n">joint_pos_ids</span><span class="p">,</span>
+            <span class="n">joint_qpos_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qpos_ids</span><span class="p">,</span>
             <span class="n">joint_vel_ids</span><span class="o">=</span><span class="n">joint_vel_ids</span><span class="p">,</span>
             <span class="n">default_root_state</span><span class="o">=</span><span class="n">default_root_state</span><span class="p">,</span>
             <span class="n">default_root_state_error</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_reset_root_layout_error</span><span class="p">,</span>
@@ -2177,6 +2217,8 @@
             <span class="n">soft_joint_pos_limits</span><span class="o">=</span><span class="n">soft_joint_pos_limits</span><span class="p">,</span>
             <span class="n">gravity_vec_w</span><span class="o">=</span><span class="n">gravity_vec_w</span><span class="p">,</span>
             <span class="n">body_ids</span><span class="o">=</span><span class="n">body_ids</span><span class="p">,</span>
+            <span class="n">root_body_name</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">root_body_name</span><span class="p">,</span>
+            <span class="n">body_names</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_names</span><span class="p">,</span>
             <span class="n">actuator_ids</span><span class="o">=</span><span class="n">actuator_ids</span><span class="p">,</span>
             <span class="n">actuator_ctrl_range</span><span class="o">=</span><span class="n">actuator_ctrl_range</span><span class="p">,</span>
             <span class="n">control_buffer</span><span class="o">=</span><span class="n">control_buffer</span><span class="p">,</span>
@@ -2603,19 +2645,32 @@
         <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">NotImplementedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span><span class="n">capability</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">))</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_read_state_view</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">backend</span><span class="p">:</span> <span class="n">SimBackend</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">capability</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">views</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_state_views</span><span class="p">((</span><span class="n">field</span><span class="p">,),</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">_host_array</span><span class="p">(</span><span class="n">views</span><span class="p">[</span><span class="n">field</span><span class="p">])</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="ne">NotImplementedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span><span class="n">capability</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">))</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_tracked_body_views</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">backend</span><span class="p">:</span> <span class="n">SimBackend</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">capability</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_tracked_body_views</span><span class="p">(</span><span class="n">names</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="ne">NotImplementedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span><span class="n">capability</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">))</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_joint_state</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">backend</span><span class="p">:</span> <span class="n">SimBackend</span><span class="p">,</span>
         <span class="n">pos_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">vel_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">capability</span><span class="p">,</span> <span class="n">getter</span><span class="p">,</span> <span class="n">ids</span> <span class="ow">in</span> <span class="p">(</span>
-            <span class="p">(</span><span class="s2">&quot;joint position state&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_dof_pos</span><span class="p">,</span> <span class="n">pos_ids</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">&quot;joint velocity state&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_dof_vel</span><span class="p">,</span> <span class="n">vel_ids</span><span class="p">),</span>
+        <span class="k">for</span> <span class="n">capability</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">ids</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="p">(</span><span class="s2">&quot;joint position state&quot;</span><span class="p">,</span> <span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="n">pos_ids</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;joint velocity state&quot;</span><span class="p">,</span> <span class="s2">&quot;qvel&quot;</span><span class="p">,</span> <span class="n">vel_ids</span><span class="p">),</span>
         <span class="p">):</span>
             <span class="k">if</span> <span class="n">ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">continue</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_state</span><span class="p">(</span><span class="n">capability</span><span class="p">,</span> <span class="n">getter</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_state_view</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">capability</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;Entity &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; capability &#39;</span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2">&#39; on backend &quot;</span>
@@ -2676,49 +2731,15 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_body_state</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">backend</span><span class="p">:</span> <span class="n">SimBackend</span><span class="p">,</span>
-        <span class="n">root_body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">root_body_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">body_names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">arrays</span> <span class="o">=</span> <span class="p">[</span><span class="n">values</span> <span class="k">for</span> <span class="n">values</span> <span class="ow">in</span> <span class="p">(</span><span class="n">root_body_ids</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">)</span> <span class="k">if</span> <span class="n">values</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">arrays</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate that construction resolved every requested public body.&quot;&quot;&quot;</span>
+        <span class="n">declared_names</span> <span class="o">=</span> <span class="p">((</span><span class="n">root_body_name</span><span class="p">,)</span> <span class="k">if</span> <span class="n">root_body_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">())</span> <span class="o">+</span> <span class="p">(</span>
+            <span class="n">body_names</span> <span class="ow">or</span> <span class="p">()</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">declared_names</span><span class="p">:</span>
             <span class="k">return</span>
-        <span class="n">validation_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">arrays</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">capability</span><span class="p">,</span> <span class="n">getter</span><span class="p">,</span> <span class="n">width</span> <span class="ow">in</span> <span class="p">(</span>
-            <span class="p">(</span><span class="s2">&quot;body position state&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_body_pos_w</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">&quot;body quaternion state&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_body_quat_w</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">&quot;body linear velocity state&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_body_lin_vel_w</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">&quot;body angular velocity state&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_body_ang_vel_w</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
-        <span class="p">):</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_state</span><span class="p">(</span><span class="n">capability</span><span class="p">,</span> <span class="n">getter</span><span class="p">,</span> <span class="n">validation_ids</span><span class="p">)</span>
-            <span class="n">expected</span> <span class="o">=</span> <span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">validation_ids</span><span class="p">),</span> <span class="n">width</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Entity &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; capability &#39;</span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2">&#39; on backend &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend_type</span><span class="si">}</span><span class="s2">&#39; returned shape </span><span class="si">{</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">; expected </span><span class="si">{</span><span class="n">expected</span><span class="si">}</span><span class="s2">&quot;</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Entity &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; capability &#39;</span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2">&#39; on backend &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend_type</span><span class="si">}</span><span class="s2">&#39; returned NaN or Inf&quot;</span>
-                <span class="p">)</span>
-        <span class="k">if</span> <span class="n">root_body_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span>
-        <span class="k">for</span> <span class="n">capability</span><span class="p">,</span> <span class="n">getter</span> <span class="ow">in</span> <span class="p">(</span>
-            <span class="p">(</span><span class="s2">&quot;body-frame linear velocity state&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_body_lin_vel_b</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">&quot;body-frame angular velocity state&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_body_ang_vel_b</span><span class="p">),</span>
-        <span class="p">):</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_state</span><span class="p">(</span><span class="n">capability</span><span class="p">,</span> <span class="n">getter</span><span class="p">,</span> <span class="n">root_body_ids</span><span class="p">)</span>
-            <span class="n">expected</span> <span class="o">=</span> <span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">root_body_ids</span><span class="p">),</span> <span class="mi">3</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Entity &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; capability &#39;</span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2">&#39; on backend &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend_type</span><span class="si">}</span><span class="s2">&#39; returned shape </span><span class="si">{</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">; expected </span><span class="si">{</span><span class="n">expected</span><span class="si">}</span><span class="s2">&quot;</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Entity &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; capability &#39;</span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2">&#39; on backend &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend_type</span><span class="si">}</span><span class="s2">&#39; returned NaN or Inf&quot;</span>
-                <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_materialize_actuator_ctrl_range</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">backend</span><span class="p">:</span> <span class="n">SimBackend</span><span class="p">,</span> <span class="n">actuator_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span>
@@ -2746,28 +2767,28 @@
             <span class="k">return</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_defaults</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_selected_entity_default_joints</span><span class="p">(</span><span class="s2">&quot;joint_positions&quot;</span><span class="p">)</span>
-        <span class="n">current</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_state</span><span class="p">(</span><span class="s2">&quot;joint position state&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_dof_pos</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qpos_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">full_qpos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_state_view</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="s2">&quot;joint position state&quot;</span><span class="p">)</span>
+        <span class="n">current</span> <span class="o">=</span> <span class="n">full_qpos</span><span class="p">[:,</span> <span class="n">_as_column_index</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qpos_ids</span><span class="p">)]</span>
         <span class="k">if</span> <span class="n">default_qpos</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">defaults</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_state</span><span class="p">(</span><span class="s2">&quot;default joint position&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_default_dof_pos</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">defaults</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">current</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+            <span class="k">if</span> <span class="n">defaults</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;Entity &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; capability &#39;default joint position&#39; on backend &quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend_type</span><span class="si">}</span><span class="s2">&#39; returned shape </span><span class="si">{</span><span class="n">defaults</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">; expected &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">current</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span><span class="si">}</span><span class="s2"> to match get_dof_pos()&quot;</span>
+                    <span class="s2">&quot;a 1-D backend DoF layout&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">joint_pos_ids</span><span class="o">.</span><span class="n">size</span> <span class="ow">and</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">joint_pos_ids</span><span class="p">))</span> <span class="o">&gt;=</span> <span class="n">defaults</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Entity &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; default joint-position layout on backend &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend_type</span><span class="si">}</span><span class="s2">&#39; resolved index </span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">joint_pos_ids</span><span class="p">))</span><span class="si">}</span><span class="s2"> &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;outside width </span><span class="si">{</span><span class="n">defaults</span><span class="o">.</span><span class="n">size</span><span class="si">}</span><span class="s2">&quot;</span>
                 <span class="p">)</span>
             <span class="n">selected</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">defaults</span><span class="p">[</span><span class="n">_as_column_index</span><span class="p">(</span><span class="n">joint_pos_ids</span><span class="p">)])</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_joint_names</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="n">defaults</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_root_default_vector</span><span class="p">(</span><span class="n">default_qpos</span><span class="p">,</span> <span class="s2">&quot;selected default qpos&quot;</span><span class="p">)</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="n">state_qpos_ids</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_joint_state_qpos_indices</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_joint_names</span><span class="p">)</span>
-            <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">NotImplementedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span><span class="s2">&quot;default joint-state layout&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">))</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
-            <span class="n">resolved_qpos_ids</span> <span class="o">=</span> <span class="n">_readonly_ids</span><span class="p">(</span>
-                <span class="n">state_qpos_ids</span><span class="p">,</span>
-                <span class="n">expected</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_joint_names</span><span class="p">),</span>
-                <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Entity &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; default qpos&quot;</span><span class="p">,</span>
-            <span class="p">)</span>
+            <span class="n">resolved_qpos_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qpos_ids</span>
             <span class="k">if</span> <span class="n">resolved_qpos_ids</span><span class="o">.</span><span class="n">size</span> <span class="ow">and</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">resolved_qpos_ids</span><span class="p">))</span> <span class="o">&gt;=</span> <span class="n">defaults</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;Entity &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; default qpos layout exceeds backend &quot;</span>
@@ -2900,7 +2921,7 @@
             <span class="k">return</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_defaults</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_selected_entity_default_joints</span><span class="p">(</span><span class="s2">&quot;joint_velocities&quot;</span><span class="p">)</span>
-        <span class="n">current</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_state</span><span class="p">(</span><span class="s2">&quot;joint velocity state&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_dof_vel</span><span class="p">)</span>
+        <span class="n">current</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_state_view</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;qvel&quot;</span><span class="p">,</span> <span class="s2">&quot;joint velocity state&quot;</span><span class="p">)</span>
         <span class="n">materialized</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
             <span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">joint_vel_ids</span><span class="p">)),</span>
             <span class="n">dtype</span><span class="o">=</span><span class="n">current</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
@@ -2921,19 +2942,13 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_materialize_gravity_vector</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">backend</span><span class="p">:</span> <span class="n">SimBackend</span><span class="p">,</span>
-        <span class="n">root_body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">root_body_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">entity_defaults</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">root_body_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">root_body_name</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="n">entity_defaults</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">quat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">entity_defaults</span><span class="p">[</span><span class="s2">&quot;root_pose&quot;</span><span class="p">][:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">])</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">quat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_state</span><span class="p">(</span>
-                <span class="s2">&quot;root body quaternion state&quot;</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_body_quat_w</span><span class="p">,</span> <span class="n">root_body_ids</span>
-            <span class="p">)</span>
-        <span class="n">gravity</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">quat</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">gravity</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         <span class="n">gravity</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1.0</span>
         <span class="n">gravity</span><span class="o">.</span><span class="n">setflags</span><span class="p">(</span><span class="n">write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">gravity</span>
@@ -3307,7 +3322,7 @@
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BodyStateCopyFn</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind entity-local body columns to the backend copy contract on the cold path.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind entity-local body columns to the public tracked-view contract.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
                 <span class="s2">&quot;body-state copy&quot;</span><span class="p">,</span>
@@ -3316,9 +3331,23 @@
         <span class="n">local_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_local_body_ids</span><span class="p">(</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;body-state copy&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">local_ids</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Entity &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; body-state copy selected no bodies&quot;</span><span class="p">)</span>
-        <span class="n">backend_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_ids</span><span class="p">[</span><span class="n">local_ids</span><span class="p">],</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-        <span class="n">backend_ids</span><span class="o">.</span><span class="n">setflags</span><span class="p">(</span><span class="n">write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">copy_body_state_w</span><span class="p">,</span> <span class="n">backend_ids</span><span class="p">)</span></div>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_names</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">selected_names</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_names</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">index</span><span class="p">)]</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="n">local_ids</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">copy_body_state</span><span class="p">(</span>
+            <span class="n">out_pos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+            <span class="n">out_quat</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+            <span class="n">out_lin_vel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+            <span class="n">out_ang_vel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+            <span class="n">views</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_tracked_body_views</span><span class="p">(</span><span class="n">selected_names</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="n">out_pos</span><span class="p">,</span> <span class="n">_host_array</span><span class="p">(</span><span class="n">views</span><span class="o">.</span><span class="n">pos_w</span><span class="p">))</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="n">out_quat</span><span class="p">,</span> <span class="n">_host_array</span><span class="p">(</span><span class="n">views</span><span class="o">.</span><span class="n">quat_w</span><span class="p">))</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="n">out_lin_vel</span><span class="p">,</span> <span class="n">_host_array</span><span class="p">(</span><span class="n">views</span><span class="o">.</span><span class="n">lin_vel_w</span><span class="p">))</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="n">out_ang_vel</span><span class="p">,</span> <span class="n">_host_array</span><span class="p">(</span><span class="n">views</span><span class="o">.</span><span class="n">ang_vel_w</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">out_pos</span><span class="p">,</span> <span class="n">out_quat</span><span class="p">,</span> <span class="n">out_lin_vel</span><span class="p">,</span> <span class="n">out_ang_vel</span>
+
+        <span class="k">return</span> <span class="n">copy_body_state</span></div>
 
 
 <div class="viewcode-block" id="Entity.write_root_state_to_sim">
@@ -3351,62 +3380,19 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">write_root_state_tensor_to_sim</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">root_state</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage a device-resident 13-D world-frame root state.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage a full-width device-resident 13-D world-frame root state.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_physical_entity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="s2">&quot;mapped entity tensor root-state reset requires a public entity transaction&quot;</span>
             <span class="p">)</span>
         <span class="n">reset_state</span><span class="p">,</span> <span class="n">layout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_root_state_write</span><span class="p">()</span>
         <span class="n">reset_state</span><span class="o">.</span><span class="n">write_root_state_tensor</span><span class="p">(</span>
-            <span class="n">env_ids</span><span class="p">,</span>
+            <span class="n">reset_mask</span><span class="p">,</span>
             <span class="n">layout</span><span class="p">,</span>
             <span class="n">root_state</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.write_root_state_tensor_to_sim&quot;</span><span class="p">,</span>
-        <span class="p">)</span></div>
-
-
-<div class="viewcode-block" id="Entity.write_joint_state_tensor_to_sim">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.write_joint_state_tensor_to_sim">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">write_joint_state_tensor_to_sim</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">position</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">velocity</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">joint_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage selected device-resident joint state in the tensor transaction.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
-                <span class="s2">&quot;tensor reset joint-state write&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;EntityScene was materialized without an env-owned reset transaction&quot;</span><span class="p">,</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_joint_names</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
-                <span class="s2">&quot;tensor reset joint-state write&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;joint_names were not declared in EntityCfg&quot;</span><span class="p">,</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_physical_entity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="s2">&quot;mapped entity tensor joint-state reset requires a public entity transaction&quot;</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor joint-state reset requires explicit device row indices&quot;</span><span class="p">)</span>
-        <span class="n">local_joint_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_local_joint_ids</span><span class="p">(</span>
-            <span class="n">joint_ids</span><span class="p">,</span>
-            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;tensor reset joint-state write&quot;</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_reset_joint_indices</span><span class="p">()</span>
-        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qpos_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qvel_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">write_joint_state_tensor</span><span class="p">(</span>
-            <span class="n">env_ids</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qpos_ids</span><span class="p">[</span><span class="n">local_joint_ids</span><span class="p">],</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qvel_ids</span><span class="p">[</span><span class="n">local_joint_ids</span><span class="p">],</span>
-            <span class="n">position</span><span class="p">,</span>
-            <span class="n">velocity</span><span class="p">,</span>
-            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.write_joint_state_tensor_to_sim&quot;</span><span class="p">,</span>
         <span class="p">)</span></div>
 
 
@@ -3417,9 +3403,9 @@
         <span class="n">root_state</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">position</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">velocity</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage one device-resident motion root and selected joint state.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage one full-width motion root and joint state.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_physical_entity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="s2">&quot;mapped entity tensor motion-state reset requires a public entity transaction&quot;</span>
@@ -3434,7 +3420,7 @@
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qpos_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qvel_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="n">reset_state</span><span class="o">.</span><span class="n">write_motion_state_tensor</span><span class="p">(</span>
-            <span class="n">env_ids</span><span class="p">,</span>
+            <span class="n">reset_mask</span><span class="p">,</span>
             <span class="n">layout</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qpos_ids</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qvel_ids</span><span class="p">,</span>
@@ -3516,46 +3502,6 @@
             <span class="n">resolved_env_ids</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span><span class="p">[</span><span class="n">local_ids</span><span class="p">],</span>
             <span class="n">kp</span><span class="p">,</span>
-            <span class="n">kd</span><span class="p">,</span>
-            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-        <span class="p">)</span></div>
-
-
-<div class="viewcode-block" id="Entity.write_actuator_gains_tensor_to_sim">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.write_actuator_gains_tensor_to_sim">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">write_actuator_gains_tensor_to_sim</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">kp</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">kd</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">actuator_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="o">*</span><span class="p">,</span>
-        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;pd_gains&quot;</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage device-resident entity actuator gains in the tensor transaction.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
-                <span class="s2">&quot;reset actuator-gain write&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;actuator metadata or the env-owned reset transaction was not materialized&quot;</span><span class="p">,</span>
-            <span class="p">)</span>
-        <span class="n">local_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_local_actuator_ids</span><span class="p">(</span>
-            <span class="n">actuator_ids</span><span class="p">,</span>
-            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;reset actuator-gain write&quot;</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor reset actuator-gain write requires device row indices&quot;</span><span class="p">)</span>
-        <span class="n">backend_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span><span class="p">[</span><span class="n">local_ids</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">write_randomization_tensor</span><span class="p">(</span>
-            <span class="n">RESET_TERM_KP</span><span class="p">,</span>
-            <span class="n">env_ids</span><span class="p">,</span>
-            <span class="n">backend_ids</span><span class="p">,</span>
-            <span class="n">kp</span><span class="p">,</span>
-            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">write_randomization_tensor</span><span class="p">(</span>
-            <span class="n">RESET_TERM_KD</span><span class="p">,</span>
-            <span class="n">env_ids</span><span class="p">,</span>
-            <span class="n">backend_ids</span><span class="p">,</span>
             <span class="n">kd</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
         <span class="p">)</span></div>
@@ -3965,37 +3911,6 @@
         <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="Entity.write_geom_friction_tensor_to_sim">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.write_geom_friction_tensor_to_sim">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">write_geom_friction_tensor_to_sim</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">values</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">geom_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="o">*</span><span class="p">,</span>
-        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;geom_friction&quot;</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage device-resident entity geom friction in the tensor transaction.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geom_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
-                <span class="s2">&quot;reset geom-friction write&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;geom metadata or the env-owned reset transaction was not materialized&quot;</span><span class="p">,</span>
-            <span class="p">)</span>
-        <span class="n">local_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_local_geom_ids</span><span class="p">(</span>
-            <span class="n">geom_ids</span><span class="p">,</span>
-            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;reset geom-friction write&quot;</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor reset geom-friction write requires device row indices&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">write_randomization_tensor</span><span class="p">(</span>
-            <span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">,</span>
-            <span class="n">env_ids</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_geom_ids</span><span class="p">[</span><span class="n">local_ids</span><span class="p">],</span>
-            <span class="n">values</span><span class="p">,</span>
-            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-        <span class="p">)</span></div>
-
-
 <div class="viewcode-block" id="Entity.bind_body_mass_write">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.bind_body_mass_write">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">bind_body_mass_write</span><span class="p">(</span>
@@ -4064,32 +3979,6 @@
         <span class="n">reset_state</span><span class="o">.</span><span class="n">record_startup_randomization</span><span class="p">(</span>
             <span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span>
             <span class="n">normalized_ids</span><span class="p">,</span>
-            <span class="n">backend_ids</span><span class="p">,</span>
-            <span class="n">values</span><span class="p">,</span>
-            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-        <span class="p">)</span></div>
-
-
-<div class="viewcode-block" id="Entity.write_body_mass_tensor_to_sim">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.write_body_mass_tensor_to_sim">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">write_body_mass_tensor_to_sim</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">values</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="o">*</span><span class="p">,</span>
-        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;randomize_rigid_body_mass&quot;</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage device-resident entity body masses in the tensor transaction.&quot;&quot;&quot;</span>
-        <span class="n">reset_state</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">backend_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_bind_body_randomization</span><span class="p">(</span>
-            <span class="n">body_ids</span><span class="p">,</span>
-            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;reset body-mass write&quot;</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor reset body-mass write requires device row indices&quot;</span><span class="p">)</span>
-        <span class="n">reset_state</span><span class="o">.</span><span class="n">write_randomization_tensor</span><span class="p">(</span>
-            <span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span>
-            <span class="n">env_ids</span><span class="p">,</span>
             <span class="n">backend_ids</span><span class="p">,</span>
             <span class="n">values</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
@@ -4170,32 +4059,6 @@
         <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="Entity.write_body_ipos_tensor_to_sim">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.write_body_ipos_tensor_to_sim">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">write_body_ipos_tensor_to_sim</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">values</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="o">*</span><span class="p">,</span>
-        <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;randomize_rigid_body_com&quot;</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage device-resident entity inertial positions in the tensor transaction.&quot;&quot;&quot;</span>
-        <span class="n">reset_state</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">backend_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_bind_body_randomization</span><span class="p">(</span>
-            <span class="n">body_ids</span><span class="p">,</span>
-            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;reset body-ipos write&quot;</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor reset body-ipos write requires device row indices&quot;</span><span class="p">)</span>
-        <span class="n">reset_state</span><span class="o">.</span><span class="n">write_randomization_tensor</span><span class="p">(</span>
-            <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">,</span>
-            <span class="n">env_ids</span><span class="p">,</span>
-            <span class="n">backend_ids</span><span class="p">,</span>
-            <span class="n">values</span><span class="p">,</span>
-            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-        <span class="p">)</span></div>
-
-
 <div class="viewcode-block" id="Entity.bind_body_inertia_write">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.bind_body_inertia_write">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">bind_body_inertia_write</span><span class="p">(</span>
@@ -4267,11 +4130,12 @@
             <span class="n">capabilities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span>
         <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">NotImplementedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span><span class="s2">&quot;interval root velocity delta&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">))</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
-        <span class="n">supported</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">capabilities</span><span class="o">.</span><span class="n">supports_interval_body_angular_velocity_delta</span>
+        <span class="n">term</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">INTERVAL_TERM_BODY_ANGULAR_VELOCITY_DELTA</span>
             <span class="k">if</span> <span class="n">angular</span>
-            <span class="k">else</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">supports_interval_body_velocity_delta</span>
+            <span class="k">else</span> <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span>
         <span class="p">)</span>
+        <span class="n">supported</span> <span class="o">=</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">supports_interval_term</span><span class="p">(</span><span class="n">term</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">supported</span><span class="p">:</span>
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
                 <span class="s2">&quot;interval root velocity delta&quot;</span><span class="p">,</span>
@@ -4325,14 +4189,25 @@
             <span class="n">ids</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">apply_interval_randomization</span><span class="p">(</span>
-                <span class="n">IntervalRandomizationPlan</span><span class="p">(</span>
+        <span class="n">ops</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">linear_plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ops</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">IntervalTermOp</span><span class="p">(</span>
+                    <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">,</span>
+                    <span class="n">linear_plan</span><span class="p">,</span>
                     <span class="n">body_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_ids</span><span class="p">,</span>
-                    <span class="n">body_linear_velocity_delta</span><span class="o">=</span><span class="n">linear_plan</span><span class="p">,</span>
-                    <span class="n">body_angular_velocity_delta</span><span class="o">=</span><span class="n">angular_plan</span><span class="p">,</span>
                 <span class="p">)</span>
             <span class="p">)</span>
+        <span class="k">if</span> <span class="n">angular_plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ops</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">IntervalTermOp</span><span class="p">(</span>
+                    <span class="n">INTERVAL_TERM_BODY_ANGULAR_VELOCITY_DELTA</span><span class="p">,</span>
+                    <span class="n">angular_plan</span><span class="p">,</span>
+                    <span class="n">body_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_body_ids</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">apply_interval_randomization</span><span class="p">(</span><span class="n">IntervalRandomizationPlan</span><span class="p">(</span><span class="n">ops</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">ops</span><span class="p">)))</span>
         <span class="k">except</span> <span class="ne">NotImplementedError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
                 <span class="s2">&quot;interval root velocity delta&quot;</span><span class="p">,</span>
@@ -4406,12 +4281,12 @@
             <span class="n">capabilities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span>
         <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">NotImplementedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span><span class="s2">&quot;interval body wrench&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">))</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">supports_interval_body_force</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">supports_interval_term</span><span class="p">(</span><span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">):</span>
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
                 <span class="s2">&quot;interval body wrench&quot;</span><span class="p">,</span>
                 <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; requested an unsupported backend capability&quot;</span><span class="p">,</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="n">torque</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">supports_interval_body_torque</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">torque</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">supports_interval_term</span><span class="p">(</span><span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">):</span>
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
                 <span class="s2">&quot;interval body wrench&quot;</span><span class="p">,</span>
                 <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; requested an unsupported backend &quot;</span>
@@ -4452,14 +4327,13 @@
             <span class="n">label</span><span class="o">=</span><span class="s2">&quot;torque&quot;</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
         <span class="p">)</span>
+        <span class="n">ops</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">force_values</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ops</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">IntervalTermOp</span><span class="p">(</span><span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span> <span class="n">force_values</span><span class="p">,</span> <span class="n">body_ids</span><span class="o">=</span><span class="n">body_ids</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">torque_values</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ops</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">IntervalTermOp</span><span class="p">(</span><span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">,</span> <span class="n">torque_values</span><span class="p">,</span> <span class="n">body_ids</span><span class="o">=</span><span class="n">body_ids</span><span class="p">))</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">apply_interval_randomization</span><span class="p">(</span>
-                <span class="n">IntervalRandomizationPlan</span><span class="p">(</span>
-                    <span class="n">body_ids</span><span class="o">=</span><span class="n">body_ids</span><span class="p">,</span>
-                    <span class="n">body_force</span><span class="o">=</span><span class="n">force_values</span><span class="p">,</span>
-                    <span class="n">body_torque</span><span class="o">=</span><span class="n">torque_values</span><span class="p">,</span>
-                <span class="p">)</span>
-            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">apply_interval_randomization</span><span class="p">(</span><span class="n">IntervalRandomizationPlan</span><span class="p">(</span><span class="n">ops</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">ops</span><span class="p">)))</span>
         <span class="k">except</span> <span class="ne">NotImplementedError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
                 <span class="s2">&quot;interval body wrench&quot;</span><span class="p">,</span>
@@ -4631,6 +4505,45 @@
             <span class="n">position</span><span class="p">,</span>
             <span class="n">velocity</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.write_joint_state_to_sim&quot;</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Entity.write_joint_state_to_sim_mask">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.Entity.html#unilab.base.entity.Entity.write_joint_state_to_sim_mask">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_joint_state_to_sim_mask</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">position</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">velocity</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">joint_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage full-width joint values for the active reset mask.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
+                <span class="s2">&quot;reset joint-state write&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;EntityScene was materialized without an env-owned reset transaction&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_joint_names</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
+                <span class="s2">&quot;reset joint-state write&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;joint_names were not declared in EntityCfg&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_physical_entity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;mask reset does not support mapped entity joint writes&quot;</span><span class="p">)</span>
+        <span class="n">local_joint_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_local_joint_ids</span><span class="p">(</span>
+            <span class="n">joint_ids</span><span class="p">,</span>
+            <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;reset joint-state write&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_reset_joint_indices</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qpos_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qvel_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">write_joint_state_mask</span><span class="p">(</span>
+            <span class="n">reset_mask</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qpos_ids</span><span class="p">[</span><span class="n">local_joint_ids</span><span class="p">],</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_reset_joint_qvel_ids</span><span class="p">[</span><span class="n">local_joint_ids</span><span class="p">],</span>
+            <span class="n">position</span><span class="p">,</span>
+            <span class="n">velocity</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.write_joint_state_to_sim_mask&quot;</span><span class="p">,</span>
         <span class="p">)</span></div>
 
 
@@ -5213,8 +5126,8 @@
 
 <div class="viewcode-block" id="EntityScene.reset_to_default">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.EntityScene.html#unilab.base.entity.EntityScene.reset_to_default">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset_to_default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage a full-scene default state in the active reset transaction.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset_to_default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage a full-scene default state in the active mask transaction.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; reset-state capability is unavailable: &quot;</span>
@@ -5225,7 +5138,7 @@
                 <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; cannot apply non-zero env_origins without &quot;</span>
                 <span class="s2">&quot;a formal backend root-state layout&quot;</span>
             <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">reset_to_default</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">reset_to_default</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="EntityScene.bind_gravity_write">

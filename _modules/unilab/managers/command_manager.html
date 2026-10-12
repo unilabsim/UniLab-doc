@@ -526,7 +526,6 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">abc</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
@@ -588,7 +587,6 @@
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">cfg</span><span class="o">.</span><span class="n">resampling_time_range</span><span class="si">}</span><span class="s2">.&quot;</span>
             <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_resampling_time_range</span> <span class="o">=</span> <span class="p">(</span><span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_check_update_command_signature</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">,</span> <span class="s2">&quot;device&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)))</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_torch_rng</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_torch_rng</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">metrics</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
@@ -604,11 +602,20 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">publish_metrics</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
-        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,)</span>
+            <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bool</span>
+            <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;CommandTerm &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; reset mask must have shape &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,)</span><span class="si">}</span><span class="s2">, bool dtype, and device </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
         <span class="n">extras</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">metrics_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">metric_values</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>
@@ -625,12 +632,15 @@
                 <span class="p">)</span>
             <span class="k">if</span> <span class="n">metric_values</span><span class="p">:</span>
                 <span class="c1"># Publish reset means and the finite diagnostic through one</span>
-                <span class="c1"># device boundary instead of synchronizing twice per metric.</span>
-                <span class="n">selected</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">value</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">metric_values</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+                <span class="c1"># fixed-width device boundary instead of materializing rows.</span>
+                <span class="n">values</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">value</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">metric_values</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+                <span class="n">selected_values</span> <span class="o">=</span> <span class="n">values</span> <span class="o">*</span> <span class="n">reset_mask</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span>
                 <span class="n">reduced</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span>
                     <span class="p">(</span>
-                        <span class="n">selected</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span>
-                        <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">selected</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
+                        <span class="n">selected_values</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">clamp_min</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span>
+                        <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">values</span><span class="p">)</span> <span class="o">|</span> <span class="o">~</span><span class="n">reset_mask</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:])</span>
+                        <span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+                        <span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
                     <span class="p">),</span>
                     <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
                 <span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
@@ -638,38 +648,36 @@
                 <span class="n">means</span> <span class="o">=</span> <span class="n">host_reduced</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
                 <span class="n">finite</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">host_reduced</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">==</span> <span class="mf">1.0</span><span class="p">)</span>
                 <span class="k">if</span> <span class="ow">not</span> <span class="n">finite</span><span class="p">:</span>
-                    <span class="k">for</span> <span class="n">metric_name</span><span class="p">,</span> <span class="n">metric_slice</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
-                        <span class="p">(</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">metric_values</span><span class="p">),</span> <span class="n">selected</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span>
-                    <span class="p">):</span>
-                        <span class="k">if</span> <span class="ow">not</span> <span class="n">_finite</span><span class="p">(</span><span class="n">metric_slice</span><span class="p">):</span>
+                    <span class="k">for</span> <span class="n">metric_name</span><span class="p">,</span> <span class="n">metric_value</span> <span class="ow">in</span> <span class="n">metric_values</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">((</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">metric_value</span><span class="p">)</span> <span class="o">|</span> <span class="o">~</span><span class="n">reset_mask</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
                             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                                 <span class="sa">f</span><span class="s2">&quot;CommandTerm &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; metric &#39;</span><span class="si">{</span><span class="n">metric_name</span><span class="si">}</span><span class="s2">&#39; contains &quot;</span>
                                 <span class="s2">&quot;NaN or Inf.&quot;</span>
                             <span class="p">)</span>
                 <span class="k">for</span> <span class="p">(</span><span class="n">metric_name</span><span class="p">,</span> <span class="n">metric_value</span><span class="p">),</span> <span class="n">mean</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">metric_values</span><span class="p">,</span> <span class="n">means</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
                     <span class="n">extras</span><span class="p">[</span><span class="n">metric_name</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">mean</span><span class="p">)</span>
-                    <span class="n">metric_value</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+                    <span class="n">metric_value</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">clear_episode_metrics</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">clear_episode_metrics</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
         <span class="n">metrics_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">metrics_started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">command_counter</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">command_counter</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">last_reset_timing_ms</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="n">resample_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_resample</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_resample</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">last_reset_timing_ms</span><span class="p">[</span><span class="s2">&quot;reset_done_command_metrics_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">metrics_ms</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">last_reset_timing_ms</span><span class="p">[</span><span class="s2">&quot;reset_done_command_resample_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">resample_started</span>
         <span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="k">return</span> <span class="n">extras</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">clear_episode_metrics</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Clear selected command metrics without a host metric reduction.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clear_episode_metrics</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Clear command metrics without a host metric reduction.&quot;&quot;&quot;</span>
         <span class="k">for</span> <span class="n">metric_value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">metric_value</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;CommandTerm metrics must be torch.Tensor carriers&quot;</span><span class="p">)</span>
-            <span class="n">metric_value</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+            <span class="n">metric_value</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dt</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dt</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Advance the command state by dt.</span>
 
 <span class="sd">        With env_ids=None (the per-step path) all envs are updated; with env_ids</span>
@@ -704,8 +712,6 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="n">dt_tensor</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">dt</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">dt_tensor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Per-environment command dt requires env_ids=None.&quot;</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">dt_tensor</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,):</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;CommandTerm &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; expected dt shape (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="si">}</span><span class="s2">,), &quot;</span>
@@ -723,29 +729,20 @@
             <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">dt_started</span>
         <span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">metrics_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_update_metrics</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_update_metrics</span><span class="p">()</span>
         <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;update_state_command_metrics_update_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">metrics_started</span>
         <span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">timer_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="n">resample_env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
-        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">dt_tensor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">time_left</span> <span class="o">-=</span> <span class="n">dt_tensor</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="k">assert</span> <span class="n">dt_scalar</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">time_left</span> <span class="o">-=</span> <span class="n">dt_scalar</span>
-            <span class="n">resample_env_ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">time_left</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">as_tuple</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">dt_tensor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">time_left</span> <span class="o">-=</span> <span class="n">dt_tensor</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="ow">not</span> <span class="n">tensor_dt</span>
             <span class="k">assert</span> <span class="n">dt_scalar</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">time_left</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">-=</span> <span class="n">dt_scalar</span>
-            <span class="n">resample_env_ids</span> <span class="o">=</span> <span class="n">env_ids</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">time_left</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">resample_env_ids</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_resample</span><span class="p">(</span><span class="n">resample_env_ids</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">time_left</span> <span class="o">-=</span> <span class="n">dt_scalar</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_resample</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">time_left</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">)</span>
         <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;update_state_command_timer_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">timer_started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">update_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_update_command</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_update_command</span><span class="p">()</span>
         <span class="c1"># The owner records detailed update-command phases in the same dict;</span>
         <span class="c1"># total update time is kept only when this base method created it.</span>
         <span class="k">if</span> <span class="s2">&quot;update_state_motion_failure_stats_ms&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">timing</span><span class="p">:</span>
@@ -781,27 +778,12 @@
                     <span class="sa">f</span><span class="s2">&quot;CommandTerm &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; metric &#39;</span><span class="si">{</span><span class="n">metric_name</span><span class="si">}</span><span class="s2">&#39; contains NaN or Inf.&quot;</span>
                 <span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_check_update_command_signature</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fail fast with a migration hint for terms with the old signature.&quot;&quot;&quot;</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">sig</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">signature</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_update_command</span><span class="p">)</span>
-        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
-            <span class="k">return</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sig</span><span class="o">.</span><span class="n">parameters</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">._update_command must accept env_ids: &quot;</span>
-                <span class="s2">&quot;_update_command(self, env_ids: torch.Tensor | None). It receives &quot;</span>
-                <span class="s2">&quot;None on the per-step update and the reset env ids on reset(); &quot;</span>
-                <span class="s2">&quot;scope per-step state advances to env_ids.&quot;</span>
-            <span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_resample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">lower</span><span class="p">,</span> <span class="n">upper</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resampling_time_range</span>
-            <span class="n">sampled</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">,</span> <span class="p">(</span><span class="n">env_ids</span><span class="o">.</span><span class="n">numel</span><span class="p">(),),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">time_left</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="n">sampled</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_resample_command</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">command_counter</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">lower</span><span class="p">,</span> <span class="n">upper</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resampling_time_range</span>
+        <span class="n">sampled</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">time_left</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">sampled</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">time_left</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_resample_command</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">command_counter</span> <span class="o">+=</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_require_torch_rng</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TorchManagerRng</span><span class="p">:</span>
         <span class="n">rng</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="o">.</span><span class="n">torch_rng</span>
@@ -810,27 +792,21 @@
         <span class="k">return</span> <span class="n">rng</span>
 
     <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_update_metrics</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update the metrics based on the current state.</span>
-
-<span class="sd">        env_ids is None on the per-step update (all envs) and the reset env ids on</span>
-<span class="sd">        the reset path. Terms may scope per-row metric work to env_ids; rows outside</span>
-<span class="sd">        env_ids are unchanged since the last per-step update and stay valid.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_update_metrics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update full-width metrics based on the current state.&quot;&quot;&quot;</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span>
 
     <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_resample_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resample the command for the specified environments.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resample_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resample the command while preserving rows outside the mask.&quot;&quot;&quot;</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span>
 
     <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_update_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_update_command</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Update the command based on the current state.</span>
 
-<span class="sd">        env_ids is None on the per-step update (all envs) and the reset env ids on reset().</span>
-<span class="sd">        Scope per-step state advances (e.g. a motion frame index) to env_ids; pure</span>
-<span class="sd">        functions of the current state may ignore it.</span>
+<span class="sd">        Advance per-step state with a fixed-shape carrier; the reset lifecycle</span>
+<span class="sd">        uses the explicit mask boundary.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span>
 
@@ -895,65 +871,42 @@
             <span class="n">terms</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">name</span><span class="p">,</span> <span class="n">command</span><span class="p">[</span><span class="n">env_idx</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()))</span>
         <span class="k">return</span> <span class="n">terms</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
-        <span class="n">extras</span><span class="p">,</span> <span class="n">_commands</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset_command_state</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">publish_metrics</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">extras</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Full-width command reset.</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset_command_state</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="o">*</span><span class="p">,</span>
-        <span class="n">publish_metrics</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-        <span class="n">validate_commands</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Reset command state once and return its public command carrier.</span>
-
-<span class="sd">        Reset owners consume this explicit boundary when they own the command</span>
-<span class="sd">        reset pass. Generic ``reset`` delegates the same term lifecycle and</span>
-<span class="sd">        validation to it, avoiding a private owner copy of timer, metric, or</span>
-<span class="sd">        finite-validation behavior.</span>
-
-<span class="sd">        Device-resident owners may set ``validate_commands=False`` only after</span>
-<span class="sd">        validating their fused carrier once at reset/commit boundaries; this</span>
-<span class="sd">        removes redundant full-command finite synchronization without weakening</span>
-<span class="sd">        the generic API default.</span>
+<span class="sd">        Every term must provide a mask-preserving owner implementation; a row</span>
+<span class="sd">        fallback would invalidate the fixed-shape contract.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">env_ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="nb">slice</span><span class="p">):</span>
-            <span class="n">env_ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)[</span><span class="n">env_ids</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_reset_mask</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
         <span class="n">extras</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="n">reset_commands</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_last_term_reset_timing_ms</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">term</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_terms</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">metrics</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">env_ids</span><span class="o">=</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">publish_metrics</span><span class="o">=</span><span class="n">publish_metrics</span><span class="p">)</span>
-            <span class="n">reset_commands</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">name</span><span class="p">,</span> <span class="n">term</span><span class="o">.</span><span class="n">command</span><span class="p">))</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_last_term_reset_timing_ms</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">last_reset_timing_ms</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">callable</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">&quot;reset&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)):</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;CommandManager term &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; does not define the &quot;</span>
+                    <span class="s2">&quot;mask-preserving reset boundary&quot;</span>
+                <span class="p">)</span>
+            <span class="n">metrics</span> <span class="o">=</span> <span class="n">term</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
             <span class="k">for</span> <span class="n">metric_name</span><span class="p">,</span> <span class="n">metric_value</span> <span class="ow">in</span> <span class="n">metrics</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                 <span class="n">extras</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;Metrics/</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">metric_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">metric_value</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">validate_commands</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">extras</span><span class="p">,</span> <span class="nb">dict</span><span class="p">(</span><span class="n">reset_commands</span><span class="p">)</span>
-        <span class="n">validation_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="n">commands</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">labels</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">command</span> <span class="ow">in</span> <span class="n">reset_commands</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_command_contract</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">command</span><span class="p">)</span>
-            <span class="n">commands</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
-            <span class="n">labels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">commands</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">commands</span><span class="p">),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-            <span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
-        <span class="p">):</span>
-            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">command</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">commands</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">command</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
-                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;CommandManager term &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; returned NaN or Inf.&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_last_term_reset_timing_ms</span><span class="p">[</span><span class="s2">&quot;reset_done_reset_validation_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">validation_started</span>
-        <span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-        <span class="k">return</span> <span class="n">extras</span><span class="p">,</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">command</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">command</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">commands</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_term_reset_timing_ms</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">term</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_terms</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_last_term_reset_timing_ms</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">term</span><span class="o">.</span><span class="n">last_reset_timing_ms</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">extras</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dt</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_reset_mask</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span>
+            <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span>
+            <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bool</span>
+            <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;CommandManager reset mask must have shape </span><span class="si">{</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,)</span><span class="si">}</span><span class="s2">, &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;bool dtype, and device </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dt</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">step_timing</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">dispatch_ms</span> <span class="o">=</span> <span class="mf">0.0</span>
         <span class="n">validation_ms</span> <span class="o">=</span> <span class="mf">0.0</span>
@@ -962,15 +915,35 @@
             <span class="k">if</span> <span class="n">term_timing</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">term_timing</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
             <span class="n">dispatch_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-            <span class="n">term</span><span class="o">.</span><span class="n">compute</span><span class="p">(</span><span class="n">dt</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">)</span>
+            <span class="n">term</span><span class="o">.</span><span class="n">compute</span><span class="p">(</span><span class="n">dt</span><span class="p">)</span>
             <span class="n">dispatch_ms</span> <span class="o">+=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">dispatch_started</span>
             <span class="n">step_timing</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">&quot;last_step_timing_ms&quot;</span><span class="p">,</span> <span class="p">{}))</span>
-            <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">validation_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_validate_command</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">term</span><span class="o">.</span><span class="n">command</span><span class="p">)</span>
-                <span class="n">validation_ms</span> <span class="o">+=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">validation_started</span>
+            <span class="n">validation_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_command</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">term</span><span class="o">.</span><span class="n">command</span><span class="p">)</span>
+            <span class="n">validation_ms</span> <span class="o">+=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">validation_started</span>
         <span class="n">step_timing</span><span class="p">[</span><span class="s2">&quot;update_state_command_term_dispatch_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dispatch_ms</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">step_timing</span><span class="p">[</span><span class="s2">&quot;update_state_command_validation_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">validation_ms</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_step_timing_ms</span> <span class="o">=</span> <span class="n">step_timing</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute_reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dt</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fixed-shape command refresh after reset.&quot;&quot;&quot;</span>
+        <span class="n">step_timing</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">term</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_terms</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">callable_mask</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">&quot;_update_command_reset&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">callable</span><span class="p">(</span><span class="n">callable_mask</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;CommandManager term &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; does not define the &quot;</span>
+                    <span class="s2">&quot;mask-preserving compute boundary&quot;</span>
+                <span class="p">)</span>
+            <span class="n">term_timing</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">&quot;last_step_timing_ms&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">term_timing</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">term_timing</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+            <span class="n">started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+            <span class="n">callable_mask</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
+            <span class="n">step_timing</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">&quot;last_step_timing_ms&quot;</span><span class="p">,</span> <span class="p">{}))</span>
+            <span class="n">step_timing</span><span class="p">[</span><span class="s2">&quot;update_state_command_term_dispatch_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">started</span>
+            <span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">last_step_timing_ms</span> <span class="o">=</span> <span class="n">step_timing</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">post_compute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -981,15 +954,24 @@
                 <span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">&quot;last_post_compute_timing_ms&quot;</span><span class="p">,</span> <span class="p">{})</span>
             <span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">post_compute_reset</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fixed-shape command post-compute after reset.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_post_compute_timing_ms</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">term</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_terms</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">callable_mask</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">&quot;post_compute_reset&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">callable</span><span class="p">(</span><span class="n">callable_mask</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;CommandManager term &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; does not define the &quot;</span>
+                    <span class="s2">&quot;mask-preserving post-compute boundary&quot;</span>
+                <span class="p">)</span>
+            <span class="n">callable_mask</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">last_post_compute_timing_ms</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
+                <span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">&quot;last_post_compute_timing_ms&quot;</span><span class="p">,</span> <span class="p">{})</span>
+            <span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">bind_read_phase</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_terms</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
             <span class="n">term</span><span class="o">.</span><span class="n">bind_read_phase</span><span class="p">()</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">uses_tensor_reset_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether every command can consume a device row selector on reset.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_terms</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span>
-            <span class="nb">bool</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">&quot;uses_tensor_reset_rows&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span> <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_terms</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
-        <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">reset_diagnostics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Collect optional term-owned reset call-graph diagnostics.&quot;&quot;&quot;</span>
@@ -1065,23 +1047,27 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_active_iterable_terms</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">float</span><span class="p">]]]:</span>
         <span class="k">return</span> <span class="p">[]</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+        <span class="k">del</span> <span class="n">reset_mask</span>
         <span class="k">return</span> <span class="p">{}</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">reset_diagnostics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
         <span class="k">return</span> <span class="p">{}</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dt</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dt</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">pass</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute_reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dt</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">del</span> <span class="n">dt</span><span class="p">,</span> <span class="n">reset_mask</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">post_compute</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">pass</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">bind_read_phase</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">post_compute_reset</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">pass</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">uses_tensor_reset_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">bind_read_phase</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">pass</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">None</span>

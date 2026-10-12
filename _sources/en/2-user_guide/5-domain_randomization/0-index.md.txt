@@ -10,7 +10,7 @@ Manager-Based event terms are the only DR declaration path:
 The Manager-Based lifecycle is:
 
 - construction path: fixed model/tool identity is attached to `SceneCfg` before backend construction
-- reset path: event terms compose writes in `ResetStateTransaction`; the transaction calls `SimBackend.set_state(..., randomization=...)` once
+- reset path: event terms compose writes in `ResetStateTransaction`; the transaction calls `SimBackend.set_state_tensor(..., randomization=...)` once
 - interval path: event terms submit backend-owned interval plans through the public contract
 
 These three paths correspond to three lifecycle classes:

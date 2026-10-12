@@ -10,12 +10,12 @@ Manager-Based event term 是 UniLab 唯一的 DR lifecycle。任务 provider 协
   forward 与 CUDA graph capture 前完成 realization。
 - **Startup：** Manager 构造完成后，backend 先 materialize，event term 再采样
   一个 full-width per-environment 表，并在 read-plan 绑定、第一次 reset 或 step
-  之前复用公开的 `SimBackend.set_state(..., randomization=...)` boundary 提交。
+  之前复用公开的 `SimBackend.set_state_tensor(..., randomization=...)` boundary 提交。
   已提交 rows 成为本地 reset baseline，因此后续 selected-row reset 会保留未写入
   的 startup 值。Startup 是显式 opt-in，用连续分布覆盖换取 steady-state reset
   路径中的 full-model derived-constant refresh。
 - **Reset：** event term 通过 Entity binding 写入 `ResetStateTransaction`；
-  transaction 只调用一次 `SimBackend.set_state(..., randomization=...)`。
+  transaction 只调用一次 `SimBackend.set_state_tensor(..., randomization=...)`。
 - **Interval：** event term 通过公开 `SimBackend` contract 使用 backend-owned
   interval plan。
 
