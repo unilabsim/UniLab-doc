@@ -2033,18 +2033,15 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_manual_reset_pending</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
 
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_scoped_state_reads</span><span class="p">():</span>
-            <span class="n">read_plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_tensor_read_plan</span>
-            <span class="k">if</span> <span class="n">read_plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">read_plan</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">command_manager</span><span class="o">.</span><span class="n">compute_reset</span><span class="p">(</span><span class="n">dt</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">reset_mask</span><span class="o">=</span><span class="n">reset_mask</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">command_manager</span><span class="o">.</span><span class="n">post_compute_reset</span><span class="p">()</span>
-            <span class="n">reset_timing</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">command_manager</span><span class="p">,</span> <span class="s2">&quot;last_post_compute_timing_ms&quot;</span><span class="p">,</span> <span class="p">{}))</span>
-            <span class="k">if</span> <span class="n">reset_owner</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">reset_owner</span><span class="o">.</span><span class="n">cfg</span><span class="o">.</span><span class="n">owns_observation_reset</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">observation_manager</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
-            <span class="n">manager_obs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observation_manager</span><span class="o">.</span><span class="n">compute</span><span class="p">(</span><span class="n">update_history</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
+        <span class="c1"># Post-reset observations must see cleared Manager-owned state. In</span>
+        <span class="c1"># particular, ``last_action`` and stateful observation terms must not</span>
+        <span class="c1"># publish the terminated episode&#39;s action or phase at the new boundary.</span>
         <span class="n">reset_managers</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="o">*</span><span class="p">(</span>
+                <span class="p">()</span>
+                <span class="k">if</span> <span class="n">reset_owner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">reset_owner</span><span class="o">.</span><span class="n">cfg</span><span class="o">.</span><span class="n">owns_observation_reset</span>
+                <span class="k">else</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">observation_manager</span><span class="p">,)</span>
+            <span class="p">),</span>
             <span class="o">*</span><span class="p">(</span>
                 <span class="p">()</span>
                 <span class="k">if</span> <span class="n">reset_owner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">reset_owner</span><span class="o">.</span><span class="n">cfg</span><span class="o">.</span><span class="n">owns_action_reset</span>
@@ -2073,14 +2070,7 @@
                     <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">event_manager</span><span class="o">.</span><span class="n">active_terms</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;reset&quot;</span><span class="p">,</span> <span class="p">()))</span>
                 <span class="p">),</span>
                 <span class="s2">&quot;reset_done_command_term_count&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">command_manager</span><span class="o">.</span><span class="n">active_terms</span><span class="p">)),</span>
-                <span class="s2">&quot;reset_done_manager_reset_count&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span>
-                    <span class="nb">len</span><span class="p">(</span><span class="n">reset_managers</span><span class="p">)</span>
-                    <span class="o">+</span> <span class="p">(</span>
-                        <span class="mi">0</span>
-                        <span class="k">if</span> <span class="n">reset_owner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">reset_owner</span><span class="o">.</span><span class="n">cfg</span><span class="o">.</span><span class="n">owns_observation_reset</span>
-                        <span class="k">else</span> <span class="mi">1</span>
-                    <span class="p">)</span>
-                <span class="p">),</span>
+                <span class="s2">&quot;reset_done_manager_reset_count&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">reset_managers</span><span class="p">)),</span>
                 <span class="s2">&quot;reset_done_observation_term_count&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span>
                     <span class="nb">sum</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">terms</span><span class="p">)</span> <span class="k">for</span> <span class="n">terms</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">observation_manager</span><span class="o">.</span><span class="n">active_terms</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
                 <span class="p">),</span>
@@ -2088,6 +2078,15 @@
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">reset_owner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">log</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">reset_owner</span><span class="o">.</span><span class="n">reset_committed</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">))</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_scoped_state_reads</span><span class="p">():</span>
+            <span class="n">read_plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_tensor_read_plan</span>
+            <span class="k">if</span> <span class="n">read_plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">read_plan</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">command_manager</span><span class="o">.</span><span class="n">compute_reset</span><span class="p">(</span><span class="n">dt</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">reset_mask</span><span class="o">=</span><span class="n">reset_mask</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">command_manager</span><span class="o">.</span><span class="n">post_compute_reset</span><span class="p">()</span>
+            <span class="n">reset_timing</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">command_manager</span><span class="p">,</span> <span class="s2">&quot;last_post_compute_timing_ms&quot;</span><span class="p">,</span> <span class="p">{}))</span>
+            <span class="n">manager_obs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observation_manager</span><span class="o">.</span><span class="n">compute</span><span class="p">(</span><span class="n">update_history</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
         <span class="n">mapped_obs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_map_observations</span><span class="p">(</span><span class="n">manager_obs</span><span class="p">)</span>
         <span class="n">reset_obs</span> <span class="o">=</span> <span class="p">{</span>
