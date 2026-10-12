@@ -13,25 +13,149 @@ UniLab 遵循[语义化版本](https://semver.org/)。本共享页面以中英�
 PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完整提交历史请参阅
 [UniLab 仓库](https://github.com/unilabsim/UniLab)。
 
-## Unreleased / 未发布
-
-### Manager reset ownership / Manager reset 所有权
-
-- `ResetStateTransaction` composes every reset-mode state, model-field, and mocap write inside UniSim's public packed transaction (`SimBackend.begin_packed_reset()` → `unisim.backend.packed_reset.TorchPackedResetComposer`) and commits through that composer exactly once per lifecycle. UniSim owns selected-row device qpos/qvel staging, selected-column merges, committed model-field baselines, startup baseline promotion, selected mocap staging when `packed_reset_mocap` is declared, and the single public reset boundary. The UniLab-side NumPy-authoritative reset composer and the non-packed fallback were removed: `ManagerBasedRlEnv` requires the `packed_reset` capability (replacing the former `mask_selected_reset` gate), `declare_packed_reset_device` fails closed with `NotImplementedError` when a backend does not declare `packed_reset` or lacks `begin_packed_reset`, and UniLab no longer calls `SimBackend.set_state_tensor_mask()`. The composer is cached per declared device and its baseline persists across resets; startup model-field DR commits through the same packed transaction, whose composer promotes the staged fields of committed rows into the reset baseline. Mapped-entity tensor commits (`EntityStatePatch`/`SceneResetRequest`/`reset_entities`) remain an explicit migration boundary, and all dependency profiles require `unisim-core>=1.7.17` (#2275, #2280, #2289).
-  `ResetStateTransaction` 将全部 reset-mode 状态、模型字段与 mocap 写入组合进 UniSim 公共 packed 事务（`SimBackend.begin_packed_reset()` → `unisim.backend.packed_reset.TorchPackedResetComposer`），并在每个生命周期内恰好提交一次。UniSim 拥有 selected-row device qpos/qvel staging、选中列合并、已提交模型字段 baseline、startup baseline 提升、声明 `packed_reset_mocap` 时的 selected mocap staging，以及唯一公共 reset 边界。UniLab 侧的 NumPy-authoritative reset composer 与 non-packed fallback 已删除：`ManagerBasedRlEnv` 改为要求 `packed_reset` capability（取代原先的 `mask_selected_reset` 门禁），backend 未声明 `packed_reset` 或缺少 `begin_packed_reset` 时 `declare_packed_reset_device` 以 `NotImplementedError` fail closed，UniLab 不再调用 `SimBackend.set_state_tensor_mask()`。composer 按声明 device 缓存复用，其 baseline 跨 reset 持久；startup 模型字段 DR 同样经该 packed 事务提交，由 composer 将已提交行的 staged 字段提升为 reset baseline。mapped-entity tensor 提交（`EntityStatePatch`/`SceneResetRequest`/`reset_entities`）仍是显式迁移边界，所有依赖 profile 均要求 `unisim-core>=1.7.17`（#2275、#2280、#2289）。
-- Fixed the canonical off-policy reset paths for the follow-on UniSim mask-reset release (#2296). Root and motion packed-reset column payloads are normalized to contiguous float32 tensors at UniLab's owner boundary; owner-subset commands track their actual fixed-width write mask and commit only touched rows through the same packed boundary, preserving unwritten active rows; SAC MuJoCo PD gains compose as final kp/kd model fields through the public packed transaction instead of silently skipping randomization.
-  随后续 UniSim mask-reset 发布，典型 off-policy reset 路径已修复（#2296）。Root 与 motion packed-reset 的列 payload 会在 UniLab owner boundary 归一化为 contiguous float32 tensor；owner-subset command 会记录实际写入的 fixed-width mask，并仅通过同一 packed 边界提交被写入的行，从而保留未写入的 active rows；SAC MuJoCo 的 PD gain 现在通过公共 packed transaction 以最终 kp/kd model field 组合，而不是静默跳过随机化。
+## 1.3.5 (2026-10-13)
 
 ### Breaking changes / 破坏性变更
 
-- Moved the training seed contract from the `unilab.utils.seed` transition
-  shim to its training owner at `unilab.training.seed`. The shim was removed
-  without a compatibility alias, while `unilab.training` continues to re-export
-  the seed helpers for owner-facing imports (#2283).
-  训练 seed 契约已从 `unilab.utils.seed` 过渡 shim 迁移到 training owner
-  `unilab.training.seed`。该 shim 已移除且不保留兼容 alias；
-  `unilab.training` 会继续 re-export seed helper 以保持 owner-facing import
-  清晰（#2283）。
+- Completed the production Torch-runtime closeout: UniLab no longer imports,
+  compiles, tunes, or requires Numba. The CPU motion command and kernels were
+  removed, `cpu_ids` owns only Linux process affinity, and every G1 motion
+  owner uses the device-resident `MotionCommandCfg`. Manager, env, and task
+  runtime code uses Torch-authoritative carriers and rejects hidden
+  Torch↔NumPy conversions; the cold NPZ `MotionLoader` is the only task-runtime
+  NumPy leaf, while base owners confine legacy NumPy exchange to explicit
+  adapter/reset-host boundaries
+  ([#2124](https://github.com/Motphys/UniLab/issues/2124),
+  [ADR-0015](https://github.com/Motphys/UniLab/blob/main/docs/sphinx/source/adr/ADR-0015-no-numba-and-explicit-numpy-leaf-boundaries.md)).
+  Production Numba 实现与依赖已完整移除：UniLab 不再 import、编译、调优或
+  依赖 Numba。CPU motion command 与 kernels 已删除，`cpu_ids` 仅保留 Linux
+  process affinity 语义，所有 G1 motion owner 均使用 device-resident
+  `MotionCommandCfg`。Manager、env 与 task runtime 使用 Torch-authoritative
+  carrier，并拒绝隐藏的 Torch↔NumPy 转换；cold NPZ `MotionLoader` 是
+  task runtime 唯一 NumPy leaf，base owner 只在显式 adapter/reset-host
+  boundary 内消化 legacy NumPy 交换（#2124、ADR-0015）。
+
+- The Manager-Based reset lifecycle now fails closed unless the backend declares
+  `packed_reset`. UniLab's NumPy-authoritative reset composer and non-packed
+  fallback were removed: reset-mode state, model-field, and mocap writes are
+  composed through UniSim's public packed transaction and committed once per
+  lifecycle. UniLab no longer calls `SimBackend.set_state_tensor_mask()`;
+  mapped-entity tensor commits remain an explicit migration boundary
+  ([#2275](https://github.com/Motphys/UniLab/issues/2275),
+  [#2280](https://github.com/Motphys/UniLab/issues/2280),
+  [#2289](https://github.com/Motphys/UniLab/pull/2289)).
+  Manager-Based reset lifecycle 现在要求 backend 声明 `packed_reset`，否则
+  fail closed。UniLab 侧 NumPy-authoritative reset composer 与 non-packed
+  fallback 已删除：reset-mode 状态、模型字段与 mocap 写入通过 UniSim 公共
+  packed transaction 组合，并在每个生命周期恰好提交一次。UniLab 不再调用
+  `SimBackend.set_state_tensor_mask()`；mapped-entity tensor 提交仍是显式
+  迁移边界（#2275、#2280、#2289）。
+
+- The training seed contract moved from the `unilab.utils.seed` transition shim
+  to its owner at `unilab.training.seed`, without a compatibility alias.
+  `unilab.training` continues to re-export the owner-facing helpers.
+  `algo.seed` now seeds only global Python and Torch RNGs, and random
+  interactive playback samples actions with Torch
+  ([#2124](https://github.com/Motphys/UniLab/issues/2124),
+  [#2283](https://github.com/Motphys/UniLab/issues/2283)).
+  训练 seed 契约已从 `unilab.utils.seed` 过渡 shim 迁移到 owner
+  `unilab.training.seed`，且不保留兼容 alias。`unilab.training` 继续导出
+  owner-facing helper。`algo.seed` 现在只 seed 全局 Python 与 Torch RNG，
+  随机 interactive playback 改用 Torch 采样 action（#2124、#2283）。
+
+- Removed the `unilab.utils.rotation` transition shim without a compatibility
+  alias. Base-owner host math moved to `unilab.base.rotation`, while motion NPZ
+  continuity and angular-velocity conversion now live inside the cold
+  `MotionLoader` owner.
+  过渡 shim `unilab.utils.rotation` 已移除且不保留兼容 alias。base-owner
+  host 数学迁移到 `unilab.base.rotation`；motion NPZ 连续性与角速度转换则
+  收进 cold `MotionLoader` owner 内部。
+
+### Added / 新增
+
+- Added backend tensor-runtime diagnostics. `TorchEnv` serializes the
+  public backend diagnostics, training records them in
+  `runtime_manifest.backend_diagnostics`, and direct PPO runs publish the same
+  payload as top-level `backend_diagnostics` in `run_summary.json`; unavailable
+  backends and probe failures are recorded explicitly
+  ([#2278](https://github.com/Motphys/UniLab/issues/2278),
+  [#2298](https://github.com/Motphys/UniLab/pull/2298)).
+  新增 backend tensor-runtime diagnostics。`TorchEnv` 会序列化公共
+  backend diagnostics，训练将其记录到
+  `runtime_manifest.backend_diagnostics`，direct PPO run 会在
+  `run_summary.json` 顶层发布同一 payload；backend 不支持或探测失败都会显式
+  记录（#2278、#2298）。
+
+### Changed / 变更
+
+- Manager terms and tasks consume semantic, packed tensor state views for
+  joint, body, root, contact, height, and sensor data. Legacy NumPy backend
+  methods are no longer UniLab runtime APIs, and Entity host exchange is
+  confined to the backend adapter boundary
+  ([#2276](https://github.com/Motphys/UniLab/issues/2276),
+  [#2277](https://github.com/Motphys/UniLab/issues/2277)).
+  Manager term 与 task 改为消费 joint、body、root、contact、height 与
+  sensor 数据的 semantic packed tensor view。legacy NumPy backend 方法不再是
+  UniLab runtime API，Entity host 交换收进 backend adapter 边界
+  （#2276、#2277）。
+
+- Selected reset execution replaced dynamically materialized row carriers with
+  fixed-width packed masks. Commands, events, metrics, observations,
+  terminations, curricula, and task state implement explicit mask-reset
+  boundaries, commit only touched rows, and preserve active state elsewhere
+  ([#2285](https://github.com/Motphys/UniLab/issues/2285),
+  [#2288](https://github.com/Motphys/UniLab/issues/2288)).
+  selected reset 执行以 fixed-width packed mask 取代动态物化 row carrier。
+  command、event、metric、observation、termination、curriculum 与 task state
+  均实现显式 mask-reset 边界，只提交被写入的行，并保留其他行的 active 状态
+  （#2285、#2288）。
+
+- UniSim now owns packed reset composition: selected-row device qpos/qvel
+  staging, selected-column merges, committed model-field baselines, startup
+  baseline promotion, selected mocap staging, and the single public commit
+  boundary. The composer is cached per declared device and its baseline
+  persists across resets ([#2275](https://github.com/Motphys/UniLab/issues/2275)).
+  UniSim 现在拥有 packed reset composition：selected-row device qpos/qvel
+  staging、选中列合并、已提交模型字段 baseline、startup baseline 提升、
+  selected mocap staging，以及唯一公共提交边界。composer 按声明 device
+  缓存，baseline 跨 reset 持久（#2275）。
+
+- Required runtime dependencies moved to `unisim-core>=1.7.17` and
+  `unilab-rl==1.4.12`; the default and ROCm dependency profiles are aligned
+  ([#2281](https://github.com/Motphys/UniLab/issues/2281),
+  [#2299](https://github.com/Motphys/UniLab/pull/2299),
+  [#2301](https://github.com/Motphys/UniLab/pull/2301)).
+  必需运行时依赖升级为 `unisim-core>=1.7.17` 与 `unilab-rl==1.4.12`；
+  default 与 ROCm dependency profile 已对齐（#2281、#2299、#2301）。
+
+### Fixed / 修复
+
+- Fixed MuJoCo reset model-field DR commits through the host bridge, including
+  startup randomization baselines
+  ([#2122](https://github.com/Motphys/UniLab/issues/2122),
+  [#2123](https://github.com/Motphys/UniLab/pull/2123)).
+  修复 MuJoCo reset 模型字段 DR 经 host bridge 的提交，包括 startup
+  randomization baseline（#2122、#2123）。
+
+- Fixed canonical off-policy packed-reset paths: root and motion payloads are
+  normalized to contiguous float32 tensors, owner-subset commands track their
+  actual fixed-width write mask while preserving unwritten active rows, and SAC
+  MuJoCo PD gains compose as final kp/kd model fields instead of silently
+  skipping randomization
+  ([#2296](https://github.com/Motphys/UniLab/issues/2296),
+  [#2300](https://github.com/Motphys/UniLab/pull/2300)).
+  修复典型 off-policy packed-reset 路径：root 与 motion payload 归一化为
+  contiguous float32 tensor，owner-subset command 记录实际 fixed-width 写入
+  mask 并保留未写入的 active rows，SAC MuJoCo PD gain 以最终 kp/kd 模型字段
+  组合，而不是静默跳过随机化（#2296、#2300）。
+
+- Fixed motion NPZ body-column selection by local IDs, CUDA Manager carrier
+  placement, and G1 reset-row observation boundaries
+  ([#2124](https://github.com/Motphys/UniLab/issues/2124),
+  [#2279](https://github.com/Motphys/UniLab/issues/2279),
+  [#2303](https://github.com/Motphys/UniLab/issues/2303)).
+  修复按 local ID 选择 motion NPZ body column、CUDA Manager carrier placement，
+  以及 G1 reset-row observation 边界（#2124、#2279、#2303）。
 
 ## 1.3.4 (2026-10-10)
 
