@@ -532,6 +532,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">types</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimpleNamespace</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">cast</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">gymnasium</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">gym</span>
@@ -539,6 +540,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">DebugOverlayGetter</span><span class="p">,</span>
     <span class="n">DebugPrimitive</span><span class="p">,</span>
+    <span class="n">GraphCandidatePreflight</span><span class="p">,</span>
     <span class="n">SimBackend</span><span class="p">,</span>
     <span class="n">TensorDataPlane</span><span class="p">,</span>
     <span class="n">TensorExecution</span><span class="p">,</span>
@@ -908,7 +910,11 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">reset_buf</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">reset_terminated</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_buf</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">reset_time_outs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_buf</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_public_terminated</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_buf</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_public_truncated</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_buf</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">reward_buf</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_public_reward</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reward_buf</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_public_obs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">obs_buf</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">extras</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;log&quot;</span><span class="p">:</span> <span class="p">{}}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_command_dt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">(</span>
@@ -916,6 +922,7 @@
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_manual_reset_pending</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_buf</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_all_env_rows</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_all_env_reset_mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_buf</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_has_transition</span> <span class="o">=</span> <span class="kc">False</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_load_managers</span><span class="p">()</span>
@@ -1729,7 +1736,10 @@
                 <span class="s2">&quot;when auto_reset=False&quot;</span>
             <span class="p">)</span>
         <span class="n">state</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
-        <span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;log&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">publish_reward_log</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_publish_reward_components</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+        <span class="n">reset_completion</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">last_reset_completion</span>
+        <span class="k">if</span> <span class="n">reset_completion</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;graph_reset_completion&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">reset_completion</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_manual_reset_pending</span><span class="o">.</span><span class="n">logical_or_</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">terminated</span> <span class="o">|</span> <span class="n">state</span><span class="o">.</span><span class="n">truncated</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">recorder_manager</span><span class="o">.</span><span class="n">record_post_step</span><span class="p">()</span>
@@ -1747,7 +1757,7 @@
             <span class="c1"># process control from the previous state boundary, then refresh</span>
             <span class="c1"># state once after physics.</span>
             <span class="n">read_plan</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">process_action</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">process_public_action</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_sim_step_counter</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">sim_substeps</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">apply_action</span><span class="p">()</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_control_to_backend_boundary</span><span class="p">()</span></div>
@@ -1849,9 +1859,7 @@
         <span class="n">step_read_plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_tensor_read_plan</span>
         <span class="k">del</span> <span class="n">step_read_plan</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">declare_packed_reset_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">step_reset_context</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">scoped_device_owner_tensor</span><span class="p">(</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-        <span class="p">)</span>
+        <span class="n">step_reset_context</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">scoped_device_owner_tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_all_env_reset_mask</span><span class="p">)</span>
         <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;update_state_command_preflight_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">command_preflight_started</span>
         <span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
@@ -1892,13 +1900,35 @@
         <span class="n">phase_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
 
         <span class="n">publish_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="n">public_obs</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="n">name</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_manager_tensor</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_dtype</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">mapped_obs</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-        <span class="p">}</span>
+        <span class="k">if</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_public_obs</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">set</span><span class="p">(</span><span class="n">mapped_obs</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_public_obs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span>
+            <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_public_obs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dtype</span>
+            <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_public_obs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">mapped_obs</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_public_obs</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">name</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
+                    <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">obs_groups_spec</span><span class="p">[</span><span class="n">name</span><span class="p">]),</span>
+                    <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_dtype</span><span class="p">,</span>
+                    <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">mapped_obs</span>
+            <span class="p">}</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">mapped_obs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_public_obs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_manager_tensor</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_dtype</span><span class="p">))</span>
+        <span class="n">public_obs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_public_obs</span>
         <span class="n">public_reward</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_manager_tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reward_buf</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_dtype</span><span class="p">)</span>
-        <span class="n">public_terminated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_manager_tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_terminated</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
-        <span class="n">public_truncated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_manager_tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_time_outs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">public_reward</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">reward_buf</span><span class="p">:</span>
+            <span class="n">public_reward</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_public_reward</span>
+            <span class="n">public_reward</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reward_buf</span><span class="p">)</span>
+        <span class="n">public_terminated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_manager_tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_terminated</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+        <span class="n">public_truncated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_manager_tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_time_outs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">public_terminated</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset_terminated</span><span class="p">:</span>
+            <span class="n">public_terminated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_public_terminated</span>
+            <span class="n">public_terminated</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_terminated</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">public_truncated</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset_time_outs</span><span class="p">:</span>
+            <span class="n">public_truncated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_public_truncated</span>
+            <span class="n">public_truncated</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_time_outs</span><span class="p">)</span>
         <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;update_state_publication_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">publish_started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
 
         <span class="n">replace_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
@@ -1947,6 +1977,235 @@
         <span class="p">}</span></div>
 
 
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">algo_capabilities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Expose cold-path reward component metadata to algorithm owners.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">SimpleNamespace</span><span class="p">(</span><span class="n">reward_component_names</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reward_manager</span><span class="o">.</span><span class="n">step_reward_names</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">graph_rng_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the versioned graph-candidate RNG state snapshot.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;device&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">device</span><span class="p">),</span>
+            <span class="s2">&quot;state_version&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">state_version</span><span class="p">,</span>
+            <span class="s2">&quot;draw_version&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">draw_version</span><span class="p">,</span>
+            <span class="s2">&quot;state&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">get_state</span><span class="p">(),</span>
+        <span class="p">}</span>
+
+<div class="viewcode-block" id="ManagerBasedRlEnv.snapshot_graph_rng_state">
+<a class="viewcode-back" href="../../../api_reference/envs/_autosummary/unilab.envs.manager_based_rl_env.ManagerBasedRlEnv.html#unilab.tasks.locomotion.g1.manager_terms.ManagerBasedRlEnv.snapshot_graph_rng_state">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">snapshot_graph_rng_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Capture the deterministic RNG state and versions for graph replay.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">get_state</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">(),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">state_version</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">draw_version</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ManagerBasedRlEnv.rollback_graph_rng_state">
+<a class="viewcode-back" href="../../../api_reference/envs/_autosummary/unilab.envs.manager_based_rl_env.ManagerBasedRlEnv.html#unilab.tasks.locomotion.g1.manager_terms.ManagerBasedRlEnv.rollback_graph_rng_state">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rollback_graph_rng_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">snapshot</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Restore a failed graph boundary without silently advancing draws.&quot;&quot;&quot;</span>
+        <span class="n">state</span><span class="p">,</span> <span class="n">state_version</span><span class="p">,</span> <span class="n">draw_version</span> <span class="o">=</span> <span class="n">snapshot</span>
+        <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">&quot;cpu&quot;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;graph RNG rollback state must be a CPU Torch tensor&quot;</span><span class="p">)</span>
+        <span class="n">restored</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph_rng_state</span>
+        <span class="k">if</span> <span class="n">restored</span><span class="p">[</span><span class="s2">&quot;state_version&quot;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">state_version</span> <span class="ow">or</span> <span class="n">restored</span><span class="p">[</span><span class="s2">&quot;draw_version&quot;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">draw_version</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;cannot roll graph RNG state backward&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">set_state</span><span class="p">(</span><span class="n">state</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ManagerBasedRlEnv.preflight_graph_candidate">
+<a class="viewcode-back" href="../../../api_reference/envs/_autosummary/unilab.envs.manager_based_rl_env.ManagerBasedRlEnv.html#unilab.tasks.locomotion.g1.manager_terms.ManagerBasedRlEnv.preflight_graph_candidate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">preflight_graph_candidate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">requested</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run the public backend preflight without mutating graph state.&quot;&quot;&quot;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">GraphCandidatePreflight</span><span class="p">(</span><span class="n">requested</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">requested</span>
+            <span class="k">else</span> <span class="n">GraphCandidatePreflight</span><span class="p">(</span>
+                <span class="n">requested</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">supported</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">disable_reason</span><span class="o">=</span><span class="s2">&quot;graph candidate was not requested&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">verdict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">preflight_graph_candidate</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">requested</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="s2">&quot;requested&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                <span class="s2">&quot;supported&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                <span class="s2">&quot;disable_reason&quot;</span><span class="p">:</span> <span class="n">verdict</span><span class="o">.</span><span class="n">disable_reason</span><span class="p">,</span>
+                <span class="s2">&quot;backend_stream_contract&quot;</span><span class="p">:</span> <span class="n">verdict</span><span class="o">.</span><span class="n">backend_stream_contract</span><span class="p">,</span>
+                <span class="s2">&quot;torch_stream_id&quot;</span><span class="p">:</span> <span class="n">verdict</span><span class="o">.</span><span class="n">torch_stream_id</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="k">if</span> <span class="n">verdict</span><span class="o">.</span><span class="n">supported</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="s2">&quot;requested&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                <span class="s2">&quot;supported&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                <span class="s2">&quot;disable_reason&quot;</span><span class="p">:</span> <span class="n">verdict</span><span class="o">.</span><span class="n">disable_reason</span><span class="p">,</span>
+                <span class="s2">&quot;backend_stream_contract&quot;</span><span class="p">:</span> <span class="n">verdict</span><span class="o">.</span><span class="n">backend_stream_contract</span><span class="p">,</span>
+                <span class="s2">&quot;torch_stream_id&quot;</span><span class="p">:</span> <span class="n">verdict</span><span class="o">.</span><span class="n">torch_stream_id</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="n">action_shape</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">action_space</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">owner_failures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">action_shape</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;action dimension is not fixed&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;environment output carrier is not CUDA-resident&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">scene_layout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;mapped entity reset layout has no K=1 graph carrier&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">reward_manager</span><span class="o">.</span><span class="n">step_reward_names</span><span class="p">:</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;reward component layout is empty&quot;</span><span class="p">)</span>
+        <span class="n">final_observation_carrier</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_final_observation_scratch</span>
+        <span class="k">if</span> <span class="n">final_observation_carrier</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;terminal observation carrier is not materialized&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">expected_groups</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">obs_groups_spec</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">set</span><span class="p">(</span><span class="n">final_observation_carrier</span><span class="p">)</span> <span class="o">!=</span> <span class="n">expected_groups</span><span class="p">:</span>
+                <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;terminal observation carrier groups do not match outputs&quot;</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">any</span><span class="p">(</span>
+                <span class="n">value</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span>
+                <span class="ow">or</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">obs_groups_spec</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
+                <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">final_observation_carrier</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="p">):</span>
+                <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;terminal observation carrier layout does not match outputs&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_public_obs</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">obs_groups_spec</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="n">value</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span>
+            <span class="ow">or</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">obs_groups_spec</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
+            <span class="ow">or</span> <span class="n">value</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dtype</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_public_obs</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;persistent observation output carrier is not graph-ready&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_public_reward</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,)</span>
+            <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_public_reward</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dtype</span>
+            <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_public_reward</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span>
+        <span class="p">):</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;persistent reward output carrier is not graph-ready&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="n">value</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,)</span>
+            <span class="ow">or</span> <span class="n">value</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bool</span>
+            <span class="ow">or</span> <span class="n">value</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span>
+            <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_public_terminated</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_public_truncated</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;persistent done output carriers are not graph-ready&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;Torch RNG device does not match the graph carrier&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;interval&quot;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_manager</span><span class="o">.</span><span class="n">available_modes</span><span class="p">:</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;interval events have no fixed-width graph boundary&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">metrics_manager</span><span class="o">.</span><span class="n">active_terms</span><span class="p">:</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;metrics reset publication has no graph boundary&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">curriculum_manager</span><span class="o">.</span><span class="n">active_terms</span><span class="p">:</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;curriculum reset publication has no graph boundary&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">recorder_manager</span><span class="o">.</span><span class="n">active_terms</span><span class="p">:</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;recorder lifecycle publication has no graph boundary&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset</span><span class="p">:</span>
+            <span class="n">owner_failures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;manual reset guard has no graph boundary&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">owner_failures</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="s2">&quot;requested&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                <span class="s2">&quot;supported&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                <span class="s2">&quot;disable_reason&quot;</span><span class="p">:</span> <span class="s2">&quot;; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">owner_failures</span><span class="p">),</span>
+                <span class="s2">&quot;backend_stream_contract&quot;</span><span class="p">:</span> <span class="n">verdict</span><span class="o">.</span><span class="n">backend_stream_contract</span><span class="p">,</span>
+                <span class="s2">&quot;torch_stream_id&quot;</span><span class="p">:</span> <span class="n">verdict</span><span class="o">.</span><span class="n">torch_stream_id</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;requested&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">&quot;supported&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">&quot;disable_reason&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">&quot;backend_stream_contract&quot;</span><span class="p">:</span> <span class="n">verdict</span><span class="o">.</span><span class="n">backend_stream_contract</span><span class="p">,</span>
+            <span class="s2">&quot;torch_stream_id&quot;</span><span class="p">:</span> <span class="n">verdict</span><span class="o">.</span><span class="n">torch_stream_id</span><span class="p">,</span>
+            <span class="s2">&quot;carrier_layout&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;num_envs&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span>
+                <span class="s2">&quot;device&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">),</span>
+                <span class="s2">&quot;action_dim&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">action_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="k">if</span> <span class="n">action_shape</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">&quot;observation_groups&quot;</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="n">name</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">dim</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">obs_groups_spec</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                <span class="p">},</span>
+                <span class="s2">&quot;reward_components&quot;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reward_manager</span><span class="o">.</span><span class="n">step_reward_names</span><span class="p">),</span>
+                <span class="s2">&quot;terminal_observation_groups&quot;</span><span class="p">:</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">obs_groups_spec</span><span class="p">),</span>
+                <span class="s2">&quot;persistent_output_carriers&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="s2">&quot;rng_state&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;device&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">device</span><span class="p">),</span>
+                <span class="s2">&quot;state_version&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">state_version</span><span class="p">,</span>
+                <span class="s2">&quot;draw_version&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">draw_version</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="s2">&quot;graph_lifecycle&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_graph_lifecycle</span><span class="p">()</span><span class="o">.</span><span class="n">value</span><span class="p">),</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="ManagerBasedRlEnv.get_graph_lifecycle_manifest">
+<a class="viewcode-back" href="../../../api_reference/envs/_autosummary/unilab.envs.manager_based_rl_env.ManagerBasedRlEnv.html#unilab.tasks.locomotion.g1.manager_terms.ManagerBasedRlEnv.get_graph_lifecycle_manifest">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_graph_lifecycle_manifest</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Serialize public backend graph lifecycle evidence on a cold path.&quot;&quot;&quot;</span>
+        <span class="n">snapshot</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_graph_lifecycle_snapshot</span><span class="p">()</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;contract_version&quot;</span><span class="p">:</span> <span class="n">snapshot</span><span class="o">.</span><span class="n">contract_version</span><span class="p">,</span>
+            <span class="s2">&quot;state&quot;</span><span class="p">:</span> <span class="n">snapshot</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+            <span class="s2">&quot;capture_id&quot;</span><span class="p">:</span> <span class="n">snapshot</span><span class="o">.</span><span class="n">capture_id</span><span class="p">,</span>
+            <span class="s2">&quot;replay_count&quot;</span><span class="p">:</span> <span class="n">snapshot</span><span class="o">.</span><span class="n">replay_count</span><span class="p">,</span>
+            <span class="s2">&quot;fallback_count&quot;</span><span class="p">:</span> <span class="n">snapshot</span><span class="o">.</span><span class="n">fallback_count</span><span class="p">,</span>
+            <span class="s2">&quot;disable_reason&quot;</span><span class="p">:</span> <span class="n">snapshot</span><span class="o">.</span><span class="n">disable_reason</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="ManagerBasedRlEnv.set_deferred_validation_boundaries">
+<a class="viewcode-back" href="../../../api_reference/envs/_autosummary/unilab.envs.manager_based_rl_env.ManagerBasedRlEnv.html#unilab.tasks.locomotion.g1.manager_terms.ManagerBasedRlEnv.set_deferred_validation_boundaries">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_deferred_validation_boundaries</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Propagate graph-candidate deferred validation to all owners.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">enabled</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;deferred validation boundaries must be bool, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">set_deferred_validation_boundaries</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">set_deferred_validation_boundaries</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reward_manager</span><span class="o">.</span><span class="n">set_deferred_validation_boundaries</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">set_deferred_payload_validation</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">set_deferred_mask_validation</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span>
+        <span class="n">capabilities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_tensor_capabilities</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">deferred_fused_validation</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;deferred validation boundaries require the backend &quot;</span>
+                <span class="s2">&quot;deferred_fused_validation tensor capability&quot;</span>
+            <span class="p">)</span>
+        <span class="n">setter</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="p">,</span> <span class="s2">&quot;set_defer_torch_fused_validation&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">setter</span><span class="p">):</span>
+            <span class="n">setter</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span>
+        <span class="n">diagnostics</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_tensor_runtime_diagnostics</span><span class="p">()</span>
+        <span class="n">diagnostic</span> <span class="o">=</span> <span class="n">diagnostics</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;deferred_fused_validation&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">diagnostic</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">diagnostic</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;deferred validation boundaries require a backend declaring the &quot;</span>
+                <span class="s2">&quot;deferred_fused_validation runtime optimization&quot;</span>
+            <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ManagerBasedRlEnv.publish_validation_verdicts">
+<a class="viewcode-back" href="../../../api_reference/envs/_autosummary/unilab.envs.manager_based_rl_env.ManagerBasedRlEnv.html#unilab.tasks.locomotion.g1.manager_terms.ManagerBasedRlEnv.publish_validation_verdicts">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">publish_validation_verdicts</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish env, reward, and fused reset verdicts at one boundary.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">publish_validation_verdict</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reward_manager</span><span class="o">.</span><span class="n">publish_validation_verdict</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">publish_payload_validation_verdicts</span><span class="p">(</span><span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;reset_state&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">publish_mask_validation_verdicts</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">publish_torch_fused_validation</span><span class="p">()</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">publish_validation_verdicts</span><span class="p">()</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_publish_reward_components</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="n">TorchEnvState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish fixed-width reward components for tensor-native consumers.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">reward_manager</span><span class="o">.</span><span class="n">step_reward_names</span><span class="p">:</span>
+            <span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;reward_components&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reward_manager</span><span class="o">.</span><span class="n">step_rewards</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validation_flags</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Replace the base action verdict with the ActionManager aggregate.&quot;&quot;&quot;</span>
+        <span class="n">flags</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_validation_flags</span><span class="p">()</span>
+        <span class="n">flags</span><span class="p">[</span><span class="s2">&quot;action_finite&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">action_finite_valid</span>
+        <span class="k">return</span> <span class="n">flags</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_record_action_finite</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">actions</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Let the action owner record the public finite verdict.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">record_public_action_finite</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_refresh_tensor_reads_after_mutation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Repack scene tensor reads after an in-phase simulation mutation.&quot;&quot;&quot;</span>
         <span class="n">read_plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_tensor_read_plan</span>
@@ -1971,11 +2230,7 @@
             <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">init_state</span><span class="p">()</span>
             <span class="k">return</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;log&quot;</span><span class="p">:</span> <span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;log&quot;</span><span class="p">,</span> <span class="p">{})}</span>
         <span class="k">if</span> <span class="n">reset_mask</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">reset_mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span>
-                <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span>
-                <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
-            <span class="p">)</span>
+            <span class="n">reset_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_all_env_reset_mask</span>
         <span class="k">if</span> <span class="n">seed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
         <span class="k">if</span> <span class="p">(</span>
@@ -1991,7 +2246,7 @@
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;ManagerBasedRlEnv requires init_state before mask reset&quot;</span><span class="p">)</span>
         <span class="n">reset_timing</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">read_plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_tensor_read_plan</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_has_transition</span> <span class="ow">and</span> <span class="nb">bool</span><span class="p">(</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_has_transition</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">recorder_manager</span><span class="o">.</span><span class="n">record_pre_reset</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
         <span class="c1"># Match the selected-row lifecycle: curriculum consumes the terminal</span>
         <span class="c1"># episode state before reset clears the public counters.</span>
@@ -2126,6 +2381,11 @@
         <span class="n">timing</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">last_set_state_timing_ms</span><span class="p">)</span>
         <span class="n">timing</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_manager_timing_ms</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">timing</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">last_reset_completion</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the latest public reset completion receipt, if negotiated.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">last_set_state_completion</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_map_observations</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>

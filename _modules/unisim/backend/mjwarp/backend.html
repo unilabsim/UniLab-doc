@@ -542,12 +542,18 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">GRAPH_INVALIDATION_REASONS</span><span class="p">,</span>
     <span class="n">BackendMocapPoseBinding</span><span class="p">,</span>
     <span class="n">BackendPlayCapabilities</span><span class="p">,</span>
     <span class="n">BackendPlayRenderPlan</span><span class="p">,</span>
     <span class="n">BackendRootStateLayout</span><span class="p">,</span>
     <span class="n">CameraCfg</span><span class="p">,</span>
     <span class="n">DebugOverlayGetter</span><span class="p">,</span>
+    <span class="n">GraphCandidatePreflight</span><span class="p">,</span>
+    <span class="n">GraphCompletionToken</span><span class="p">,</span>
+    <span class="n">GraphInvalidationReason</span><span class="p">,</span>
+    <span class="n">GraphLifecycleSnapshot</span><span class="p">,</span>
+    <span class="n">GraphLifecycleState</span><span class="p">,</span>
     <span class="n">PhysicsStateLayout</span><span class="p">,</span>
     <span class="n">PublicStateWidths</span><span class="p">,</span>
     <span class="n">SelectedResetPublication</span><span class="p">,</span>
@@ -629,6 +635,10 @@
 <span class="n">_RESET_SCRATCH_WORLD_FRACTION</span> <span class="o">=</span> <span class="mi">16</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_expand_reset_mask</span><span class="p">(</span><span class="n">mask</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">ndim</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">mask</span> <span class="k">if</span> <span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">mask</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">mask</span><span class="o">.</span><span class="n">shape</span> <span class="o">+</span> <span class="p">(</span><span class="mi">1</span><span class="p">,)</span> <span class="o">*</span> <span class="p">(</span><span class="n">ndim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_reset_scratch_capacity_for_batch</span><span class="p">(</span><span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Choose a bounded, power-of-two scratch capacity on the cold path.</span>
 
@@ -684,6 +694,43 @@
     <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="kc">None</span>
 
 
+<span class="k">class</span><span class="w"> </span><span class="nc">_EventGraphCompletionToken</span><span class="p">(</span><span class="n">GraphCompletionToken</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Backend-owned completion receipt with its ordered CUDA event.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">:</span> <span class="n">GraphCompletionToken</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;contract_version&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">contract_version</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;lifecycle_state&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">lifecycle_state</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;operation&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">operation</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;sequence&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">sequence</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;stream_id&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">stream_id</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;capture_id&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">capture_id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">event</span> <span class="o">=</span> <span class="n">event</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">wait_before_read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">stream</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">event</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">event</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">stream</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">ipc_handle</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the public CUDA IPC descriptor for this ordered receipt.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">bytes</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">event</span><span class="o">.</span><span class="n">ipc_handle</span><span class="p">())</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_ipc_handle</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">token</span><span class="p">:</span> <span class="n">GraphCompletionToken</span><span class="p">,</span>
+        <span class="n">handle</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">device</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;_EventGraphCompletionToken&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Reconstruct a consumer-owned receipt from its public descriptor.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">event</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">Event</span><span class="o">.</span><span class="n">from_ipc_handle</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">handle</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="n">event</span><span class="p">)</span>
+
+
 <div class="viewcode-block" id="MjwarpBackend">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">MjwarpBackend</span><span class="p">(</span><span class="n">SimBackend</span><span class="p">):</span>
@@ -715,6 +762,13 @@
     <span class="n">_dr_dof_damping</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="n">_dr_dof_frictionloss</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="n">_tracked_sensor_slots</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span>
+    <span class="n">_cuda_graph_enabled</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">_step_graph</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">_forward_graph</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">_reset_graph</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">_reset_scratch_reset_graph</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">_reset_scratch_forward_graph</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">_cuda_graph_disable_reason</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span>
 
 <div class="viewcode-block" id="MjwarpBackend.__init__">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.__init__">[docs]</a>
@@ -982,6 +1036,14 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_sensor_storage</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_sensor_cache</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_reset_defaults</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_torch_fused_valid</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_torch_true_verdict</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_defer_torch_fused_validation</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_graph_completion_sequence</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_graph_capture_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;mjwarp-</span><span class="si">{</span><span class="nb">id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="si">:</span><span class="s2">016x</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_graph_replay_count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_graph_fallback_count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_graph_invalidated</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="c1"># Tracked-body views are zero-copy slices of _sensor_cache; they must be</span>
         <span class="c1"># bound before the first forward barrier refreshes the cache below.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_body_id_to_tracked_idx</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
@@ -2076,6 +2138,14 @@
             <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span> <span class="o">&amp;</span> <span class="p">((</span><span class="n">value</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">&lt;=</span> <span class="mf">1e-5</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unknown mjwarp tensor value rule </span><span class="si">{</span><span class="n">rule</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_torch_true_flag_value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the persistent device-true verdict for structural rules.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_true_verdict</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_true_verdict</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">device</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_torch_true_verdict</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_true_verdict</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_torch_rule_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">rule</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">rule</span> <span class="o">==</span> <span class="s2">&quot;rows&quot;</span><span class="p">:</span>
             <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;mjwarp tensor env_indices must contain unique values in [0, </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="si">}</span><span class="s2">)&quot;</span>
@@ -2109,6 +2179,13 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="n">live</span><span class="p">:</span>
             <span class="k">return</span>
         <span class="n">aggregate</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">flag</span><span class="o">.</span><span class="n">reshape</span><span class="p">(())</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">flag</span> <span class="ow">in</span> <span class="n">live</span><span class="p">])</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_fused_valid</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_fused_valid</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">aggregate</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_torch_fused_valid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">aggregate</span><span class="p">)</span>
+        <span class="n">verdict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_fused_valid</span>
+        <span class="k">assert</span> <span class="n">verdict</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">verdict</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">aggregate</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_torch_fused_validation</span><span class="p">:</span>
+            <span class="k">return</span>
         <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">aggregate</span><span class="p">):</span>
             <span class="k">return</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">rule</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">flag</span> <span class="ow">in</span> <span class="n">live</span><span class="p">:</span>
@@ -2119,8 +2196,37 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_torch_rule_error</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">rule</span><span class="p">))</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;mjwarp tensor validation failed&quot;</span><span class="p">)</span>
 
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">torch_fused_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Latest fused device operand verdict, or ``None`` before validation.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_fused_valid</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">defer_torch_fused_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether fused backend operand verdict publication may defer.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_torch_fused_validation</span>
+
+<div class="viewcode-block" id="MjwarpBackend.set_defer_torch_fused_validation">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.set_defer_torch_fused_validation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_defer_torch_fused_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Opt in to completion-boundary fused operand publication.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">enabled</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;defer torch fused validation must be bool, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_defer_torch_fused_validation</span> <span class="o">=</span> <span class="n">enabled</span></div>
+
+
+<div class="viewcode-block" id="MjwarpBackend.publish_torch_fused_validation">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.publish_torch_fused_validation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">publish_torch_fused_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fail closed on the latest fused backend operand verdict.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_fused_valid</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_torch_fused_valid</span><span class="p">):</span>
+            <span class="k">return</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;mjwarp tensor validation failed&quot;</span><span class="p">)</span></div>
+
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_disable_cuda_graphs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Atomically select the eager path and release any captured graphs.&quot;&quot;&quot;</span>
+        <span class="n">was_ready</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_step_graph</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_forward_graph</span> <span class="o">=</span> <span class="kc">None</span>
@@ -2128,6 +2234,83 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_reset_graph</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_forward_graph</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_disable_reason</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">reason</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_graph_invalidated</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">was_ready</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_graph_fallback_count</span> <span class="o">+=</span> <span class="mi">1</span>
+
+<div class="viewcode-block" id="MjwarpBackend.invalidate_graph">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.invalidate_graph">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">invalidate_graph</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reason</span><span class="p">:</span> <span class="n">GraphInvalidationReason</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GraphLifecycleSnapshot</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Invalidate fixed-address captures before an owner-visible mutation.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">reason</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">GRAPH_INVALIDATION_REASONS</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unsupported graph invalidation reason </span><span class="si">{</span><span class="n">reason</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_disable_cuda_graphs</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;graph invalidated: </span><span class="si">{</span><span class="n">reason</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_graph_invalidated</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_graph_lifecycle_snapshot</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="MjwarpBackend.get_graph_lifecycle">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_graph_lifecycle">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_graph_lifecycle</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GraphLifecycleState</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the public fixed-address graph lifecycle state.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_graph_invalidated</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">GraphLifecycleState</span><span class="o">.</span><span class="n">INVALIDATED</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">GraphLifecycleState</span><span class="o">.</span><span class="n">UNAVAILABLE</span>
+        <span class="k">return</span> <span class="n">GraphLifecycleState</span><span class="o">.</span><span class="n">READY</span></div>
+
+
+<div class="viewcode-block" id="MjwarpBackend.get_graph_lifecycle_snapshot">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_graph_lifecycle_snapshot">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_graph_lifecycle_snapshot</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GraphLifecycleSnapshot</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return graph lifecycle evidence for public manifests.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">GraphLifecycleSnapshot</span><span class="p">(</span>
+            <span class="n">contract_version</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">get_graph_lifecycle</span><span class="p">(),</span>
+            <span class="n">capture_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_graph_capture_id</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">replay_count</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_graph_replay_count</span><span class="p">,</span>
+            <span class="n">fallback_count</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_graph_fallback_count</span><span class="p">,</span>
+            <span class="n">disable_reason</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_disable_reason</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_graph_completion</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">operation</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">stream</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GraphCompletionToken</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish one ordered completion receipt on the public Torch stream.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_graph_lifecycle</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">GraphLifecycleState</span><span class="o">.</span><span class="n">READY</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="s2">&quot;device&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;graph completion requires the ordered Torch stream device&quot;</span><span class="p">)</span>
+        <span class="n">event</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">Event</span><span class="p">(</span><span class="n">interprocess</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">event</span><span class="o">.</span><span class="n">record</span><span class="p">(</span><span class="n">stream</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_graph_completion_sequence</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_graph_replay_count</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="n">token</span> <span class="o">=</span> <span class="n">GraphCompletionToken</span><span class="p">(</span>
+            <span class="n">contract_version</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">lifecycle_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">get_graph_lifecycle</span><span class="p">(),</span>
+            <span class="n">operation</span><span class="o">=</span><span class="n">operation</span><span class="p">,</span>
+            <span class="n">sequence</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_graph_completion_sequence</span><span class="p">,</span>
+            <span class="n">stream_id</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">cuda_stream</span><span class="p">),</span>
+            <span class="n">capture_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_graph_capture_id</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">_EventGraphCompletionToken</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="n">event</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_torch_execution_stream</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the backend-owned Torch view of Warp&#39;s current stream.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">index</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">index</span>
+        <span class="n">warp_device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">get_device</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">index</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">ExternalStream</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">warp_device</span><span class="o">.</span><span class="n">stream</span><span class="o">.</span><span class="n">cuda_stream</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_reset_scratch</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Materialize and warm the bounded reset-forward data on the cold path.&quot;&quot;&quot;</span>
@@ -2171,7 +2354,8 @@
 <span class="sd">        owner-layer operation that replaces a model or data array must call this</span>
 <span class="sd">        method afterward so captured pointers cannot become stale.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_disable_cuda_graphs</span><span class="p">(</span><span class="s2">&quot;CUDA graph capture has not been initialized&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_disable_reason</span> <span class="o">=</span> <span class="s2">&quot;CUDA graph capture has not been initialized&quot;</span>
         <span class="n">eligible</span><span class="p">,</span> <span class="n">reason</span> <span class="o">=</span> <span class="n">_cuda_graph_eligibility</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">eligible</span><span class="p">:</span>
             <span class="k">assert</span> <span class="n">reason</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -2241,6 +2425,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_forward_graph</span> <span class="o">=</span> <span class="n">reset_scratch_forward_graph</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_disable_reason</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_graph_invalidated</span> <span class="o">=</span> <span class="kc">False</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_execute_device_steps</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nsteps</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Advance fixed-shape device state through graph replay or eager calls.&quot;&quot;&quot;</span>
@@ -2493,6 +2678,8 @@
             <span class="n">tracked_body_views</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">mask_selected_reset</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">mask_selected_reset_full_refresh</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">deferred_fused_validation</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">graph_completion_publication</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="p">)</span></div>
 
 
@@ -2545,6 +2732,15 @@
                 <span class="n">requested</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                 <span class="n">enabled</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                 <span class="n">disable_reason</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;deferred_fused_validation&quot;</span><span class="p">:</span> <span class="n">TensorRuntimeDiagnostic</span><span class="p">(</span>
+                <span class="n">requested</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_defer_torch_fused_validation</span><span class="p">,</span>
+                <span class="n">enabled</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_defer_torch_fused_validation</span><span class="p">,</span>
+                <span class="n">disable_reason</span><span class="o">=</span><span class="p">(</span>
+                    <span class="kc">None</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_torch_fused_validation</span>
+                    <span class="k">else</span> <span class="s2">&quot;eager fused validation requested&quot;</span>
+                <span class="p">),</span>
             <span class="p">),</span>
         <span class="p">}</span></div>
 
@@ -3178,10 +3374,8 @@
 
 <div class="viewcode-block" id="MjwarpBackend.step_tensor">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.step_tensor">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">step_tensor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctrl</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">nsteps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">step_tensor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctrl</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">nsteps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Advance MJWarp physics without a control or state host transfer.&quot;&quot;&quot;</span>
-        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
         <span class="n">nsteps</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_nsteps</span><span class="p">(</span><span class="n">nsteps</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -3197,7 +3391,7 @@
         <span class="c1"># as physics and defer the device-wide Warp barrier until that ordered</span>
         <span class="c1"># stream completes; this removes one host barrier from every control</span>
         <span class="c1"># step on launch-latency-sensitive hosts.</span>
-        <span class="n">ctrl_stream</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">ctrl_view</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">ctrl_stream</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_execution_stream</span><span class="p">(</span><span class="n">ctrl_view</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="n">ctrl_view</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">ctrl_tensor</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="n">control_upload_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
 
@@ -3210,21 +3404,23 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">xfrc_applied</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
-            <span class="n">ctrl_stream</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
         <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_entity_faulted</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">raise</span>
+        <span class="n">completion</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_graph_completion</span><span class="p">(</span><span class="s2">&quot;step&quot;</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="n">ctrl_stream</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_time_cache</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">nsteps</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sim_dt</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="n">physics_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;graph_completion&quot;</span><span class="p">:</span> <span class="n">completion</span><span class="p">,</span>
             <span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="p">{</span>
                 <span class="s2">&quot;control_upload_ms&quot;</span><span class="p">:</span> <span class="n">control_upload_ms</span><span class="p">,</span>
                 <span class="s2">&quot;physics_ms&quot;</span><span class="p">:</span> <span class="n">physics_ms</span><span class="p">,</span>
                 <span class="s2">&quot;host_cache_refresh_ms&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
                 <span class="s2">&quot;tensor_step_async&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
-            <span class="p">}</span>
+                <span class="s2">&quot;graph_completion&quot;</span><span class="p">:</span> <span class="n">completion</span><span class="p">,</span>
+            <span class="p">},</span>
         <span class="p">}</span></div>
 
 
@@ -3254,7 +3450,7 @@
         <span class="n">qpos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">qvel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_sync_host_cache</span><span class="p">()</span>
         <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_rows</span><span class="p">(</span><span class="n">env_indices</span><span class="p">)</span>
@@ -3321,7 +3517,7 @@
         <span class="n">qpos</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">qvel</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Commit selected generalized state with device-resident scatter kernels.&quot;&quot;&quot;</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
@@ -3402,7 +3598,8 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_state_torch_views</span><span class="p">[</span><span class="s2">&quot;__reset_mask&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">mask</span>
         <span class="n">mask</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
         <span class="n">mask</span><span class="o">.</span><span class="n">index_fill_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">mask</span><span class="o">.</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+        <span class="n">reset_stream</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_execution_stream</span><span class="p">(</span><span class="n">mask</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">input_completion</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_graph_completion</span><span class="p">(</span><span class="s2">&quot;selected_reset&quot;</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="n">reset_stream</span><span class="p">)</span>
         <span class="n">reset_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
 
         <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
@@ -3435,7 +3632,7 @@
             <span class="c1"># refresh, as documented on _publish_selected_tensor_reset_sensors.</span>
             <span class="k">if</span> <span class="n">model_randomized</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_publish_selected_tensor_reset_sensors</span><span class="p">(</span><span class="n">rows</span><span class="p">):</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span><span class="p">)</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">qpos_tensor</span><span class="o">.</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+            <span class="n">completion</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_graph_completion</span><span class="p">(</span><span class="s2">&quot;selected_reset&quot;</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="n">reset_stream</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_entity_faulted</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">raise</span>
@@ -3447,6 +3644,8 @@
                 <span class="s2">&quot;set_state_tensor_commit_forward_ms&quot;</span><span class="p">:</span> <span class="n">forward_ms</span><span class="p">,</span>
                 <span class="s2">&quot;set_state_tensor_host_cache_refresh_ms&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
                 <span class="s2">&quot;set_state_tensor_model_update_ms&quot;</span><span class="p">:</span> <span class="n">model_update_ms</span><span class="p">,</span>
+                <span class="s2">&quot;graph_completion&quot;</span><span class="p">:</span> <span class="n">completion</span><span class="p">,</span>
+                <span class="s2">&quot;graph_input_completion&quot;</span><span class="p">:</span> <span class="n">input_completion</span><span class="p">,</span>
             <span class="p">}</span>
         <span class="p">}</span></div>
 
@@ -3461,7 +3660,7 @@
         <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">full_refresh</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Commit full-width tensors selected by a graph-published bool mask.</span>
 
 <span class="sd">        The public full-width state payload stays fixed-shape. The backend owns</span>
@@ -3472,10 +3671,10 @@
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="s2">&quot;MJWarp mask reset does not support reset randomization; use the packed &quot;</span>
-                <span class="s2">&quot;reset transaction&quot;</span>
-            <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="s2">&quot;MJWarp mask reset requires a device-resident TensorResetRandomizationPayload&quot;</span>
+                <span class="p">)</span>
         <span class="k">if</span> <span class="n">reset_mask</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;mjwarp tensor reset_mask must be a torch.Tensor&quot;</span><span class="p">)</span>
         <span class="n">mask_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
@@ -3496,14 +3695,24 @@
                 <span class="s2">&quot;reset_mask&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;bool&quot;</span><span class="p">,</span>
                 <span class="n">mask_tensor</span><span class="p">,</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">mask_tensor</span><span class="o">.</span><span class="n">device</span><span class="p">),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_torch_true_flag_value</span><span class="p">(</span><span class="n">mask_tensor</span><span class="o">.</span><span class="n">device</span><span class="p">),</span>
             <span class="p">),</span>
             <span class="p">(</span><span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">qpos_tensor</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_value_flag</span><span class="p">(</span><span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">qpos_tensor</span><span class="p">)),</span>
             <span class="p">(</span><span class="s2">&quot;qvel&quot;</span><span class="p">,</span> <span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">qvel_tensor</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_value_flag</span><span class="p">(</span><span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">qvel_tensor</span><span class="p">)),</span>
         <span class="p">]</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_fused</span><span class="p">(</span><span class="n">validation</span><span class="p">)</span>
         <span class="n">model_update_ms</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_tensor_reset_randomization</span><span class="p">(</span>
+                <span class="kc">None</span><span class="p">,</span>
+                <span class="n">randomization</span><span class="p">,</span>
+                <span class="n">validation</span><span class="p">,</span>
+                <span class="n">reset_mask</span><span class="o">=</span><span class="n">mask_tensor</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">model_update_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_fused</span><span class="p">(</span><span class="n">validation</span><span class="p">)</span>
 
         <span class="c1"># Publish the caller&#39;s fixed-width mask directly into the stable graph</span>
         <span class="c1"># carrier. This is the graph-safe replacement for zero + index_fill.</span>
@@ -3513,7 +3722,8 @@
             <span class="n">graph_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_view</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_reset_mask_device</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_state_torch_views</span><span class="p">[</span><span class="s2">&quot;__reset_mask&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">graph_mask</span>
         <span class="n">graph_mask</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">mask_tensor</span><span class="p">)</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">mask_tensor</span><span class="o">.</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+        <span class="n">reset_stream</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_execution_stream</span><span class="p">(</span><span class="n">mask_tensor</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">input_completion</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_graph_completion</span><span class="p">(</span><span class="s2">&quot;mask_reset&quot;</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="n">reset_stream</span><span class="p">)</span>
         <span class="n">reset_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">mask_started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">forward_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="k">try</span><span class="p">:</span>
@@ -3544,11 +3754,11 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_execute_device_forward</span><span class="p">()</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
             <span class="n">sensor_refresh_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">sensor_refresh_started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">mask_tensor</span><span class="o">.</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+            <span class="n">completion</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_graph_completion</span><span class="p">(</span><span class="s2">&quot;mask_reset&quot;</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="n">reset_stream</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_entity_faulted</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">raise</span>
-        <span class="k">return</span> <span class="p">{</span>
+        <span class="n">timing</span> <span class="o">=</span> <span class="p">{</span>
             <span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="p">{</span>
                 <span class="s2">&quot;set_state_tensor_mask_ms&quot;</span><span class="p">:</span> <span class="n">reset_ms</span><span class="p">,</span>
                 <span class="s2">&quot;set_state_tensor_commit_forward_ms&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">forward_started</span><span class="p">)</span>
@@ -3556,8 +3766,11 @@
                 <span class="s2">&quot;set_state_tensor_host_cache_refresh_ms&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
                 <span class="s2">&quot;set_state_tensor_model_update_ms&quot;</span><span class="p">:</span> <span class="n">model_update_ms</span><span class="p">,</span>
                 <span class="s2">&quot;set_state_tensor_sensor_refresh_ms&quot;</span><span class="p">:</span> <span class="n">sensor_refresh_ms</span><span class="p">,</span>
-            <span class="p">}</span>
-        <span class="p">}</span></div>
+                <span class="s2">&quot;graph_completion&quot;</span><span class="p">:</span> <span class="n">completion</span><span class="p">,</span>
+                <span class="s2">&quot;graph_input_completion&quot;</span><span class="p">:</span> <span class="n">input_completion</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">}</span>
+        <span class="k">return</span> <span class="n">timing</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_reset_term_default">
@@ -3761,9 +3974,10 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_apply_tensor_reset_randomization</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-        <span class="n">rows</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">rows</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">payload</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">,</span>
         <span class="n">validation</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Scatter device-resident final values into per-world Model rows.</span>
 
@@ -3795,7 +4009,7 @@
                 <span class="s2">&quot;derived geom_rbound/geom_aabb rows are computed host-side &quot;</span>
                 <span class="s2">&quot;today; use the host ResetRandomizationPayload path&quot;</span>
             <span class="p">)</span>
-        <span class="n">num_rows</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">num_rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span> <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
         <span class="n">ngeom</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">ngeom</span><span class="p">)</span>
         <span class="n">checks</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">validation</span><span class="p">)</span> <span class="k">if</span> <span class="n">validation</span> <span class="k">else</span> <span class="p">[]</span>
         <span class="n">staged</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
@@ -3844,27 +4058,45 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_fused</span><span class="p">(</span><span class="n">checks</span><span class="p">)</span>
 
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">staged</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_model_torch_view</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_torch_view</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">reset_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">target</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>
+                        <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">_expand_reset_mask</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">values</span><span class="o">.</span><span class="n">ndim</span><span class="p">),</span> <span class="n">values</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">target</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_model_torch_view</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_dr_mirror_stale</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">kp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">kd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="c1"># Mirror the NumPy kp/kd semantics: gainprm[..., 0] = kp,</span>
             <span class="c1"># biasprm[..., 1] = -kp, biasprm[..., 2] = -kd.</span>
             <span class="n">gainprm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_torch_view</span><span class="p">(</span><span class="s2">&quot;actuator_gainprm&quot;</span><span class="p">)</span>
             <span class="n">biasprm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_torch_view</span><span class="p">(</span><span class="s2">&quot;actuator_biasprm&quot;</span><span class="p">)</span>
-            <span class="n">bias</span> <span class="o">=</span> <span class="n">biasprm</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+            <span class="n">bias</span> <span class="o">=</span> <span class="n">biasprm</span> <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">biasprm</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">kp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">gain</span> <span class="o">=</span> <span class="n">gainprm</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+                <span class="n">gain</span> <span class="o">=</span> <span class="n">gainprm</span> <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">gainprm</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
                 <span class="n">gain</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">kp</span>
-                <span class="n">gainprm</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">gain</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">gainprm</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">gain</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">gainprm</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">gain</span><span class="p">)</span>
                 <span class="n">bias</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="n">kp</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_dr_mirror_stale</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;actuator_gainprm&quot;</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">kd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">bias</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="n">kd</span>
-            <span class="n">biasprm</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">bias</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">biasprm</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">bias</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">biasprm</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">bias</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_dr_mirror_stale</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;actuator_biasprm&quot;</span><span class="p">)</span>
         <span class="c1"># Torch writes run on the caller&#39;s stream; order them ahead of the</span>
         <span class="c1"># Warp derived-constant refresh and the reset-graph replay.</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">staged</span><span class="o">.</span><span class="n">values</span><span class="p">()),</span> <span class="n">kp</span> <span class="k">if</span> <span class="n">kp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">kd</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">values</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="n">values</span><span class="o">.</span><span class="n">device</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
         <span class="c1"># Refresh levels mirror the host ModelUpdates contract: 2 for</span>
         <span class="c1"># mass/COM/inertial-orientation rows (set_const), 1 for inertia or</span>
         <span class="c1"># armature rows (set_const_0), 0 otherwise.</span>
@@ -4030,6 +4262,58 @@
                 <span class="p">),</span>
             <span class="p">}</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span>
+
+<div class="viewcode-block" id="MjwarpBackend.preflight_graph_candidate">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.preflight_graph_candidate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">preflight_graph_candidate</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">GraphCandidatePreflight</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GraphCandidatePreflight</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate MJWarp graph-candidate prerequisites without capture.&quot;&quot;&quot;</span>
+        <span class="n">capabilities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_tensor_capabilities</span><span class="p">()</span>
+        <span class="n">diagnostics</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_tensor_runtime_diagnostics</span><span class="p">()</span>
+        <span class="n">supported</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">requested</span>
+            <span class="ow">and</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">state_views</span>
+            <span class="ow">and</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">stepping</span>
+            <span class="ow">and</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">mask_selected_reset</span>
+            <span class="ow">and</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">deferred_fused_validation</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span>
+            <span class="ow">and</span> <span class="n">diagnostics</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;cuda_graph&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">diagnostics</span><span class="p">[</span><span class="s2">&quot;cuda_graph&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">enabled</span>
+            <span class="ow">and</span> <span class="n">diagnostics</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;deferred_fused_validation&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">diagnostics</span><span class="p">[</span><span class="s2">&quot;deferred_fused_validation&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">enabled</span>
+        <span class="p">)</span>
+        <span class="n">reason</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">request</span><span class="o">.</span><span class="n">requested</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;graph candidate was not requested&quot;</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_disable_reason</span> <span class="ow">or</span> <span class="s2">&quot;MJWarp CUDA graph replay is disabled&quot;</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">deferred_fused_validation</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;backend does not negotiate deferred fused validation&quot;</span>
+        <span class="k">elif</span> <span class="p">(</span>
+            <span class="n">diagnostics</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;deferred_fused_validation&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="n">diagnostics</span><span class="p">[</span><span class="s2">&quot;deferred_fused_validation&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">enabled</span>
+        <span class="p">):</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;deferred fused validation was not enabled at construction&quot;</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">mask_selected_reset</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;backend does not negotiate fixed-width mask reset&quot;</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">state_views</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">stepping</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;backend does not expose stable stepping state views&quot;</span>
+        <span class="n">torch_stream_id</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">supported</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+            <span class="n">stable_view</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="s2">&quot;qpos&quot;</span><span class="p">)</span>
+            <span class="n">torch_stream_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">stable_view</span><span class="o">.</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">cuda_stream</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">replace</span><span class="p">(</span>
+            <span class="n">request</span><span class="p">,</span>
+            <span class="n">backend_stream_contract</span><span class="o">=</span><span class="n">capabilities</span><span class="o">.</span><span class="n">stream_event_ownership</span><span class="p">,</span>
+            <span class="n">supported</span><span class="o">=</span><span class="n">supported</span><span class="p">,</span>
+            <span class="n">disable_reason</span><span class="o">=</span><span class="n">reason</span><span class="p">,</span>
+            <span class="n">torch_stream_id</span><span class="o">=</span><span class="n">torch_stream_id</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span></div>
+
 
 <div class="viewcode-block" id="MjwarpBackend.push_robots">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.push_robots">[docs]</a>
