@@ -660,6 +660,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span><span class="p">:</span> <span class="n">TorchPackedResetComposer</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_state_default_installed</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_owner_tensor_write_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_write_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_root_columns</span><span class="p">:</span> <span class="p">(</span>
             <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span>
@@ -818,6 +819,9 @@
                 <span class="s2">&quot;backend declares packed_reset without SimBackend.begin_packed_reset&quot;</span>
             <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span> <span class="o">=</span> <span class="n">resolved</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_owner_tensor_write_mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">resolved</span>
+        <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
             <span class="s2">&quot;TorchPackedResetComposer&quot;</span><span class="p">,</span> <span class="n">begin_packed_reset</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="n">resolved</span><span class="p">)</span>
         <span class="p">)</span>
@@ -918,10 +922,17 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_packed_state_default</span><span class="p">(</span><span class="s2">&quot;begin_tensor&quot;</span><span class="p">)</span>
         <span class="n">transaction</span><span class="o">.</span><span class="n">begin_state_mask</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active_mask</span> <span class="o">=</span> <span class="n">reset_mask</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_write_mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span> <span class="k">if</span> <span class="n">owner_subset</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">owner_subset</span><span class="p">:</span>
+            <span class="n">write_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner_tensor_write_mask</span>
+            <span class="k">assert</span> <span class="n">write_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">write_mask</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_write_mask</span> <span class="o">=</span> <span class="n">write_mask</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_write_mask</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_has_writes</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_owner_subset</span> <span class="o">=</span> <span class="n">owner_subset</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_requesting_terms</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_commit_had_writes</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active</span> <span class="o">=</span> <span class="kc">True</span></div>
 
 

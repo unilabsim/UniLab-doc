@@ -544,6 +544,7 @@
     <span class="n">CameraCfg</span><span class="p">,</span>
     <span class="n">DebugOverlayGetter</span><span class="p">,</span>
     <span class="n">DebugPrimitive</span><span class="p">,</span>
+    <span class="n">GraphCompletionToken</span><span class="p">,</span>
     <span class="n">SimBackend</span><span class="p">,</span>
     <span class="n">TensorExecution</span><span class="p">,</span>
     <span class="n">tensor_device_matches</span><span class="p">,</span>
@@ -638,7 +639,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_scattered_reset_obs</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_rgb_array_renderer_ready</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="p">:</span> <span class="s2">&quot;TensorNanGuard | None&quot;</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span> <span class="o">=</span> <span class="kc">False</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span><span class="p">:</span> <span class="n">GraphCompletionToken</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></div>
 
 
     <span class="nd">@property</span>
@@ -775,6 +777,7 @@
 
         <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">backend_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">step_tensor</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">sim_substeps</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
@@ -784,6 +787,20 @@
             <span class="k">raise</span>
         <span class="n">step_core_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">step_core_cpu_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend_result</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">pending_completion</span> <span class="o">=</span> <span class="n">backend_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;graph_completion&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">pending_completion</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
+                <span class="n">pending_completion</span><span class="p">,</span> <span class="n">GraphCompletionToken</span>
+            <span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;graph_completion&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="s2">&quot;backend graph_completion must be a GraphCompletionToken; got &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">pending_completion</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="c1"># Publish the receipt to the owner before update_state. The update</span>
+            <span class="c1"># graph needs this ordering dependency before replay, while public</span>
+            <span class="c1"># transition consumers still read it only after the update succeeds.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span> <span class="o">=</span> <span class="n">pending_completion</span>
 
         <span class="c1"># Transition publication starts only after the backend completion</span>
         <span class="c1"># boundary succeeds. A failed replay therefore leaves the previous</span>
@@ -794,7 +811,10 @@
 
         <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">update_state</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">update_state</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tensor_diagnostics_state</span><span class="p">())</span>
             <span class="n">nan_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">check</span><span class="p">(</span>
@@ -817,15 +837,9 @@
 
         <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
-        <span class="c1"># Eager execution preserves the semantic autoreset gate: an empty done</span>
-        <span class="c1"># mask must not consume Manager reset RNG or publish a terminal carrier.</span>
-        <span class="c1"># Graph-candidate integration opts into the fixed-width boundary and</span>
-        <span class="c1"># keeps that experimental lifecycle explicit rather than changing the</span>
-        <span class="c1"># production trajectory.</span>
-        <span class="n">did_reset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset</span> <span class="ow">and</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span>
-            <span class="ow">or</span> <span class="nb">bool</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">terminated</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">())</span>
-        <span class="p">)</span>
+        <span class="c1"># Preserve the semantic autoreset gate in both modes: an empty done</span>
+        <span class="c1"># mask must not consume reset RNG or publish a terminal carrier.</span>
+        <span class="n">did_reset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset</span> <span class="ow">and</span> <span class="nb">bool</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">terminated</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">())</span>
         <span class="k">if</span> <span class="n">did_reset</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_envs</span><span class="p">()</span>
         <span class="n">reset_done_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
@@ -857,7 +871,12 @@
                 <span class="n">timing</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;backend_</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
             <span class="n">completion</span> <span class="o">=</span> <span class="n">backend_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;graph_completion&quot;</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">completion</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;graph_completion&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">completion</span>
+                <span class="k">if</span> <span class="s2">&quot;graph_completion&quot;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">:</span>
+                    <span class="c1"># Preserve the independent owner update receipt while keeping</span>
+                    <span class="c1"># the backend dependency publicly inspectable.</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;backend_step_completion&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">completion</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;graph_completion&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">completion</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span></div>
 
 
