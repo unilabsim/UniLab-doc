@@ -540,6 +540,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">DebugOverlayGetter</span><span class="p">,</span>
     <span class="n">DebugPrimitive</span><span class="p">,</span>
+    <span class="n">EnvUpdateGraphPreflight</span><span class="p">,</span>
     <span class="n">GraphCandidatePreflight</span><span class="p">,</span>
     <span class="n">SimBackend</span><span class="p">,</span>
     <span class="n">TensorDataPlane</span><span class="p">,</span>
@@ -1806,23 +1807,54 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_disable_reason</span> <span class="o">=</span> <span class="s2">&quot;explicit eager env update execution&quot;</span>
             <span class="k">return</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_state</span> <span class="o">=</span> <span class="s2">&quot;invalidated&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_invalidation_reason</span> <span class="o">=</span> <span class="s2">&quot;capture_failed&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">verdict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">preflight_env_update_graph</span><span class="p">(</span>
+                <span class="n">EnvUpdateGraphPreflight</span><span class="p">(</span><span class="n">requested</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_state</span> <span class="o">=</span> <span class="s2">&quot;invalidated&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_invalidation_reason</span> <span class="o">=</span> <span class="s2">&quot;capture_failed&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_disable_reason</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s2">&quot;update-specific backend preflight failed closed&quot;</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">allow_eager_fallback</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_select_explicit_env_update_eager_fallback</span><span class="p">()</span>
+                <span class="k">return</span>
+            <span class="k">raise</span>
+        <span class="k">if</span> <span class="n">verdict</span><span class="o">.</span><span class="n">supported</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">verdict</span><span class="o">.</span><span class="n">disable_reason</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">verdict</span><span class="o">.</span><span class="n">disable_reason</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">verdict</span><span class="o">.</span><span class="n">disable_reason</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="k">else</span> <span class="s2">&quot;update-specific backend preflight rejected the boundary&quot;</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_state</span> <span class="o">=</span> <span class="s2">&quot;invalidated&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_invalidation_reason</span> <span class="o">=</span> <span class="s2">&quot;capture_failed&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_disable_reason</span> <span class="o">=</span> <span class="n">reason</span>
+            <span class="k">if</span> <span class="n">allow_eager_fallback</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_select_explicit_env_update_eager_fallback</span><span class="p">()</span>
+                <span class="k">return</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">reason</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_state</span> <span class="o">=</span> <span class="s2">&quot;unavailable&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_disable_reason</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="s2">&quot;update-specific backend preflight and env update capture execution are not implemented&quot;</span>
+            <span class="s2">&quot;backend update preflight passed but env update capture execution is not implemented&quot;</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">allow_eager_fallback</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_mode</span> <span class="o">=</span> <span class="n">EnvUpdateGraphMode</span><span class="o">.</span><span class="n">EAGER</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_state</span> <span class="o">=</span> <span class="s2">&quot;eager&quot;</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_invalidation_reason</span> <span class="o">=</span> <span class="kc">None</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_requested</span> <span class="o">=</span> <span class="kc">False</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_disable_reason</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;explicit eager fallback: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_disable_reason</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_fallback_count</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_select_explicit_env_update_eager_fallback</span><span class="p">()</span>
             <span class="k">return</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_disable_reason</span><span class="p">)</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_select_explicit_env_update_eager_fallback</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Select eager fallback while retaining the rejected graph evidence.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_mode</span> <span class="o">=</span> <span class="n">EnvUpdateGraphMode</span><span class="o">.</span><span class="n">EAGER</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_state</span> <span class="o">=</span> <span class="s2">&quot;eager&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_invalidation_reason</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_requested</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_disable_reason</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;explicit eager fallback: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_disable_reason</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_fallback_count</span> <span class="o">=</span> <span class="mi">1</span>
 
 <div class="viewcode-block" id="ManagerBasedRlEnv.get_env_update_graph_manifest">
 <a class="viewcode-back" href="../../../api_reference/envs/_autosummary/unilab.envs.manager_based_rl_env.ManagerBasedRlEnv.html#unilab.tasks.locomotion.g1.manager_terms.ManagerBasedRlEnv.get_env_update_graph_manifest">[docs]</a>

@@ -549,6 +549,7 @@
     <span class="n">BackendRootStateLayout</span><span class="p">,</span>
     <span class="n">CameraCfg</span><span class="p">,</span>
     <span class="n">DebugOverlayGetter</span><span class="p">,</span>
+    <span class="n">EnvUpdateGraphPreflight</span><span class="p">,</span>
     <span class="n">GraphCandidatePreflight</span><span class="p">,</span>
     <span class="n">GraphCompletionToken</span><span class="p">,</span>
     <span class="n">GraphInvalidationReason</span><span class="p">,</span>
@@ -2050,13 +2051,13 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_torch_view</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device_array</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">require_contiguous</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return one live DLPack view of a stable Warp state array.&quot;&quot;&quot;</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils.dlpack</span><span class="w"> </span><span class="kn">import</span> <span class="n">from_dlpack</span>
         <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
                 <span class="s2">&quot;mjwarp tensor state requires Torch; install a Torch build compatible &quot;</span>
                 <span class="s2">&quot;with the active Warp CUDA device&quot;</span>
             <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
-        <span class="n">view</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_dlpack</span><span class="p">(</span><span class="n">device_array</span><span class="p">)</span>
+        <span class="n">view</span> <span class="o">=</span> <span class="n">from_dlpack</span><span class="p">(</span><span class="n">device_array</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">require_contiguous</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">view</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">()):</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;mjwarp tensor state requires contiguous Warp fields&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">view</span>
@@ -4343,8 +4344,78 @@
             <span class="n">supported</span><span class="o">=</span><span class="n">supported</span><span class="p">,</span>
             <span class="n">disable_reason</span><span class="o">=</span><span class="n">reason</span><span class="p">,</span>
             <span class="n">torch_stream_id</span><span class="o">=</span><span class="n">torch_stream_id</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MjwarpBackend.preflight_env_update_graph">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.preflight_env_update_graph">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">preflight_env_update_graph</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">EnvUpdateGraphPreflight</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">EnvUpdateGraphPreflight</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate MJWarp prerequisites for the caller-owned update graph.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">capabilities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_tensor_capabilities</span><span class="p">()</span>
+        <span class="n">diagnostics</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_tensor_runtime_diagnostics</span><span class="p">()</span>
+        <span class="n">stable_views</span> <span class="o">=</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">state_views</span> <span class="ow">and</span> <span class="p">{</span><span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="s2">&quot;qvel&quot;</span><span class="p">}</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span>
+            <span class="n">capabilities</span><span class="o">.</span><span class="n">state_fields</span>
         <span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span></div>
+        <span class="n">deferred</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span>
+            <span class="n">capabilities</span><span class="o">.</span><span class="n">deferred_fused_validation</span>
+            <span class="ow">and</span> <span class="n">diagnostics</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;deferred_fused_validation&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">diagnostics</span><span class="p">[</span><span class="s2">&quot;deferred_fused_validation&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">enabled</span>
+        <span class="p">)</span>
+        <span class="n">stable_device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="s2">&quot;qpos&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">device</span>
+        <span class="n">allocator_available</span> <span class="o">=</span> <span class="n">stable_device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span>
+        <span class="n">allocator_stats</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">allocator_available</span><span class="p">:</span>
+            <span class="n">raw_stats</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">memory_stats</span><span class="p">(</span><span class="n">stable_device</span><span class="p">)</span>
+            <span class="n">allocator_stats</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">):</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">raw_stats</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span>
+                <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">))</span>
+                <span class="ow">and</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">0</span>
+            <span class="p">}</span>
+
+        <span class="n">supported</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">requested</span>
+            <span class="ow">and</span> <span class="n">stable_views</span>
+            <span class="ow">and</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">sensor_views</span>
+            <span class="ow">and</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">stepping</span>
+            <span class="ow">and</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">graph_completion_publication</span>
+            <span class="ow">and</span> <span class="n">deferred</span>
+            <span class="ow">and</span> <span class="n">allocator_available</span>
+            <span class="ow">and</span> <span class="n">allocator_stats</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">)</span>
+        <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">request</span><span class="o">.</span><span class="n">requested</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;env update graph was not requested&quot;</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">state_views</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">stable_views</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;backend does not expose stable full-width qpos/qvel views&quot;</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">sensor_views</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;backend does not expose stable sensor views&quot;</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">stepping</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">graph_completion_publication</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;backend does not publish ordered tensor step receipts&quot;</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">deferred_fused_validation</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;backend does not negotiate deferred fused validation&quot;</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">deferred</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;deferred fused validation was not enabled at construction&quot;</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">allocator_available</span> <span class="ow">or</span> <span class="n">allocator_stats</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">reason</span> <span class="o">=</span> <span class="s2">&quot;selected Torch device does not expose CUDA allocator statistics&quot;</span>
+
+        <span class="n">torch_stream_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">supported</span><span class="p">:</span>
+            <span class="n">torch_stream_id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">stable_device</span><span class="p">)</span><span class="o">.</span><span class="n">cuda_stream</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">replace</span><span class="p">(</span>
+            <span class="n">request</span><span class="p">,</span>
+            <span class="n">backend_stream_contract</span><span class="o">=</span><span class="n">capabilities</span><span class="o">.</span><span class="n">stream_event_ownership</span><span class="p">,</span>
+            <span class="n">supported</span><span class="o">=</span><span class="n">supported</span><span class="p">,</span>
+            <span class="n">disable_reason</span><span class="o">=</span><span class="n">reason</span><span class="p">,</span>
+            <span class="n">torch_stream_id</span><span class="o">=</span><span class="n">torch_stream_id</span><span class="p">,</span>
+            <span class="n">allocator_stats</span><span class="o">=</span><span class="n">allocator_stats</span><span class="p">,</span>
+        <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.push_robots">
