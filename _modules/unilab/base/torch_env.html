@@ -817,7 +817,15 @@
 
         <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
-        <span class="n">did_reset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset</span>
+        <span class="c1"># Eager execution preserves the semantic autoreset gate: an empty done</span>
+        <span class="c1"># mask must not consume Manager reset RNG or publish a terminal carrier.</span>
+        <span class="c1"># Graph-candidate integration opts into the fixed-width boundary and</span>
+        <span class="c1"># keeps that experimental lifecycle explicit rather than changing the</span>
+        <span class="c1"># production trajectory.</span>
+        <span class="n">did_reset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset</span> <span class="ow">and</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span>
+            <span class="ow">or</span> <span class="nb">bool</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">terminated</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">())</span>
+        <span class="p">)</span>
         <span class="k">if</span> <span class="n">did_reset</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_envs</span><span class="p">()</span>
         <span class="n">reset_done_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
@@ -1056,13 +1064,17 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_reset_done_envs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Run the fixed-shape mask-driven autoreset lifecycle.</span>
 
-<span class="sd">        The empty-mask path is fixed-width. Backends and managers own the mask</span>
-<span class="sd">        semantics; no reset env-id row carrier is materialized.</span>
+<span class="sd">        The graph-candidate empty-mask path is fixed-width. Eager execution</span>
+<span class="sd">        retains the semantic no-done gate; backends and managers own mask</span>
+<span class="sd">        semantics and no reset env-id row carrier is materialized.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="n">reset_total_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">detail_timing</span> <span class="o">=</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="mf">0.0</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">RESET_DONE_DETAIL_TIMING_KEYS</span><span class="p">}</span>
         <span class="n">done</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">terminated</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">done</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_clear_reset_done_detail_timing</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;timing&quot;</span><span class="p">,</span> <span class="p">{}))</span>
+            <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_count</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">done</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
 
         <span class="n">terminal_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
