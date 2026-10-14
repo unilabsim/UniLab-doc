@@ -864,6 +864,12 @@
         <span class="s2">&quot;segment.all.freed&quot;</span><span class="p">,</span>
     <span class="p">)</span>
 
+    <span class="n">ALLOCATION_SNAPSHOT_COUNTERS</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="o">*</span><span class="n">ALLOCATION_COUNTERS</span><span class="p">,</span>
+        <span class="s2">&quot;allocated_bytes.all.current&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;reserved_bytes.all.current&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
 <div class="viewcode-block" id="EnvUpdateGraphRuntime.__init__">
 <a class="viewcode-back" href="../../../api_reference/envs/_autosummary/unilab.envs.manager_based_rl_env.EnvUpdateGraphRuntime.html#unilab.tasks.locomotion.g1.manager_terms.EnvUpdateGraphRuntime.__init__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="s2">&quot;ManagerBasedRlEnv&quot;</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">warmup_iterations</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">):</span>
@@ -877,12 +883,24 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_stream</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_event_index</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_warmup_iterations</span> <span class="o">=</span> <span class="n">warmup_iterations</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_warmup_iterations</span> <span class="o">=</span> <span class="n">warmup_iterations</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">allocator_snapshots</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_memory_counters</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
         <span class="n">stats</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">memory_stats</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="k">return</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">stats</span><span class="p">[</span><span class="n">key</span><span class="p">])</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">ALLOCATION_COUNTERS</span> <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">stats</span><span class="p">}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_allocator_snapshot</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stage</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Serialize public allocation/absolute-byte evidence per lifecycle stage.&quot;&quot;&quot;</span>
+        <span class="n">stats</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">memory_stats</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">snapshot</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">key</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">stats</span><span class="p">[</span><span class="n">key</span><span class="p">])</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">ALLOCATION_SNAPSHOT_COUNTERS</span> <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">stats</span>
+        <span class="p">}</span>
+        <span class="n">snapshot</span><span class="p">[</span><span class="s2">&quot;memory_allocated_bytes&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">memory_allocated</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">device</span><span class="p">))</span>
+        <span class="n">snapshot</span><span class="p">[</span><span class="s2">&quot;memory_reserved_bytes&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">memory_reserved</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">device</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">allocator_snapshots</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;stage&quot;</span><span class="p">:</span> <span class="n">stage</span><span class="p">,</span> <span class="o">**</span><span class="n">snapshot</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">snapshot</span>
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_require_equal_counters</span><span class="p">(</span><span class="n">before</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">after</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -957,6 +975,7 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_stream</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">ExternalStream</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stream_id</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_events</span> <span class="o">=</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">Event</span><span class="p">(</span><span class="n">interprocess</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">)]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">allocator_snapshots</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="c1"># Materialize fixed-width command/reset staging before allocator proof;</span>
         <span class="c1"># first transaction begin can lazily install persistent default state.</span>
         <span class="n">prewarm_context</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">_prepare_command_update</span><span class="p">()</span>
@@ -970,7 +989,9 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_stream</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">empty_cache</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_allocator_snapshot</span><span class="p">(</span><span class="s2">&quot;after_empty_cache&quot;</span><span class="p">)</span>
         <span class="n">semantic_snapshot</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_snapshot_semantic_state</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_allocator_snapshot</span><span class="p">(</span><span class="s2">&quot;pre_warmup&quot;</span><span class="p">)</span>
 
         <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stream</span><span class="p">):</span>
             <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_warmup_iterations</span><span class="p">):</span>
@@ -980,6 +1001,7 @@
         <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stream</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_stream</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
 
+        <span class="bp">self</span><span class="o">.</span><span class="n">_allocator_snapshot</span><span class="p">(</span><span class="s2">&quot;post_warmup&quot;</span><span class="p">)</span>
         <span class="n">allocator_capture_before</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_memory_counters</span><span class="p">()</span>
         <span class="n">graph</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">CUDAGraph</span><span class="p">()</span>
         <span class="k">try</span><span class="p">:</span>
@@ -991,6 +1013,7 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_stream</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
             <span class="k">raise</span>
         <span class="n">allocator_capture_after</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_memory_counters</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_allocator_snapshot</span><span class="p">(</span><span class="s2">&quot;post_capture&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_equal_counters</span><span class="p">(</span><span class="n">allocator_capture_before</span><span class="p">,</span> <span class="n">allocator_capture_after</span><span class="p">)</span>
 
         <span class="c1"># Acceptance requires one real replay, not merely a completed capture.</span>
@@ -1002,6 +1025,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_event_index</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_event_index</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_events</span><span class="p">)</span>
         <span class="n">event</span><span class="o">.</span><span class="n">record</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stream</span><span class="p">)</span>
         <span class="n">event</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_allocator_snapshot</span><span class="p">(</span><span class="s2">&quot;first_replay&quot;</span><span class="p">)</span>
         <span class="n">allocator_replay_after</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_memory_counters</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_equal_counters</span><span class="p">(</span><span class="n">allocator_capture_before</span><span class="p">,</span> <span class="n">allocator_replay_after</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get_env_update_carrier_layout</span><span class="p">()</span> <span class="o">!=</span> <span class="n">current_layout</span><span class="p">:</span>
@@ -1024,6 +1048,7 @@
         <span class="n">event</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
         <span class="n">after</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_memory_counters</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_equal_counters</span><span class="p">(</span><span class="n">before</span><span class="p">,</span> <span class="n">after</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_allocator_snapshot</span><span class="p">(</span><span class="s2">&quot;replay&quot;</span><span class="p">)</span>
         <span class="n">token</span> <span class="o">=</span> <span class="n">GraphCompletionToken</span><span class="p">(</span>
             <span class="n">contract_version</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
             <span class="n">lifecycle_state</span><span class="o">=</span><span class="n">GraphLifecycleState</span><span class="o">.</span><span class="n">READY</span><span class="p">,</span>
@@ -2224,6 +2249,11 @@
                 <span class="s2">&quot;state_version&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">state_version</span><span class="p">,</span>
                 <span class="s2">&quot;draw_version&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">torch_rng</span><span class="o">.</span><span class="n">draw_version</span><span class="p">,</span>
             <span class="p">},</span>
+            <span class="s2">&quot;allocator_snapshots&quot;</span><span class="p">:</span> <span class="p">(</span>
+                <span class="nb">list</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_runtime</span><span class="p">,</span> <span class="s2">&quot;allocator_snapshots&quot;</span><span class="p">,</span> <span class="p">()))</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_runtime</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="k">else</span> <span class="p">[]</span>
+            <span class="p">),</span>
             <span class="s2">&quot;carrier_layout&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_env_update_carrier_layout</span><span class="p">(),</span>
         <span class="p">}</span></div>
 
@@ -2264,15 +2294,20 @@
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_enabled</span><span class="p">:</span>
                 <span class="n">log</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
                 <span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;log&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">log</span>
-                <span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;update_state_timing&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">extras</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">info</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">common_step_counter</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span> <span class="o">+</span> <span class="mi">1</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_sim_step_counter</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">common_step_counter</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">sim_substeps</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_env_update_graph_backend_receipt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span>
-                <span class="n">completion</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_replay_env_update_graph_body</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">])</span>
+                <span class="n">update_timing</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+                <span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;update_state_timing&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">update_timing</span>
+                <span class="n">replay_started_ns</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter_ns</span><span class="p">()</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">completion</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_replay_env_update_graph_body</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">])</span>
+                <span class="k">finally</span><span class="p">:</span>
+                    <span class="n">update_timing</span><span class="p">[</span><span class="s2">&quot;update_state_graph_replay_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="n">time</span><span class="o">.</span><span class="n">perf_counter_ns</span><span class="p">()</span> <span class="o">-</span> <span class="n">replay_started_ns</span>
+                    <span class="p">)</span> <span class="o">/</span> <span class="mf">1.0e6</span>
                 <span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;graph_completion&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">completion</span>
-                <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;update_state_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
-                <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;update_state_cpu_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
                 <span class="k">return</span> <span class="n">state</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
                     <span class="n">obs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_public_obs</span><span class="p">,</span>
                     <span class="n">reward</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_public_reward</span><span class="p">,</span>
