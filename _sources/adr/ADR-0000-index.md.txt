@@ -27,6 +27,7 @@ orphan: true
 | [ADR-0011 Torch-Only Manager-Based Runtime](ADR-0011-torch-only-manager-based-runtime.md) | Manager runtime / tensor lifecycle | Accepted |
 | [ADR-0015 No Numba Runtime And Explicit NumPy Leaf Boundaries](ADR-0015-no-numba-and-explicit-numpy-leaf-boundaries.md) | Runtime dependency / NumPy boundary | Accepted |
 | [ADR-0016 RL Reintegration Into unilab.rl And Single Distribution](ADR-0016-rl-reintegration-into-unilab-rl.md) | RL packaging / layer ownership | Proposed |
+| [ADR-0017 FlashSAC Learner-Side Custom Actor Contract](ADR-0017-flashsac-learner-side-custom-actor-contract.md) | RL algorithm extension / checkpoint semantics | Proposed |
 | [ADR-0231 Integration-only K=1 MJWarp Collector CUDA Graph](ADR-0231-k1-mjwarp-collector-cuda-graph-integration-only.md) | Collector CUDA graph / historical pre-registration | Rejected / no-go at M2 |
 | [ADR-0238 State-Update-Only CUDA Graph Boundary](ADR-0238-state-update-only-cuda-graph-boundary.md) | Manager CUDA graph / historical pre-registration | Rejected / no-go |
 
