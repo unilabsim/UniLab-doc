@@ -59,11 +59,11 @@ validation inventory.
 
 ## Reproducible Runtime
 
-The gated profile resolves UniSim, unilab-rl, and MJBatch from the committed
-registry lock files:
+The gated profile resolves UniSim and MJBatch from the committed
+registry lock files (the RL stack ships in-tree under `unilab.rl`):
 
 ```bash
-UV_FROZEN=1 uv sync --extra mujoco --extra mjwarp --extra uni_rl
+UV_FROZEN=1 uv sync --extra mujoco --extra mjwarp
 ```
 
 `make setup` is useful for broad repository development, but it does not install
@@ -219,7 +219,8 @@ Training artifacts record the physics backend's tensor runtime diagnostics.
 `TorchEnv.get_backend_runtime_diagnostics()` (`src/unilab/base/torch_env.py`)
 is the collection boundary: a public cold-path method that serializes the
 backend's `SimBackend.get_tensor_runtime_diagnostics()` (the unisim public
-contract) into plain JSON. The uni_rl off-policy collector calls it at startup
+contract) into plain JSON. The off-policy collector
+(`unilab.rl.runtime.offpolicy`) calls it at startup
 and publishes the payload into `runtime_manifest.backend_diagnostics`; the PPO
 training script (`src/unilab/scripts/train_rsl_rl.py`) writes the same payload
 as a top-level `backend_diagnostics` key in `run_summary.json` because PPO has
@@ -255,7 +256,8 @@ unavailable marker, never a bare `null`:
 
 Like `runtime_manifest.cuda_process_sharing`, this section is a
 runtime-manifest v1 producer diagnostic, not a stable scalar contract; the
-uni_rl runtime manifest schema validates the section fail-closed when it is
+runtime manifest schema (`unilab.rl.logging.runtime_manifest_schema`)
+validates the section fail-closed when it is
 present. The diagnostics are observability only: they do not change CUDA graph
 enablement policy and are not an acceptance gate. They are a cold-path snapshot
 taken at collector/env startup; they describe initialization, not per-step
@@ -435,7 +437,7 @@ MuJoCo results also include the packed H2D/D2H inventory and transfer counters.
 
 | Symptom | First action |
 | --- | --- |
-| MJWarp import fails | Re-run the explicit `uv sync --extra mujoco --extra mjwarp --extra uni_rl`; `make setup` alone is insufficient for this profile. |
+| MJWarp import fails | Re-run the explicit `uv sync --extra mujoco --extra mjwarp`; `make setup` alone is insufficient for this profile. |
 | CUDA unavailable | Check the driver/container runtime and the Torch sanity command; do not change the task owner to force a fallback. |
 | Wrong physical GPU | Set `CUDA_VISIBLE_DEVICES` in the shell that launches `uv run`; backend ordinal `0` is relative to that mask. |
 | CUDA IPC or worker mismatch | Keep learner, collector, and payload on the same physical GPU. External Isaac workers inherit visibility but not host Python paths. |

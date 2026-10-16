@@ -13,7 +13,7 @@ RSL-RL PPO directly (`unilab.rl` adapts the env to
    backend / task / algo selection. No more bespoke train scripts per
    robot.
 3. **Async runner.** Wrap RSL-RL PPO inside
-   `uni_rl.algos.appo` for higher throughput on machines
+   `unilab.rl.algos.appo` for higher throughput on machines
    with many CPU cores.
 4. **Deployment story.** ONNX export with the right wrapper, safety
    layer documentation, and the

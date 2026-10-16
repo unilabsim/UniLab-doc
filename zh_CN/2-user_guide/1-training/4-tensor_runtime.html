@@ -302,6 +302,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../3-deployment/3-framework_migration/4-from_skrl.html">从 skrl 迁移</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../3-deployment/3-framework_migration/5-task_config_translation.html">任务配置翻译速查表</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../3-deployment/3-framework_migration/6-reward_porting.html">Reward 移植</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../3-deployment/3-framework_migration/7-from_unilab_rl.html">从 unilab-rl（<code class="docutils literal notranslate"><span class="pre">uni_rl</span></code>）迁移</a></li>
 </ul>
 </li>
 </ul>
@@ -470,6 +471,26 @@
 <code class="docutils literal notranslate"><span class="pre">collector_metrics_interval</span></code> 覆盖为 <code class="docutils literal notranslate"><span class="pre">100</span></code>；其他 tensor-runtime 默认值仍保持
 上表所示。</p>
 </section>
+<section id="collector-tensor-device-mujoco-host-bridge">
+<h2>Collector tensor device（MuJoCo host bridge）<a class="headerlink" href="#collector-tensor-device-mujoco-host-bridge" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device</span></code> 选择 MuJoCo HOST_BRIDGE Manager 的可选加速器
+Torch carrier（路由到 <code class="docutils literal notranslate"><span class="pre">manager_torch_device</span></code> owner 字段）。取值为 <code class="docutils literal notranslate"><span class="pre">auto</span></code>
+（默认）、<code class="docutils literal notranslate"><span class="pre">cpu</span></code> 或不带序号的 <code class="docutils literal notranslate"><span class="pre">cuda</span></code>；<code class="docutils literal notranslate"><span class="pre">cuda:3</span></code> 这类带序号的值会被拒绝。</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">auto</span></code> 跟随 learner 设备：CUDA learner 会路由 rank-local 带序号的 learner
+设备（例如 <code class="docutils literal notranslate"><span class="pre">cuda:3</span></code>），使 collector 的 observation 与 action 留在 learner GPU
+上，runtime 探针（<code class="docutils literal notranslate"><span class="pre">unilab.rl.contracts.probe</span></code>）无需额外配置即可解析 CUDA
+inference transport。CPU 与
+torch.mps（Metal Performance Shaders）learner 保持 CPU carrier。</p></li>
+<li><p>显式 <code class="docutils literal notranslate"><span class="pre">cpu</span></code>/<code class="docutils literal notranslate"><span class="pre">cuda</span></code> 优先于 <code class="docutils literal notranslate"><span class="pre">auto</span></code>。<code class="docutils literal notranslate"><span class="pre">cuda</span></code> 仍只支持 MuJoCo HOST_BRIDGE 后端；
+对其他后端该 knob 是 no-op，但请求 <code class="docutils literal notranslate"><span class="pre">cuda</span></code> 会 fail closed。</p></li>
+</ul>
+<p>迁移说明：之前在 CUDA learner 下沿用 <code class="docutils literal notranslate"><span class="pre">cpu</span></code> 默认值的 MuJoCo 配置，现在会通过
+packed host bridge 呈现 CUDA tensor，并解析为 CUDA inference transport。此时每个
+collector 进程会在 learner GPU 上额外持有一个 CUDA context（双 context 拓扑见
+<a class="reference internal" href="7-tensor_runtime_production.html"><span class="doc">Tensor Runtime 生产指南</span></a>）。如需保留原先的 CPU carrier，请显式固定
+<code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device=cpu</span></code>。</p>
+</section>
 <section id="replay-ingress">
 <h2>Replay ingress 权衡<a class="headerlink" href="#replay-ingress" title="Link to this heading">¶</a></h2>
 <p>默认 <code class="docutils literal notranslate"><span class="pre">replay_ingress_slot_rows:</span> <span class="pre">null</span></code> 会解析为 <code class="docutils literal notranslate"><span class="pre">algo.num_envs</span></code>，并为每个
@@ -497,11 +518,10 @@ bitstream 兼容层。训练入口 seed 契约只 seed 全局 Python 与 Torch R
 selected-row reset。因此 A/B 评估比较同一整数种子下的可复现性和分布，而不是
 逐位比较 NumPy 轨迹。确定性运行必须显式设置 <code class="docutils literal notranslate"><span class="pre">env.seed</span></code>；<code class="docutils literal notranslate"><span class="pre">algo.seed</span></code> 只 seed
 训练进程的全局 Python/Torch RNG，不会替换 owner 本地 generator 的种子。</p>
-<p><code class="docutils literal notranslate"><span class="pre">TorchManagerRng</span></code> 携带两个互补版本号。<code class="docutils literal notranslate"><span class="pre">state_version</span></code> 只计数成功的 reseed
-与 state 安装；<code class="docutils literal notranslate"><span class="pre">draw_version</span></code> 额外计数每次成功采样调用，因此 graph 诊断可以
-区分消费过与恢复过的 RNG stream，而不需要在每个 transition 序列化完整
-generator state。可复现性的权威载荷仍是精确 generator state；integration-only
-graph capture 必须把两个版本号和 state 一起记录，作为 replay/rollback 证据。</p>
+<p><code class="docutils literal notranslate"><span class="pre">TorchManagerRng.get_state()</span></code> 返回 generator 的 CPU state tensor，
+<code class="docutils literal notranslate"><span class="pre">set_state()</span></code> 负责恢复。可复现性的权威载荷就是精确的 generator state；
+恢复或审计 RNG 的 owner 记录该 state tensor 即可。runtime 不再维护逐
+transition 的版本号簿记。</p>
 </section>
 <section id="runtime-evidence">
 <h2>Runtime evidence<a class="headerlink" href="#runtime-evidence" title="Link to this heading">¶</a></h2>
@@ -582,6 +602,7 @@ execution-sharing 证据；默认 <code class="docutils literal notranslate"><sp
             <ul>
 <li><a class="reference internal" href="#">Tensor runtime</a><ul>
 <li><a class="reference internal" href="#owner">Owner 默认值与边界</a></li>
+<li><a class="reference internal" href="#collector-tensor-device-mujoco-host-bridge">Collector tensor device（MuJoCo host bridge）</a></li>
 <li><a class="reference internal" href="#replay-ingress">Replay ingress 权衡</a></li>
 <li><a class="reference internal" href="#id1">随机数生成</a></li>
 <li><a class="reference internal" href="#runtime-evidence">Runtime evidence</a></li>

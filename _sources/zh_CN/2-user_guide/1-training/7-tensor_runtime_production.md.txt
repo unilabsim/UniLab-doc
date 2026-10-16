@@ -56,11 +56,11 @@ validation inventory 单独决策。
 
 ## 可复现 Runtime
 
-gated profile 通过已提交的 registry lock 文件解析 UniSim、unilab-rl 与
-MJBatch：
+gated profile 通过已提交的 registry lock 文件解析 UniSim 与
+MJBatch（RL 栈已内置于 `unilab.rl`）：
 
 ```bash
-UV_FROZEN=1 uv sync --extra mujoco --extra mjwarp --extra uni_rl
+UV_FROZEN=1 uv sync --extra mujoco --extra mjwarp
 ```
 
 `make setup` 适合日常仓库开发，但不安装 `mjwarp` extra。上面的命令与 gated
@@ -203,7 +203,7 @@ uv run --no-sync python -c "import torch; print(torch.__version__, torch.version
 `TorchEnv.get_backend_runtime_diagnostics()`（`src/unilab/base/torch_env.py`）
 是采集边界：一个 public cold-path 方法，把 backend 的
 `SimBackend.get_tensor_runtime_diagnostics()`（unisim 公开契约）序列化为
-纯 JSON。uni_rl off-policy collector 在启动时调用它，并把 payload 发布到
+纯 JSON。off-policy collector（`unilab.rl.runtime.offpolicy`）在启动时调用它，并把 payload 发布到
 `runtime_manifest.backend_diagnostics`；PPO 没有 runtime manifest，因此
 PPO 训练脚本（`src/unilab/scripts/train_rsl_rl.py`）把同样的 payload 作为
 顶层 `backend_diagnostics` 字段写入 `run_summary.json`。
@@ -235,8 +235,9 @@ payload 形状：
 ```
 
 与 `runtime_manifest.cuda_process_sharing` 一样，该 section 是
-runtime-manifest v1 的 producer diagnostic，不是稳定标量契约；uni_rl
-runtime manifest schema 在该 section 存在时会 fail-closed 校验。这些诊断
+runtime-manifest v1 的 producer diagnostic，不是稳定标量契约；runtime
+manifest schema（`unilab.rl.logging.runtime_manifest_schema`）
+在该 section 存在时会 fail-closed 校验。这些诊断
 仅用于 observability：不改变 CUDA graph 启用策略，也不是验收 gate。它们是
 collector/env 启动时采集的 cold-path 快照，描述初始化状态，不描述 per-step
 行为。
@@ -405,7 +406,7 @@ transfer counter。
 
 | 现象 | 首要处理 |
 | --- | --- |
-| MJWarp import 失败 | 重新执行显式 `uv sync --extra mujoco --extra mjwarp --extra uni_rl`；仅 `make setup` 不足以覆盖该 profile。 |
+| MJWarp import 失败 | 重新执行显式 `uv sync --extra mujoco --extra mjwarp`；仅 `make setup` 不足以覆盖该 profile。 |
 | CUDA 不可用 | 检查 driver/container runtime 与 Torch sanity 命令；不要修改 task owner 强制 fallback。 |
 | 物理 GPU 错误 | 在启动 `uv run` 的 shell 中设置 `CUDA_VISIBLE_DEVICES`；backend ordinal `0` 相对该 mask。 |
 | CUDA IPC 或 worker 不匹配 | 保持 learner、collector 与 payload 在同一物理 GPU。外部 Isaac worker 继承可见性，但不继承 host Python path。 |

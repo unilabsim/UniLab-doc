@@ -125,8 +125,10 @@ configuration. If `CUDA_VISIBLE_DEVICES` is set, backend ordinals address that
 remapped namespace, not host-global physical indices.
 
 On macOS and ROCm, use a CPU-authoritative host-bridge backend. On ROCm,
-Manager/TorchEnv uses the current GPU only when MuJoCo training explicitly sets
-`training.collector_tensor_device=cuda` and the backend accepts the routed
-`cuda` `manager_torch_device`; direct environment construction and the training
-default remain CPU. GPU Torch buffers on a host bridge do not imply GPU physics
-or a device-resident backend lifecycle.
+Manager/TorchEnv uses the current GPU for MuJoCo training whenever the learner
+device is CUDA — the default `training.collector_tensor_device=auto` follows the
+learner device — or when training explicitly sets
+`training.collector_tensor_device=cuda`, provided the backend accepts the routed
+`cuda` `manager_torch_device`; CPU and torch.mps learners keep the CPU carrier,
+and direct environment construction remains CPU. GPU Torch buffers on a host
+bridge do not imply GPU physics or a device-resident backend lifecycle.

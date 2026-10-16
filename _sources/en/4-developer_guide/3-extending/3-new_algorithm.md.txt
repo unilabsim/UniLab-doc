@@ -26,9 +26,9 @@ Change no code — only adjust the Hydra config under `src/unilab/conf/<algo>/`:
 
 ### 2. `runtime_resolver`: Algorithm Code In Your Own Repository
 
-A researcher imports `uni_rl` (distribution name `unilab-rl`) as a library in
-their own repository and implements the runner / learner / play logic there —
-**no fork of unilab_rl needed**. The owner YAML declares a dotted path
+A researcher imports `unilab.rl` as a library in their own repository and
+implements the runner / learner / play logic there — **no fork of UniLab
+needed**. The owner YAML declares a dotted path
 (`module:attr`) via `algo.runtime_resolver`:
 
 ```yaml
@@ -42,18 +42,18 @@ Contract:
   to the algorithm's default runtime;
 - The returned object must carry `runner_cls`; depending on the algorithm
   family it may optionally carry `play_fn` (APPO style);
-- Resolution happens on the uni_rl side (`uni_rl.algos.appo.runtime`); the
-  dotted path may point at any importable module. The PPO path no longer uses
-  `runtime_resolver` — it drives upstream RSL-RL directly through
+- Resolution happens on the RL runtime side (`unilab.rl.algos.appo.runtime`);
+  the dotted path may point at any importable module. The PPO path no longer
+  uses `runtime_resolver` — it drives upstream RSL-RL directly through
   `unilab.rl`, so PPO customization goes through the `class_name`
   config keys (tier 1).
 
-### 3. Fork unilab_rl: Modify `uni_rl/algos/`
+### 3. Modify `unilab/rl/algos/` In UniLab
 
 Only when you need to change the shared runner / learner / collector
-implementation (for example a new IPC lifecycle) should you fork
-[unilabsim/unilab_rl](https://github.com/unilabsim/unilab_rl) and modify
-`uni_rl/algos/`. Async algorithms should reuse `AsyncRunner`, `ReplayBuffer` /
+implementation (for example a new IPC lifecycle) should you modify
+`src/unilab/rl/algos/` in this repository. Async algorithms should reuse
+`AsyncRunner`, `ReplayBuffer` /
 `RolloutRingBuffer`, and `SharedWeightSync` instead of creating a new IPC
 lifecycle.
 
@@ -107,5 +107,7 @@ Notes:
 - Structured config dataclasses: `src/unilab/structured_configs.py`
 - Training helpers: `src/unilab/training/common.py`,
   `src/unilab/training/run.py`
-- Existing algorithm packages: `uni_rl` in
-  [unilabsim/unilab_rl](https://github.com/unilabsim/unilab_rl)
+- Existing algorithm packages: `unilab.rl.algos` in this repository (merged
+  from the former
+  [unilabsim/unilab_rl](https://github.com/unilabsim/unilab_rl); see
+  {doc}`/adr/ADR-0016-rl-reintegration-into-unilab-rl`)

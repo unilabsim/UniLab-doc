@@ -11,7 +11,7 @@ claims live in {doc}`../5-reference/5-support_matrix`.
 | --- | --- |
 | UniSim | Public `SimBackend` tensor lifecycle, execution/data-plane/process profiles, packed host-bridge contracts, platform support inventory, and backend adapters. |
 | UniLab task owners | Hydra owner identity, `training.sim_backend`, task semantics, parity fixtures, process-device binding, and training-entrypoint integration. |
-| `uni_rl` | Off-policy collector/learner process topology, CUDA inference ring, replay ingress, IPC synchronization, runner metrics, and metric/runtime-manifest producer schemas. |
+| `unilab.rl` | Off-policy collector/learner process topology, CUDA inference ring, replay ingress, IPC synchronization, runner metrics, and metric/runtime-manifest producer schemas. |
 | UniLab training runtime | Soak monitoring, schema consumption, safe defaults and bounds, process-affinity integration, run artifacts, and fail-closed construction checks. |
 | UniLab documentation | Reproduction, operations, schema compatibility, support-matrix interpretation, and release-transition guidance. |
 
@@ -25,8 +25,8 @@ The current namespaces are independent:
 
 | Namespace | Version | Producer owner |
 | --- | ---: | --- |
-| TensorBoard / W&B metric schema | `1` | `uni_rl.logging.metric_schema` |
-| Runtime process/device/IPC manifest | `1` | `uni_rl.logging.runtime_manifest_schema` |
+| TensorBoard / W&B metric schema | `1` | `unilab.rl.logging.metric_schema` |
+| Runtime process/device/IPC manifest | `1` | `unilab.rl.logging.runtime_manifest_schema` |
 | UniLab long-soak monitor artifact | `0.3.0` | `unilab.training.soak` |
 
 Within a major version, producers may add optional fields with schema, tests,
@@ -76,7 +76,7 @@ multi-GPU, macOS, ROCm, PyPI-release, or universal-backend claim.
 
 Before advancing the published dependency versions, complete the checklist in
 {doc}`5-contributing_workflow`: released UniSim tensor contracts and adapters,
-released `uni_rl` runner behavior, published MJBatch support, passing focused
+in-tree `unilab.rl` runner behavior, published MJBatch support, passing focused
 CPU and gated CUDA profiles on the exact transition commit, and completed M11
 soak, leak, shutdown, schema, platform, and documentation acceptance.
 

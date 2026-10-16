@@ -8,7 +8,8 @@
 - Roadmaps: #2307 (historical contract), #2311 (M0 boundary addendum)
 - Scope: historical pre-registration and integration evidence; no active runtime contract
 - Supersedes: None
-- Superseded by: [ADR-0238 State-update-only CUDA graph boundary](ADR-0238-state-update-only-cuda-graph-boundary.md)
+- Superseded by: None. ADR-0238 was subsequently rejected in #2358; its
+  residual public lifecycle/completion naming was removed by #2359.
 
 ## Context
 
@@ -24,8 +25,10 @@ during caller capture and that the non-nested public path reaches transient
 MuJoCo-Warp allocation/free that invalidates the outer capture. This ADR is
 retained as historical pre-registration and audit evidence only. It is not an
 active execution plan, does not authorize `collector_graph` in UniLab, and makes
-no support or performance claim. The successor boundary is ADR-0238's
-state-update-only `env_update_graph`.
+no support or performance claim. Its derivative state-update-only route was
+also rejected; it is not an active successor boundary.
+The surviving eager receipt boundary is operation-neutral completion metadata,
+not a graph lifecycle or whole-collector tick contract.
 
 Issue #2307 closed at Gate B no-go only because its Phase B boundary could not
 remove the then-private backend/replay completion barriers. Issue #2309 has
@@ -47,7 +50,10 @@ updates which must never enter this graph.
 The decision recorded here was pre-registered for the #2311 integration branch
 and was rejected at M2 before promotion to `main`. The sections below preserve
 the exact historical boundary, inventory, mode, workload, and gates for audit;
-they must not be read as pending M1/M2 work.
+they must not be read as pending M1/M2 work. Historical API/config/test names
+below no longer exist; #2358 also removed the derivative caller-owned update
+route. The neutral runtime hot-path audit that survived that removal was
+itself deleted under #2363 in favor of observable-contract tests.
 
 Define an integration-only public capture boundary negotiated through `SimBackend` capabilities. The candidate consumes one preallocated action input of shape `[num_envs, action_dim]` and produces fixed-shape observation, reward, terminated, truncated, terminal-observation, and transition-publication carriers. The candidate is exactly K=1; policy inference and learner updates are outside capture.
 
@@ -55,16 +61,17 @@ Define an integration-only public capture boundary negotiated through `SimBacken
 
 `SimBackend` exposes a public capture candidate capability and preflight contract before any environment graph is constructed. Preflight requires fixed shapes/devices, declared stable buffers, supported Warp/Torch stream semantics, allocator readiness, RNG ownership, and capability support. Unsupported capabilities fail closed; UniLab never probes or branches on backend-private attributes.
 
-For #2311 the public surface is the existing contract version 1. `SimBackend`
-already declares `state_views`, `stepping`, fixed-width mask reset, deferred
-fused validation, graph-completion publication, and graph lifecycle/invalidation.
-`ManagerBasedRlEnv.preflight_graph_candidate()` layers on the owner carriers and
-semantic-owner rejection list. No additional backend contract is required
-before M1. The neutral `uni_rl` completion protocol, receipt gating, replay
-ingress order/capture identity, and manifest schema are likewise sufficient for
-the first publication handoff. An owner-controlled mode negotiation protocol
-will be added in UniLab before graph execution; until then graph remains
-disabled and this preflight is evidence only.
+For #2311 the public surface was the existing contract version 1: declared
+`SimBackend` capabilities plus an env-side candidate preflight that layered on
+the owner carriers and semantic-owner rejection list, so no additional backend
+contract was required before M1. The neutral `uni_rl` completion protocol,
+receipt gating, replay ingress order/capture identity, and manifest schema were
+likewise judged sufficient for the first publication handoff. An
+owner-controlled mode negotiation protocol was to be added in UniLab before
+graph execution; until then graph remained disabled and this preflight was
+evidence only. The graph-candidate preflight, graph-completion publication, and
+graph lifecycle/invalidation APIs named in the historical record were deleted
+by the collector-graph removal (see Evidence In Repo).
 
 ### Buffer and stream ownership
 
@@ -93,7 +100,7 @@ disabled and this preflight is evidence only.
 | Full-width qpos/qvel staging and packed mask reset | `ResetStateTransaction`, `TorchPackedResetComposer`, `MjwarpBackend.set_state_tensor_mask` | Graph-eligible compute subboundary; MJWarp's current eager device-wide sync and any future full refresh remain explicitly rejected for capture. |
 | Post-reset full-width observations | `ManagerBasedRlEnv.reset`, Manager reset computes, `torch.where` scatter | Graph-eligible only for the preflight-clean canonical owner. |
 | Transition copy into fixed replay ingress slots | `ReplayBuffer._add_to_ingress` | Graph-eligible device copies after receipt visibility. |
-| One ordered step completion receipt and capture identity | `MjwarpBackend._graph_completion`; `GraphCompletionToken` | Graph output; replay waits it before first read. |
+| One ordered step completion receipt and capture identity | backend completion receipt owner (API deleted by the #2363 removal) | Graph output; replay waits it before first read. |
 | Ingress publication event and contiguous tick counters | `record_ingress_publication`, replay publish/release sequences | Completion-owned, not replay-capture-eligible; proves read-after-write ordering. |
 
 **Interval-published / completion-owned**
@@ -125,9 +132,10 @@ disabled and this preflight is evidence only.
 - MJWarp's current mask-reset device-wide synchronization and full-refresh
   forward: that reset compute segment remains completion-owned/eager until a
   public capture-safe reset boundary exists.
-These classified eager-only paths are pinned outside capture by
-`tests/architecture/test_graph_candidate_static_audit.py`; they are not hidden
-violations of the graph candidate.
+These classified eager-only paths were pinned outside capture by the
+graph-candidate static audit; they are not hidden violations of the graph
+candidate. That audit was deleted together with the graph contracts by the
+#2363 removal (see Evidence In Repo).
 
 ### #2311 M0 fixed carrier layout (historical evidence)
 
@@ -186,17 +194,15 @@ K, semantic surface, or mode rule may change after results are observed.
 
 The lifecycle is: allocate persistent carriers, eager warmup, preflight, capture, replay, completion publication, invalidation, fallback/fail-closed. Graph state, contract version, disable reason, fallback count, replay ordering counters, and stream/RNG evidence enter the run manifest. Capture is invalidated on model/data/view/capacity/policy-I/O change, backend graph invalidation, or stream/event failure.
 
-The historical integration branch proposed the owner-selected cold-path mode
-`collector_graph = disabled | eager | graph`. `graph` may be requested only after
-the public preflight verdict succeeds; unsupported/malformed states fail closed;
-runtime fallback is explicit, counted, reason-bearing, and never silently enables
-another mode. Mode never changes inside a control step. `enabled=true` means the
-collector publication graph is active, not merely that MJWarp physics graphs
-exist.
-
-That public mode/API/manifest surface is intentionally abandoned. It did not
-reach UniLab `main`, must not be reintroduced through derivative branches, and
-must not be reused or reinterpreted by ADR-0238's `env_update_graph`.
+The historical integration branch proposed an owner-selected cold-path mode key
+`collector_graph` (`disabled | eager | graph`): `graph` could be requested only
+after the public preflight verdict succeeded, unsupported/malformed states
+failed closed, and runtime fallback was explicit, counted, reason-bearing, and
+never silently enabled another mode. Mode never changed inside a control step.
+The mode key, its API, and its manifest surface are intentionally abandoned:
+they did not reach UniLab `main`, were fully deleted by the #2363
+collector-graph removal, and must not be reintroduced through derivative
+branches or reused or reinterpreted by ADR-0238's `env_update_graph`.
 
 ### #2311 workload fixation (historical evidence)
 
@@ -209,14 +215,15 @@ mapped multi-entity reset owners; `training.env_steps_per_sync=1`;
 `inference_slot_capacity=1`; FlashSAC `n_step=1`; replay capacity `512*2048`
 rows; ingress depth `2`; ingress slot rows `2048`.
 
-The benchmark commands below were fixed as fresh-process, same-head null and MPS
-runs for the abandoned branch. They are retained as historical evidence, not as
-runnable support or a pending benchmark plan:
-`uv run --no-sync train --algo flashsac --task g1_motion_tracking --sim mjwarp algo.seed=1 env.seed=1 training.collector_graph=<disabled|eager|graph> algo.max_iterations=300 training.no_play=true`
-plus the #2311-prescribed paired repeat/interleave orchestration. The Manager
-RNG has its own `env.seed`; `algo.seed` alone does not fix it. Every run records
-the resolved seed and exact draw versions. Graph and eager must not be mixed
-within one distribution. The recorded host is
+The benchmark runs were fixed as fresh-process, same-head null and MPS arms of
+the canonical train command
+(`uv run --no-sync train --algo flashsac --task g1_motion_tracking --sim mjwarp algo.seed=1 env.seed=1 algo.max_iterations=300 training.no_play=true`)
+with the now-deleted mode key swept over `disabled|eager|graph`, plus the
+#2311-prescribed paired repeat/interleave orchestration. They are retained as
+historical evidence, not as runnable support or a pending benchmark plan. The
+Manager RNG has its own `env.seed`; `algo.seed` alone does not fix it. Every
+run records the resolved seed. Graph and eager must not be mixed within one
+distribution. The recorded host is
 `GPU-db468bab-1b15-2a0b-b5e6-7716e512d422` (RTX 4090), driver `580.178.04`,
 CUDA runtime `13.0`, PyTorch `2.14.0+cu130`, Warp `1.16.0`, MuJoCo/Warp
 `3.11.0`; each final gate run must re-record exact values rather than relying on
@@ -250,8 +257,8 @@ K>1, pre-committed action sequences, stale/replay inference, and speculative tra
   preserved on `main`; collector graph execution itself remains unsupported.
 - `collector_graph` API, defaults, manifests, resolver behavior, and training
   integration are not public contracts and must not be merged from the branch.
-- ADR-0238 owns the current graph boundary and keeps `env_update_graph`
-  semantically and nominally distinct from this abandoned route.
+- ADR-0238's derivative state-update-only route was also rejected in #2358; no
+  caller-owned collector/update graph boundary remains active.
 - No graph-enabled support or performance claim follows from this historical
   record. The structural M2 evidence and the absence of Gate S/Gate P runs are
   the relevant outcomes.
@@ -278,14 +285,23 @@ K>1, pre-committed action sequences, stale/replay inference, and speculative tra
 - Manager runtime: `src/unilab/envs/manager_based_rl_env.py`
 - Reset transaction: `src/unilab/base/reset_state.py`
 - Motion owner: `src/unilab/tasks/motion_tracking/common/manager_terms.py`
-- MJWarp public backend: `../unisim/src/unisim/backend/mjwarp/backend.py`
-- Collector owner: `../unilab_rl/src/uni_rl/offpolicy/worker.py`
 - #2309 public lifecycle tests: `tests/envs/test_manager_based_rl_env.py`
 - Canonical owner preflight: `tests/envs/test_env_configs.py`
-- UniLab static audit: `tests/architecture/test_graph_candidate_static_audit.py`
-- UniSim static audit: `../unisim/tests/adapters/mjwarp/test_graph_candidate_static_audit.py`
-- uni_rl ingress audit: `../unilab_rl/tests/ipc/test_replay_ingress_static_audit.py`
 - Frozen task owner: `src/unilab/conf/flashsac/task/g1_motion_tracking/mjwarp.yaml`
+- Surviving neutral hot-path audit: removed under #2363 in favor of
+  observable-contract tests
+
+Historical evidence deleted by the collector-graph removal
+([PR #2361](https://github.com/Motphys/UniLab/pull/2361),
+[issue #2363](https://github.com/Motphys/UniLab/issues/2363); commits `d10c2a46`,
+`b06c2730`, `b6151623`): the env-side graph-candidate preflight API, the
+MJWarp graph-completion receipt/token API, the `collector_graph` mode keys and
+manifests, the RNG state/draw version bookkeeping, and the UniLab, UniSim, and
+uni_rl graph static-audit tests (including
+`test_graph_candidate_static_audit.py` in both UniLab and UniSim). These names
+are retained above only as historical narrative; the local sibling-checkout
+paths that once hosted the UniSim/uni_rl halves are no longer cited because
+they are not permanent references.
 
 ## Related Documents
 

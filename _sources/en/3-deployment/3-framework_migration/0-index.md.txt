@@ -42,6 +42,12 @@ Compare common field ownership across configs.
 Port reward terms without breaking env/backend contracts.
 :::
 
+:::{grid-item-card} From unilab-rl (`uni_rl`)
+:link: 7-from_unilab_rl
+:link-type: doc
+Import-path and install mapping for the RL stack merged into `unilab.rl`.
+:::
+
 ::::
 
 ```{toctree}
@@ -53,4 +59,5 @@ Port reward terms without breaking env/backend contracts.
 4-from_skrl
 5-task_config_translation
 6-reward_porting
+7-from_unilab_rl
 ```

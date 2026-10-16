@@ -302,6 +302,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../3-deployment/3-framework_migration/4-from_skrl.html">Migrating from skrl</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../3-deployment/3-framework_migration/5-task_config_translation.html">Task Config Translation Cheatsheet</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../3-deployment/3-framework_migration/6-reward_porting.html">Reward Porting</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../3-deployment/3-framework_migration/7-from_unilab_rl.html">Migrating from unilab-rl (<code class="docutils literal notranslate"><span class="pre">uni_rl</span></code>)</a></li>
 </ul>
 </li>
 </ul>
@@ -470,6 +471,30 @@ string <code class="docutils literal notranslate"><span class="pre">mps</span></
 <code class="docutils literal notranslate"><span class="pre">collector_metrics_interval</span></code> to <code class="docutils literal notranslate"><span class="pre">100</span></code>; all other tensor-runtime defaults remain
 as listed above.</p>
 </section>
+<section id="collector-tensor-device-mujoco-host-bridge">
+<h2>Collector tensor device (MuJoCo host bridge)<a class="headerlink" href="#collector-tensor-device-mujoco-host-bridge" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device</span></code> selects the optional accelerator Torch
+carriers of the MuJoCo HOST_BRIDGE Manager (routed to the
+<code class="docutils literal notranslate"><span class="pre">manager_torch_device</span></code> owner field). It accepts <code class="docutils literal notranslate"><span class="pre">auto</span></code> (the default), <code class="docutils literal notranslate"><span class="pre">cpu</span></code>,
+or unindexed <code class="docutils literal notranslate"><span class="pre">cuda</span></code>; indexed values such as <code class="docutils literal notranslate"><span class="pre">cuda:3</span></code> are rejected.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">auto</span></code> follows the learner device: a CUDA learner routes the rank-local
+indexed learner device (for example <code class="docutils literal notranslate"><span class="pre">cuda:3</span></code>), so collector observations and
+actions stay on the learner GPU and the runtime probe
+(<code class="docutils literal notranslate"><span class="pre">unilab.rl.contracts.probe</span></code>) resolves CUDA inference
+transport with no further configuration. CPU and torch.mps (Metal Performance
+Shaders) learners keep the CPU carrier.</p></li>
+<li><p>Explicit <code class="docutils literal notranslate"><span class="pre">cpu</span></code> or <code class="docutils literal notranslate"><span class="pre">cuda</span></code> values win over <code class="docutils literal notranslate"><span class="pre">auto</span></code>. <code class="docutils literal notranslate"><span class="pre">cuda</span></code> remains supported
+only for the MuJoCo HOST_BRIDGE backend; for every other backend the knob is
+a no-op unless it requests <code class="docutils literal notranslate"><span class="pre">cuda</span></code>, which fails closed.</p></li>
+</ul>
+<p>Migration note: existing MuJoCo configurations that ran a CUDA learner under
+the previous <code class="docutils literal notranslate"><span class="pre">cpu</span></code> default now present CUDA tensors through the packed host
+bridge and resolve CUDA inference transport. Each collector process then holds
+one additional CUDA context on the learner GPU (see
+<a class="reference internal" href="7-tensor_runtime_production.html"><span class="doc">Tensor Runtime Production Guide</span></a> for the two-context topology). Pin
+<code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device=cpu</span></code> to keep the previous CPU carrier.</p>
+</section>
 <section id="replay-ingress-tradeoffs">
 <h2>Replay ingress tradeoffs<a class="headerlink" href="#replay-ingress-tradeoffs" title="Link to this heading">¶</a></h2>
 <p>The default <code class="docutils literal notranslate"><span class="pre">replay_ingress_slot_rows:</span> <span class="pre">null</span></code> resolves to <code class="docutils literal notranslate"><span class="pre">algo.num_envs</span></code> and
@@ -501,13 +526,10 @@ A/B evaluation therefore compares reproducibility and distributions under the
 same integer seed, not bitwise NumPy trajectories. Use an explicit <code class="docutils literal notranslate"><span class="pre">env.seed</span></code>
 for deterministic runs; <code class="docutils literal notranslate"><span class="pre">algo.seed</span></code> seeds the training run’s global Python and
 Torch RNGs but does not replace that owner-local generator seed.</p>
-<p><code class="docutils literal notranslate"><span class="pre">TorchManagerRng</span></code> carries two complementary versions. <code class="docutils literal notranslate"><span class="pre">state_version</span></code> counts
-only successful reseeds and state installations. <code class="docutils literal notranslate"><span class="pre">draw_version</span></code> additionally
-counts every successful sampling call, so graph diagnostics can distinguish a
-consumed stream from a restored one without serializing the generator state on
-every transition. The exact generator state remains the authoritative
-reproducibility payload; integration-only graph capture records both versions
-and the state together for replay/rollback evidence.</p>
+<p><code class="docutils literal notranslate"><span class="pre">TorchManagerRng.get_state()</span></code> returns the generator’s CPU state tensor and
+<code class="docutils literal notranslate"><span class="pre">set_state()</span></code> restores it. The exact generator state remains the authoritative
+reproducibility payload; an owner that restores or audits RNG records that
+state tensor. The runtime keeps no per-transition version accounting.</p>
 </section>
 <section id="runtime-evidence">
 <h2>Runtime evidence<a class="headerlink" href="#runtime-evidence" title="Link to this heading">¶</a></h2>
@@ -590,6 +612,7 @@ reproduction, artifacts, and troubleshooting, see
             <ul>
 <li><a class="reference internal" href="#">Tensor runtime</a><ul>
 <li><a class="reference internal" href="#owner-defaults-and-bounds">Owner defaults and bounds</a></li>
+<li><a class="reference internal" href="#collector-tensor-device-mujoco-host-bridge">Collector tensor device (MuJoCo host bridge)</a></li>
 <li><a class="reference internal" href="#replay-ingress-tradeoffs">Replay ingress tradeoffs</a></li>
 <li><a class="reference internal" href="#random-number-generation">Random number generation</a></li>
 <li><a class="reference internal" href="#runtime-evidence">Runtime evidence</a></li>

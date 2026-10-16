@@ -41,6 +41,12 @@
 在不破坏 env/backend contract 的前提下移植 reward 项。
 :::
 
+:::{grid-item-card} 从 unilab-rl（`uni_rl`）迁移
+:link: 7-from_unilab_rl
+:link-type: doc
+RL 栈并入 `unilab.rl` 后的 import 路径与安装映射。
+:::
+
 ::::
 
 ```{toctree}
@@ -52,4 +58,5 @@
 4-from_skrl
 5-task_config_translation
 6-reward_porting
+7-from_unilab_rl
 ```

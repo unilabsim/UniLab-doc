@@ -11,7 +11,7 @@ standard is {doc}`/zh_CN/4-developer_guide/0-index`.
 | L0 Backend | `unisim.backend` | Physics backend abstraction, backend-owned scene materialization, backend capabilities. |
 | L1 Env | `src/unilab/envs/`, `src/unilab/base/torch_env.py` | MDP semantics, observations, rewards, reset logic, backend-to-task adaptation. |
 | L2 Config and Registry | `src/unilab/conf/`, `src/unilab/structured_configs.py`, `src/unilab/base/registry.py`, `src/unilab/training/reward.py` | Hydra composition, owner YAML identity, env/reward registration. |
-| L3 Algo and IPC | `uni_rl` (unilab-rl repo), `uni_rl.ipc` (unilab-rl repo) | Learners, runners, collectors, replay and rollout buffers, weight sync. |
+| L3 Algo and IPC | `src/unilab/rl/algos/`, `src/unilab/rl/runtime/ipc/` | Learners, runners, collectors, replay and rollout buffers, weight sync. |
 | L4 Scripts | `scripts/` | Entrypoint assembly only. |
 
 ## Rules
@@ -30,6 +30,7 @@ standard is {doc}`/zh_CN/4-developer_guide/0-index`.
 ## Evidence In Repo
 
 - Architecture contract: {doc}`/adr/ADR-0001-runtime-model-and-layer-boundaries`
+- RL stack layering: {doc}`/adr/ADR-0016-rl-reintegration-into-unilab-rl`
 - Backend boundary: `unisim.backend.base`
 - Env state contract: `src/unilab/base/torch_env.py`
 - Registry construction path: `src/unilab/base/registry.py`

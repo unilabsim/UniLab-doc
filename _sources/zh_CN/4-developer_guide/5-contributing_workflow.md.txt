@@ -82,8 +82,8 @@ child branch 从最新集成分支创建，使用常规类型前缀，例如
 1. M11 的长时 soak、泄漏、异常退出、schema、平台 fail-closed 与文档验收项已完成。
 2. 所需的公开 `unisim-core` tensor lifecycle contract 和 adapter 已进入某个已发布
    `unisim-core` 版本，并且该包的 standalone gate 通过。
-3. 所需的 CUDA inference/replay runner 行为已进入某个已发布 `unilab-rl` 版本，
-   并且其完整仓库 gate 通过。
+3. 所需的 CUDA inference/replay runner 行为已进入仓内的 `unilab.rl` 栈
+   （原 `unilab-rl` 包已并入本仓库），并且其完整仓库 gate 通过。
 4. 所需的 MJBatch executor API 已进入 UniSim adapter contract 支持的已发布
    `mjbatch-uni` 版本。
 5. 默认与 ROCm lock profile 只解析 registry 包。

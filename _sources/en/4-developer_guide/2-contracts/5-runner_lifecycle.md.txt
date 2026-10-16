@@ -39,6 +39,7 @@ The training scripts follow the same high-level sequence:
 
 - Shared training helpers: `src/unilab/training/common.py`,
   `src/unilab/training/run.py`
-- Async lifecycle: `uni_rl.ipc.async_runner` (unilab-rl repo)
+- Async lifecycle: `unilab.rl.runtime.async_runner`
 - Runner tests: `tests/algos/test_appo_runner.py`,
-  `tests/algos/test_offpolicy_runner.py`, `tests/ipc/test_async_runner.py`
+  `tests/algos/test_offpolicy_double_buffer_runner.py`,
+  `tests/rl/runtime/test_async_runner.py`

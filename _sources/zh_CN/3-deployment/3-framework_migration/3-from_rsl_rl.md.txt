@@ -11,7 +11,7 @@
    更不容易出错。
 2. **任务 owner。** 基于 Hydra 的配置组合，外加 registry 驱动的
    backend / task / algo 选择。不再需要为每种机器人编写定制的训练脚本。
-3. **异步 runner。** 把 RSL-RL PPO 包进 `uni_rl.algos.appo`，在拥有许多
+3. **异步 runner。** 把 RSL-RL PPO 包进 `unilab.rl.algos.appo`，在拥有许多
    CPU 核心的机器上获得更高吞吐量。
 4. **部署流程。** 配合正确 wrapper 的 ONNX 导出、安全层文档，以及
    {doc}`../1-sim_to_real/1-overview` 流水线。

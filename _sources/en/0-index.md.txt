@@ -70,7 +70,7 @@ to you.
 curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/unilabsim/UniLab.git
 cd UniLab
-uv sync --extra mujoco --extra uni_rl
+uv sync --extra mujoco
 uv run demo dance
 uv run train --algo ppo --task go2_joystick_flat --sim mujoco \
   algo.max_iterations=1 algo.num_envs=16 training.no_play=true
@@ -137,7 +137,7 @@ flowchart LR
   registry --> env["TorchEnv contract<br/>tensor obs dict + info dict"]
   env --> backend["SimBackend<br/>unisim-core adapters"]
   env --> factory["EnvFactory contract"]
-  factory --> runtime["Runner / IPC<br/>unilab-rl async runtime"]
+  factory --> runtime["Runner / IPC<br/>unilab.rl async runtime"]
   runtime --> learner["Learner<br/>PPO / APPO / SAC"]
 ```
 

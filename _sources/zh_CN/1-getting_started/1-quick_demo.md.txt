@@ -21,10 +21,10 @@ cd UniLab
 make setup
 
 # 不安装 shell 自动补全：
-# uv sync --extra mujoco --extra uni_rl
+# uv sync --extra mujoco
 
 # 如果未安装 make：
-# uv sync --extra mujoco --extra uni_rl && uv run --no-sync unilab-complete install
+# uv sync --extra mujoco && uv run --no-sync unilab-complete install
 
 # Linux AMD / ROCm
 # make sync-rocm

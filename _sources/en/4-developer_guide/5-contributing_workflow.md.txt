@@ -107,8 +107,9 @@ be true:
 2. The required public `unisim-core` tensor lifecycle contracts and adapters are
    available in a released `unisim-core` version with a passing standalone
    package gate.
-3. The required CUDA inference/replay runner behavior is available in a released
-   `unilab-rl` version with its complete repository gate.
+3. The required CUDA inference/replay runner behavior is available in the
+   in-tree `unilab.rl` stack (the former `unilab-rl` package is merged into
+   this repository) with its complete repository gate.
 4. The required MJBatch executor API is available in a published `mjbatch-uni`
    version supported by the UniSim adapter contract.
 5. The default and ROCm lock profiles resolve only registry packages.

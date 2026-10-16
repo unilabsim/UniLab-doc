@@ -64,20 +64,16 @@ choices，不改变命令行为。在新 checkout 上，可用一条 setup 命�
 make setup
 ```
 
-`make setup` 会执行 `uv sync --extra mujoco --extra uni_rl`，随后运行
-`uv run --no-sync unilab-complete install`。仅需要 MuJoCo 时使用裸
-`uv sync --extra mujoco`。一个环境只选择一条安装路径。
+`make setup` 会同步默认环境（`uv sync --extra mujoco`，含内置 RL 栈），随后运行
+`uv run --no-sync unilab-complete install`。一个环境只选择一条安装路径。
 安装命令会按 `$SHELL` / 平台选择 Bash 或 Zsh，只写入用户级 rc 文件。当前终端不会被自动
 激活，重新打开终端或 source 对应 rc 文件后生效。
 
 如果系统没有 `make`，可直接执行：
 
 ```bash
-uv sync --extra mujoco --extra uni_rl
+uv sync --extra mujoco
 uv run --no-sync unilab-complete install
-
-# 仅 MuJoCo 环境：
-# uv sync --extra mujoco && uv run --no-sync unilab-complete install
 ```
 
 Linux / WSL 的 Bash 用户也可手动把下面内容写入 `~/.bashrc`：

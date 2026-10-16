@@ -14,8 +14,9 @@ MuJoCo or Motrix      shared memory       torch
 
 PPO 是同步路径：默认单进程，也可在单机上按一卡一进程运行 RSL-RL 数据并行；
 每个 rank 独立持有 env/rollout，RSL-RL 在每个 mini-batch 后平均梯度。APPO 与
-off-policy 算法则使用异步 runner、共享缓冲区，以及位于 `uni_rl.ipc` (unilab-rl repo) 与
-`uni_rl` (unilab-rl repo) 下的权重同步原语。
+off-policy 算法则使用异步 runner、共享缓冲区，以及位于 `unilab.rl.runtime`
+下的权重同步原语（RL 栈已并入本仓库，见
+{doc}`/adr/ADR-0016-rl-reintegration-into-unilab-rl`）。
 
 ## 分层边界
 
@@ -24,7 +25,7 @@ off-policy 算法则使用异步 runner、共享缓冲区，以及位于 `uni_rl
 | Backend | `unisim.backend` | `SimBackend`、物理状态、可选能力 |
 | Env | `src/unilab/envs/`、`src/unilab/base/torch_env.py` | MDP 语义、观测、奖励、reset |
 | Config 与 registry | `src/unilab/conf/`、`src/unilab/base/registry.py`、`src/unilab/structured_configs.py` | Schema、owner YAML、env/backend 注册 |
-| 算法与 IPC | `uni_rl` (unilab-rl repo)、`uni_rl.ipc` (unilab-rl repo) | Learner、runner、buffer、权重同步 |
+| 算法与 IPC | `src/unilab/rl/algos/`、`src/unilab/rl/runtime/ipc/` | Learner、runner、buffer、权重同步 |
 | Scripts | `scripts/`、`src/unilab/cli.py` | 轻量装配与 CLI 路由 |
 
 ## 设计规则
@@ -79,7 +80,7 @@ off-policy 算法则使用异步 runner、共享缓冲区，以及位于 `uni_rl
 - `src/unilab/base/torch_env.py`
 - `unisim.backend.base`
 - `src/unilab/base/registry.py`
-- `uni_rl.ipc.async_runner` (unilab-rl repo)
+- `unilab.rl.runtime.async_runner`
 - `src/unilab/training/run.py`
 
 ## 相关 ADR
@@ -90,3 +91,4 @@ off-policy 算法则使用异步 runner、共享缓冲区，以及位于 `uni_rl
 - {doc}`任务 owner 与 config compose 契约 </adr/ADR-0003-task-owner-and-config-compose-contract>`
 - {doc}`Registry bootstrap 契约 </adr/ADR-0004-registry-bootstrap-contract>`
 - {doc}`统一 obs/critic env 与 IPC 契约 </adr/ADR-0005-unified-obs-critic-env-and-ipc-contract>`
+- {doc}`RL 并入 unilab.rl 与单一发行 </adr/ADR-0016-rl-reintegration-into-unilab-rl>`

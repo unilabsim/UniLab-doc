@@ -306,6 +306,7 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../en/3-deployment/3-framework_migration/4-from_skrl.html">Migrating from skrl</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/3-deployment/3-framework_migration/5-task_config_translation.html">Task Config Translation Cheatsheet</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/3-deployment/3-framework_migration/6-reward_porting.html">Reward Porting</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../en/3-deployment/3-framework_migration/7-from_unilab_rl.html">Migrating from unilab-rl (<code class="docutils literal notranslate"><span class="pre">uni_rl</span></code>)</a></li>
 </ul>
 </li>
 </ul>
@@ -440,6 +441,7 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../zh_CN/3-deployment/3-framework_migration/4-from_skrl.html">从 skrl 迁移</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../zh_CN/3-deployment/3-framework_migration/5-task_config_translation.html">任务配置翻译速查表</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../zh_CN/3-deployment/3-framework_migration/6-reward_porting.html">Reward 移植</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../zh_CN/3-deployment/3-framework_migration/7-from_unilab_rl.html">从 unilab-rl（<code class="docutils literal notranslate"><span class="pre">uni_rl</span></code>）迁移</a></li>
 </ul>
 </li>
 </ul>
@@ -535,6 +537,8 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Sequence</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">cast</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.process_context</span><span class="w"> </span><span class="kn">import</span> <span class="n">visible_cuda_entries</span>
+
 <span class="c1"># These backends consume an explicit integer device id while materializing</span>
 <span class="c1"># their simulator.  MuJoCo/Motrix/Drake run CPU-authoritative physics; their</span>
 <span class="c1"># optional accelerator Manager buffers are selected separately through</span>
@@ -547,12 +551,12 @@
 
 
 <span class="c1"># Newton consumes an explicit ``cuda:N`` device string (``newton_device``)</span>
-<span class="c1"># instead of an integer id.  uni_rl&#39;s collector-side process binding is</span>
-<span class="c1"># injection-based: it binds through the caller-supplied ``bind_device``</span>
-<span class="c1"># callable and fails closed when none is injected.  UniLab injects</span>
-<span class="c1"># ``bind_backend_process_device_for_backend`` (which covers mjwarp and</span>
-<span class="c1"># newton); the env override additionally forwards the rank-local device</span>
-<span class="c1"># string so spawn collectors can pass it to the Newton adapter.</span>
+<span class="c1"># instead of an integer id.  The RL runtime&#39;s collector-side process binding</span>
+<span class="c1"># is injection-based: the spawned collector applies the caller-supplied</span>
+<span class="c1"># backend-device configurer and skips binding when none is injected.  UniLab</span>
+<span class="c1"># injects ``configure_backend_process_device``; the env override additionally</span>
+<span class="c1"># forwards the rank-local device string so spawn collectors can pass it to</span>
+<span class="c1"># the Newton adapter.</span>
 <span class="n">BACKEND_ENV_DEVICE_STR_FIELDS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">&quot;newton&quot;</span><span class="p">:</span> <span class="s2">&quot;newton_device&quot;</span><span class="p">,</span>
 <span class="p">}</span>
@@ -624,17 +628,7 @@
     <span class="n">current_visible_devices</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Return opaque rank-local CUDA visibility entries before Torch init.&quot;&quot;&quot;</span>
-    <span class="n">raw</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;CUDA_VISIBLE_DEVICES&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">current_visible_devices</span> <span class="ow">is</span> <span class="kc">None</span>
-        <span class="k">else</span> <span class="n">current_visible_devices</span>
-    <span class="p">)</span>
-    <span class="k">if</span> <span class="n">raw</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">return</span> <span class="p">()</span>
-    <span class="n">entries</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">raw</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
-    <span class="k">if</span> <span class="n">entries</span> <span class="o">==</span> <span class="p">(</span><span class="s2">&quot;-1&quot;</span><span class="p">,):</span>
-        <span class="k">return</span> <span class="p">()</span>
-    <span class="k">return</span> <span class="n">entries</span></div>
+    <span class="k">return</span> <span class="n">visible_cuda_entries</span><span class="p">(</span><span class="n">current_visible_devices</span><span class="p">)</span></div>
 
 
 
@@ -717,17 +711,21 @@
 
 <span class="sd">    The input mapping is never mutated. ``collector_tensor_device`` is the explicit</span>
 <span class="sd">    training contract: ``cpu`` remains on CPU and unindexed ``cuda`` is resolved to</span>
-<span class="sd">    the current device by the environment. The legacy ``learner_device`` argument is</span>
-<span class="sd">    used only by callers without a composed training configuration.</span>
+<span class="sd">    the current device by the environment. ``auto`` follows the learner device: a</span>
+<span class="sd">    CUDA learner routes the rank-local (indexed) learner device string, while a CPU</span>
+<span class="sd">    or torch.mps learner keeps the CPU carrier. ``auto`` is a no-op for backends</span>
+<span class="sd">    outside the MuJoCo HOST_BRIDGE scope and when no learner device is known. The</span>
+<span class="sd">    legacy ``learner_device`` argument is used only by callers without a composed</span>
+<span class="sd">    training configuration.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">result</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">env_cfg_override</span><span class="p">)</span> <span class="k">if</span> <span class="n">env_cfg_override</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{}</span>
     <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">collector_tensor_device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">device</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">collector_tensor_device</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
-        <span class="k">if</span> <span class="n">device</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="s2">&quot;cuda&quot;</span><span class="p">}:</span>
+        <span class="k">if</span> <span class="n">device</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="s2">&quot;cuda&quot;</span><span class="p">}:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;training.collector_tensor_device must be &#39;cpu&#39; or &#39;cuda&#39;; &quot;</span>
+                <span class="s2">&quot;training.collector_tensor_device must be &#39;auto&#39;, &#39;cpu&#39;, or &#39;cuda&#39;; &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">collector_tensor_device</span><span class="si">!r}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_COLLECTOR_TENSOR_BACKENDS</span><span class="p">:</span>
@@ -737,6 +735,8 @@
                     <span class="sa">f</span><span class="s2">&quot;the MuJoCo HOST_BRIDGE backend; got </span><span class="si">{</span><span class="n">backend_type</span><span class="si">!r}</span><span class="s2">&quot;</span>
                 <span class="p">)</span>
             <span class="k">return</span> <span class="n">result</span>
+        <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_apply_manager_torch_device_auto</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">learner_device</span><span class="p">)</span>
         <span class="n">result</span><span class="p">[</span><span class="s2">&quot;manager_torch_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">device</span>
         <span class="k">return</span> <span class="n">result</span>
 
@@ -753,6 +753,27 @@
     <span class="n">result</span><span class="p">[</span><span class="s2">&quot;manager_torch_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">device</span>
     <span class="k">return</span> <span class="n">result</span></div>
 
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_apply_manager_torch_device_auto</span><span class="p">(</span>
+    <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve the ``auto`` carrier request from the learner device.</span>
+
+<span class="sd">    A CUDA learner routes its rank-local (indexed) device string verbatim; a CPU</span>
+<span class="sd">    or torch.mps learner keeps the CPU carrier. ``None`` leaves the mapping</span>
+<span class="sd">    unchanged for callers that do not know the learner device yet.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">learner_device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">result</span>
+    <span class="n">device</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">learner_device</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">device</span> <span class="ow">or</span> <span class="n">device</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">!=</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;manager_torch_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span>
+        <span class="k">return</span> <span class="n">result</span>
+    <span class="n">result</span><span class="p">[</span><span class="s2">&quot;manager_torch_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">device</span>
+    <span class="k">return</span> <span class="n">result</span>
 
 
 <div class="viewcode-block" id="resolve_backend_process_device">
@@ -850,8 +871,9 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Bind one backend&#39;s process-global accelerator device.</span>
 
 <span class="sd">    This top-level callable is intentionally backend-aware and lazy.  It can</span>
-<span class="sd">    be wrapped with :func:`functools.partial` and injected into uni_rl&#39;s</span>
-<span class="sd">    spawn-based collectors while remaining pickleable by module reference.</span>
+<span class="sd">    be wrapped with :func:`functools.partial` and injected into the RL</span>
+<span class="sd">    runtime&#39;s spawn-based collectors while remaining pickleable by module</span>
+<span class="sd">    reference.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;newton&quot;</span><span class="p">:</span>
@@ -871,10 +893,10 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">bind_backend_process_device</span><span class="p">(</span><span class="n">resolved</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Bind a resolved backend process device in the current process.</span>
 
-<span class="sd">    Top-level on purpose: uni_rl&#39;s off-policy collectors receive this as the</span>
-<span class="sd">    injected ``backend_device_binder`` and pickle it by reference into</span>
-<span class="sd">    spawn-based subprocesses. The mjwarp import stays lazy so the binder is</span>
-<span class="sd">    importable without the ``mjwarp`` extra installed.</span>
+<span class="sd">    Top-level on purpose: off-policy collector setups can inject this binder</span>
+<span class="sd">    and pickle it by reference into spawn-based subprocesses. The mjwarp</span>
+<span class="sd">    import stays lazy so the binder is importable without the ``mjwarp``</span>
+<span class="sd">    extra installed.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">bind_backend_process_device_for_backend</span><span class="p">(</span><span class="s2">&quot;mjwarp&quot;</span><span class="p">,</span> <span class="n">resolved</span><span class="p">)</span></div>
 

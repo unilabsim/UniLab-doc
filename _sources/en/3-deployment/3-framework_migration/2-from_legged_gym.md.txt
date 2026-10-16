@@ -22,7 +22,7 @@ mostly mechanical.
   + Motrix. Pick one (or both) before porting; see
   {doc}`../2-sim_to_sim/1-backend_swap`.
 - **Async collection.** Legged Gym collects on-GPU synchronously; UniLab's
-  APPO (`uni_rl.algos.appo`) decouples collectors from
+  APPO (`unilab.rl.algos.appo`) decouples collectors from
   learner. If wall-clock matters, port to APPO once your reward parity is
   established.
 - **Hardware deployment.** Legged Gym → real-world deployment is a

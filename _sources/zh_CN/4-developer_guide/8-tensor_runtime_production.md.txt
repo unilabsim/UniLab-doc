@@ -11,7 +11,7 @@
 | --- | --- |
 | UniSim | 公共 `SimBackend` tensor lifecycle、execution/data-plane/process profile、packed host-bridge 契约、平台支持 inventory 与 backend adapter。 |
 | UniLab task owner | Hydra owner 身份、`training.sim_backend`、task 语义、parity fixture、进程设备绑定与训练入口集成。 |
-| `uni_rl` | off-policy collector/learner 进程拓扑、CUDA inference ring、replay ingress、IPC 同步、runner metric 与 metric/runtime-manifest producer schema。 |
+| `unilab.rl` | off-policy collector/learner 进程拓扑、CUDA inference ring、replay ingress、IPC 同步、runner metric 与 metric/runtime-manifest producer schema。 |
 | UniLab training runtime | soak 监控、schema 消费、安全默认值与边界、process-affinity 集成、run artifact 与 fail-closed 构造检查。 |
 | UniLab 文档 | 复现、运维、schema 兼容、support-matrix 解读与 release-transition 指南。 |
 
@@ -25,8 +25,8 @@ fail closed。
 
 | Namespace | 版本 | Producer owner |
 | --- | ---: | --- |
-| TensorBoard / W&B metric schema | `1` | `uni_rl.logging.metric_schema` |
-| Runtime 进程 / 设备 / IPC manifest | `1` | `uni_rl.logging.runtime_manifest_schema` |
+| TensorBoard / W&B metric schema | `1` | `unilab.rl.logging.metric_schema` |
+| Runtime 进程 / 设备 / IPC manifest | `1` | `unilab.rl.logging.runtime_manifest_schema` |
 | UniLab 长 soak 监控 artifact | `0.3.0` | `unilab.training.soak` |
 
 同一 major version 内，producer 可以伴随 schema、测试与文档增加可选字段。
@@ -70,7 +70,7 @@ backend 声明。
 ## Release Transition
 
 推进已发布依赖版本前，必须完成 {doc}`5-contributing_workflow` 中的 checklist：已发布
-的 UniSim tensor 契约与 adapter、已发布的 `uni_rl` runner 行为、已发布且受支持的
+的 UniSim tensor 契约与 adapter、仓内 `unilab.rl` 的 runner 行为、已发布且受支持的
 MJBatch、在确切 transition commit 上通过的 focused CPU 与 gated CUDA profile，
 以及完整的 M11 soak、泄漏、shutdown、schema、平台与文档验收。
 

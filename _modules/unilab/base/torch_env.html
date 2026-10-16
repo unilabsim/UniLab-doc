@@ -306,6 +306,7 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../en/3-deployment/3-framework_migration/4-from_skrl.html">Migrating from skrl</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/3-deployment/3-framework_migration/5-task_config_translation.html">Task Config Translation Cheatsheet</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/3-deployment/3-framework_migration/6-reward_porting.html">Reward Porting</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../en/3-deployment/3-framework_migration/7-from_unilab_rl.html">Migrating from unilab-rl (<code class="docutils literal notranslate"><span class="pre">uni_rl</span></code>)</a></li>
 </ul>
 </li>
 </ul>
@@ -440,6 +441,7 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../zh_CN/3-deployment/3-framework_migration/4-from_skrl.html">从 skrl 迁移</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../zh_CN/3-deployment/3-framework_migration/5-task_config_translation.html">任务配置翻译速查表</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../zh_CN/3-deployment/3-framework_migration/6-reward_porting.html">Reward 移植</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../zh_CN/3-deployment/3-framework_migration/7-from_unilab_rl.html">从 unilab-rl（<code class="docutils literal notranslate"><span class="pre">uni_rl</span></code>）迁移</a></li>
 </ul>
 </li>
 </ul>
@@ -542,9 +544,9 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">BackendPlayRenderPlan</span><span class="p">,</span>
     <span class="n">CameraCfg</span><span class="p">,</span>
+    <span class="n">CompletionToken</span><span class="p">,</span>
     <span class="n">DebugOverlayGetter</span><span class="p">,</span>
     <span class="n">DebugPrimitive</span><span class="p">,</span>
-    <span class="n">GraphCompletionToken</span><span class="p">,</span>
     <span class="n">SimBackend</span><span class="p">,</span>
     <span class="n">TensorExecution</span><span class="p">,</span>
     <span class="n">tensor_device_matches</span><span class="p">,</span>
@@ -593,6 +595,14 @@
     <span class="k">return</span> <span class="n">process</span><span class="o">.</span><span class="n">user</span> <span class="o">+</span> <span class="n">process</span><span class="o">.</span><span class="n">system</span>
 
 
+<span class="c1"># Backends whose ``step_tensor`` publishes an event-backed asynchronous step</span>
+<span class="c1"># receipt (a unisim ``CompletionToken`` carried in ``info[&quot;completion&quot;]``).</span>
+<span class="c1"># Synchronous producers — host-bridge backends and device-resident backends</span>
+<span class="c1"># that synchronize before returning (for example genesis) — publish no</span>
+<span class="c1"># receipt, so consumers must accept a missing receipt without waiting.</span>
+<span class="n">_EVENT_BACKED_STEP_RECEIPT_BACKENDS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">&quot;mjwarp&quot;</span><span class="p">})</span>
+
+
 <div class="viewcode-block" id="TorchEnv">
 <a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">TorchEnv</span><span class="p">(</span><span class="n">ABEnv</span><span class="p">):</span>
@@ -627,7 +637,6 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_truncated_scratch</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">num_envs</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_final_observation_scratch</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_action_finite_valid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_control_finite_valid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state_finite_valid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_obs_finite_valid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_count</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
@@ -639,8 +648,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_scattered_reset_obs</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_rgb_array_renderer_ready</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="p">:</span> <span class="s2">&quot;TensorNanGuard | None&quot;</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span> <span class="o">=</span> <span class="kc">False</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span><span class="p">:</span> <span class="n">GraphCompletionToken</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span><span class="p">:</span> <span class="n">CompletionToken</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></div>
 
 
     <span class="nd">@property</span>
@@ -663,15 +671,6 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;TorchEnv backend must support tensor stepping and mask reset&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">execution</span> <span class="ow">is</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">HOST_BRIDGE</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">packed_host_bridge</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;HOST_BRIDGE TorchEnv requires a packed host-bridge plan&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="p">(</span>
-            <span class="n">execution</span> <span class="ow">is</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">HOST_BRIDGE</span>
-            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span>
-            <span class="ow">and</span> <span class="ow">not</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">graph_completion_publication</span>
-        <span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;CUDA HOST_BRIDGE TorchEnv requires graph_completion_publication so &quot;</span>
-                <span class="s2">&quot;downstream replay publication has an ordered public completion receipt&quot;</span>
-            <span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">tensor_device_matches</span><span class="p">(</span><span class="n">capabilities</span><span class="o">.</span><span class="n">torch_devices</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;backend did not accept Torch device </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span><span class="si">!r}</span><span class="s2">; &quot;</span>
@@ -687,6 +686,19 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">backend</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SimBackend</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Public backend owner used by Manager terms and tensor contracts.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">produces_completion_receipts</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;RL env-contract declaration of the backend&#39;s step receipts.</span>
+
+<span class="sd">        ``True`` when the bound backend publishes an event-backed async</span>
+<span class="sd">        completion receipt on every ``step`` (replay CUDA ingress then fails</span>
+<span class="sd">        closed without one). ``False`` for synchronous producers whose step</span>
+<span class="sd">        outputs are already ordered at return, where no receipt exists and</span>
+<span class="sd">        none is awaited. This is a cold-path declaration; ``step`` keeps</span>
+<span class="sd">        publishing whatever receipt the backend returns.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">backend_type</span> <span class="ow">in</span> <span class="n">_EVENT_BACKED_STEP_RECEIPT_BACKENDS</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">num_envs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
@@ -787,34 +799,27 @@
         <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">backend_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">step_tensor</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">sim_substeps</span><span class="p">)</span>
-        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
-            <span class="c1"># Do not expose the previous transition&#39;s completion receipt as if</span>
-            <span class="c1"># this failed replay had published a new transition.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;graph_completion&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-            <span class="k">raise</span>
+        <span class="c1"># A receipt describes only the transition being published. Remove the</span>
+        <span class="c1"># previous one before the backend call so unsupported or failed steps</span>
+        <span class="c1"># cannot expose stale completion metadata.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;completion&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">backend_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">step_tensor</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">sim_substeps</span><span class="p">)</span>
         <span class="n">step_core_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">step_core_cpu_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend_result</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-            <span class="n">pending_completion</span> <span class="o">=</span> <span class="n">backend_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;graph_completion&quot;</span><span class="p">)</span>
+            <span class="n">pending_completion</span> <span class="o">=</span> <span class="n">backend_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;completion&quot;</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">pending_completion</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
-                <span class="n">pending_completion</span><span class="p">,</span> <span class="n">GraphCompletionToken</span>
+                <span class="n">pending_completion</span><span class="p">,</span> <span class="n">CompletionToken</span>
             <span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;graph_completion&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;completion&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
                 <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-                    <span class="s2">&quot;backend graph_completion must be a GraphCompletionToken; got &quot;</span>
+                    <span class="s2">&quot;backend completion must be a CompletionToken; got &quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">pending_completion</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
                 <span class="p">)</span>
-            <span class="c1"># Publish the receipt to the owner before update_state. The update</span>
-            <span class="c1"># graph needs this ordering dependency before replay, while public</span>
-            <span class="c1"># transition consumers still read it only after the update succeeds.</span>
+            <span class="c1"># Publish the receipt before update_state so public transition</span>
+            <span class="c1"># consumers can only read it after the update boundary succeeds.</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span> <span class="o">=</span> <span class="n">pending_completion</span>
 
-        <span class="c1"># Transition publication starts only after the backend completion</span>
-        <span class="c1"># boundary succeeds. A failed replay therefore leaves the previous</span>
-        <span class="c1"># public final observation and truncation carrier untouched for RNG</span>
-        <span class="c1"># rollback and explicit eager fallback.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_clear_step_final_observation</span><span class="p">()</span>
 
@@ -834,8 +839,6 @@
                     <span class="n">nan_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_nan_guard_model_file</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span>
                 <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_state</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">publish_validation_verdicts</span><span class="p">()</span>
         <span class="n">update_state_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">update_state_cpu_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
 
@@ -846,8 +849,8 @@
 
         <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
-        <span class="c1"># Preserve the semantic autoreset gate in both modes: an empty done</span>
-        <span class="c1"># mask must not consume reset RNG or publish a terminal carrier.</span>
+        <span class="c1"># Preserve the semantic autoreset gate: an empty done mask must not</span>
+        <span class="c1"># consume reset RNG or publish a terminal carrier.</span>
         <span class="n">did_reset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset</span> <span class="ow">and</span> <span class="nb">bool</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">terminated</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">())</span>
         <span class="k">if</span> <span class="n">did_reset</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_envs</span><span class="p">()</span>
@@ -878,24 +881,16 @@
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend_result</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
             <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">backend_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;timing&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                 <span class="n">timing</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;backend_</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
-            <span class="n">completion</span> <span class="o">=</span> <span class="n">backend_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;graph_completion&quot;</span><span class="p">)</span>
+            <span class="n">completion</span> <span class="o">=</span> <span class="n">backend_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;completion&quot;</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">completion</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">if</span> <span class="s2">&quot;graph_completion&quot;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">:</span>
-                    <span class="c1"># Preserve the independent owner update receipt while keeping</span>
-                    <span class="c1"># the backend dependency publicly inspectable.</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;backend_step_completion&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">completion</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;graph_completion&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">completion</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;completion&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">completion</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_action</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">actions</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_action_contract</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_record_action_finite</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
-        <span class="n">valid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_action_finite_valid</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span><span class="p">:</span>
-            <span class="k">return</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">valid</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_action_finite_valid</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;TorchEnv action contains NaN or Inf&quot;</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_action_contract</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">actions</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -931,9 +926,6 @@
         <span class="k">if</span> <span class="n">ctrl</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TorchEnv control device must be </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">ctrl</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="n">valid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_control_finite_valid</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">valid</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span><span class="p">:</span>
-            <span class="k">return</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">valid</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;TorchEnv control contains NaN or Inf&quot;</span><span class="p">)</span>
 
@@ -961,8 +953,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_final_observation</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">final_observation</span><span class="p">)</span>
         <span class="c1"># Aggregate all public floating outputs into one persistent verdict.</span>
         <span class="c1"># Structural checks above own dtype/shape/device validation; this path</span>
-        <span class="c1"># neither allocates a temporary concatenation nor synchronizes in</span>
-        <span class="c1"># deferred-validation mode.</span>
+        <span class="c1"># neither allocates a temporary concatenation nor a new scalar per step.</span>
         <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_require_floating_float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_floating_float</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">reward</span><span class="p">)</span>
@@ -970,8 +961,6 @@
         <span class="n">valid</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">reward</span><span class="p">,</span> <span class="o">*</span><span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">logical_and</span><span class="p">(</span><span class="n">valid</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(),</span> <span class="n">out</span><span class="o">=</span><span class="n">valid</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span><span class="p">:</span>
-            <span class="k">return</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">valid</span><span class="p">):</span>
             <span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="p">(</span>
                 <span class="o">*</span><span class="p">((</span><span class="sa">f</span><span class="s2">&quot;obs[</span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">]&quot;</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">items</span><span class="p">()),</span>
@@ -989,57 +978,6 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_record_action_finite</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">actions</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Record the public action finite verdict on its persistent carrier.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_action_finite_valid</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_validation_flags</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return persistent device-resident verdicts for interval publication.</span>
-
-<span class="sd">        These flags are diagnostic carriers, not authorization to skip the</span>
-<span class="sd">        fail-closed checks above. They retain the latest aggregate result for a</span>
-<span class="sd">        completion boundary without allocating a new scalar per validation.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="p">{</span>
-            <span class="s2">&quot;action_finite&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_action_finite_valid</span><span class="p">,</span>
-            <span class="s2">&quot;control_finite&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_control_finite_valid</span><span class="p">,</span>
-            <span class="s2">&quot;state_finite&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state_finite_valid</span><span class="p">,</span>
-            <span class="s2">&quot;reset_obs_finite&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_obs_finite_valid</span><span class="p">,</span>
-        <span class="p">}</span>
-
-<div class="viewcode-block" id="TorchEnv.publish_validation_verdicts">
-<a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.publish_validation_verdicts">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">publish_validation_verdicts</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fail closed on persistent finite verdicts at a completion boundary.&quot;&quot;&quot;</span>
-        <span class="n">flags</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validation_flags</span><span class="p">()</span>
-        <span class="n">failed</span> <span class="o">=</span> <span class="p">[</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">verdict</span> <span class="ow">in</span> <span class="n">flags</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">verdict</span><span class="p">)]</span>
-        <span class="k">if</span> <span class="n">failed</span><span class="p">:</span>
-            <span class="n">labels</span> <span class="o">=</span> <span class="p">{</span>
-                <span class="s2">&quot;action_finite&quot;</span><span class="p">:</span> <span class="s2">&quot;TorchEnv action contains NaN or Inf&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;control_finite&quot;</span><span class="p">:</span> <span class="s2">&quot;TorchEnv control contains NaN or Inf&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;state_finite&quot;</span><span class="p">:</span> <span class="s2">&quot;TorchEnvState contains NaN or Inf&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;reset_obs_finite&quot;</span><span class="p">:</span> <span class="s2">&quot;TorchEnv mask reset obs contains NaN or Inf&quot;</span><span class="p">,</span>
-            <span class="p">}</span>
-            <span class="n">messages</span> <span class="o">=</span> <span class="p">[</span><span class="n">labels</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">failed</span> <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">labels</span><span class="p">]</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">messages</span><span class="p">))</span></div>
-
-
-    <span class="nd">@property</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">deferred_validation_boundaries</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether eager finite verdicts may defer to step/reset completion.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span>
-
-<div class="viewcode-block" id="TorchEnv.set_deferred_validation_boundaries">
-<a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.set_deferred_validation_boundaries">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">set_deferred_validation_boundaries</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Select completion-boundary publication for graph-candidate runs.</span>
-
-<span class="sd">        When enabled, eager structural checks remain synchronous, while finite</span>
-<span class="sd">        verdicts stay on their persistent device carriers until an explicit</span>
-<span class="sd">        completion boundary publishes them. This is an opt-in integration-only</span>
-<span class="sd">        contract and does not sanitize invalid values.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">enabled</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;deferred validation boundaries must be bool, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span> <span class="o">=</span> <span class="n">enabled</span></div>
-
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_require_floating_float</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="n">is_floating_point</span><span class="p">():</span>
@@ -1092,15 +1030,14 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_reset_done_envs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Run the fixed-shape mask-driven autoreset lifecycle.</span>
 
-<span class="sd">        The graph-candidate empty-mask path is fixed-width. Eager execution</span>
-<span class="sd">        retains the semantic no-done gate; backends and managers own mask</span>
-<span class="sd">        semantics and no reset env-id row carrier is materialized.</span>
+<span class="sd">        Eager execution retains the semantic no-done gate; backends and managers</span>
+<span class="sd">        own mask semantics and no reset env-id row carrier is materialized.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="n">reset_total_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">detail_timing</span> <span class="o">=</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="mf">0.0</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">RESET_DONE_DETAIL_TIMING_KEYS</span><span class="p">}</span>
         <span class="n">done</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">terminated</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">done</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">done</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_clear_reset_done_detail_timing</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;timing&quot;</span><span class="p">,</span> <span class="p">{}))</span>
             <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_count</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">done</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
@@ -1179,8 +1116,6 @@
         <span class="n">valid</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">obs</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">logical_and</span><span class="p">(</span><span class="n">valid</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(),</span> <span class="n">out</span><span class="o">=</span><span class="n">valid</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation_at_boundaries</span><span class="p">:</span>
-            <span class="k">return</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">valid</span><span class="p">):</span>
             <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">obs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                 <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
@@ -1494,7 +1429,8 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Serialize the backend&#39;s tensor runtime diagnostics on the cold path.</span>
 
 <span class="sd">        This is the collection boundary consumed by training runtimes (the</span>
-<span class="sd">        uni_rl off-policy collector publishes it into the run manifest). The</span>
+<span class="sd">        ``unilab.rl`` off-policy collector publishes it into the run</span>
+<span class="sd">        manifest). The</span>
 <span class="sd">        payload is plain JSON: ``available`` and ``backend_type`` plus, when</span>
 <span class="sd">        available, one ``diagnostics`` entry per backend optimization with</span>
 <span class="sd">        ``requested``/``enabled``/``disable_reason``. Backends that declare</span>

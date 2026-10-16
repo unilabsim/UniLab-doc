@@ -13,6 +13,12 @@ orphan: true
 - Superseded by: [ADR-0012](ADR-0012-sole-tensor-manager-and-scoped-backends.md)
 - Roadmap: [Issue #1811](https://github.com/Motphys/UniLab/issues/1811)
 
+> 2026-10-16 更新：下文中与 `uni_rl` 相关的两条边界（"direct rsl-rl/PPO 无
+> `uni_rl` 可运行、多卡启动懒加载委托 `uni_rl.ipc`" 与 "`uni_rl` 不得 import
+> UniLab"）已由 [ADR-0016](ADR-0016-rl-reintegration-into-unilab-rl.md) 替代：
+> unilab-rl 已并入本仓库的 `unilab.rl`，跨包边界改为 `unilab.rl` 内部 DAG。
+> 其余 contract（Torch-only manager runtime、tensor 生命周期）不变。
+
 ## Context
 
 M11 made the G1 FlashSAC tensor lifecycle, IPC, diagnostics, and production guide reviewable,

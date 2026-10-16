@@ -24,7 +24,7 @@ tensor stepping 与 authoritative selected-reset publication。Newton 不支持
 
 Newton/Warp 遵循标准 CUDA 设备语义，单卡运行无需 `CUDA_VISIBLE_DEVICES`
 钉卡。在多 GPU topology 中，rank 本地设备以 `newton_device="cuda:N"`
-覆盖传入 spawn collector；uni_rl 的 collector 进程绑定为注入式，UniLab
+覆盖传入 spawn collector；collector 进程绑定为注入式，UniLab
 注入的 `bind_backend_process_device_for_backend` 同时覆盖 MJWarp 与
 Newton。
 

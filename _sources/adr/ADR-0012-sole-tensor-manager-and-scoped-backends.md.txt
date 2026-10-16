@@ -75,6 +75,15 @@ are not placement requests. `DEVICE_RESIDENT` adapters keep their own CUDA-only 
 platform requirements; accepting HIP Torch buffers on a host bridge does not make those
 physics engines ROCm-compatible.
 
+> **Addendum (2026-10-15, issue #2365):** The sentence "Learner CUDA selection, GPU
+> visibility, and backend device acceptance alone are not placement requests" is superseded
+> for the scoped MuJoCo HOST_BRIDGE training path: `training.collector_tensor_device` now
+> defaults to `auto`, which turns the learner's CUDA device into the carrier placement
+> request, routed to the rank-local indexed learner device. CPU and torch.mps learners keep
+> the CPU carrier, and explicit `cpu`/`cuda` values are unchanged and win over `auto`.
+> Decision record:
+> <https://github.com/Motphys/UniLab/issues/2365#issuecomment-6189905767>.
+
 ### Manager-owned RNG
 
 The Manager runtime owns one Torch RNG seeded from the resolved owner seed. Observation noise,

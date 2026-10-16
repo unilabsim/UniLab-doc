@@ -14,7 +14,9 @@ MuJoCo or Motrix      shared memory       torch
 
 PPO is a synchronous single-process path. APPO and off-policy
 algorithms use the async runner, shared buffers, and weight synchronization
-primitives under `uni_rl.ipc` (unilab-rl repo) and `uni_rl` (unilab-rl repo).
+primitives under `unilab.rl.runtime` (merged from the former `unilab-rl`
+package; see
+{doc}`/adr/ADR-0016-rl-reintegration-into-unilab-rl`).
 
 ## Layer Boundaries
 
@@ -23,7 +25,7 @@ primitives under `uni_rl.ipc` (unilab-rl repo) and `uni_rl` (unilab-rl repo).
 | Backend | `unisim.backend` | `SimBackend`, physics state, optional capabilities |
 | Env | `src/unilab/envs/`, `src/unilab/base/torch_env.py` | MDP semantics, observation, reward, reset |
 | Config and registry | `src/unilab/conf/`, `src/unilab/base/registry.py`, `src/unilab/structured_configs.py` | Schema, owner YAMLs, env/backend registration |
-| Algorithms and IPC | `uni_rl` (unilab-rl repo), `uni_rl.ipc` (unilab-rl repo) | Learners, runners, buffers, weight sync |
+| Algorithms and IPC | `src/unilab/rl/algos/`, `src/unilab/rl/runtime/ipc/` | Learners, runners, buffers, weight sync |
 | Scripts | `scripts/`, `src/unilab/cli.py` | Thin assembly and CLI routing |
 
 ## Design Rules
@@ -85,7 +87,7 @@ Use `make test` for the fast path and `make test-all` (`make check`,
 - `src/unilab/base/torch_env.py`
 - `unisim.backend.base`
 - `src/unilab/base/registry.py`
-- `uni_rl.ipc.async_runner` (unilab-rl repo)
+- `unilab.rl.runtime.async_runner`
 - `src/unilab/training/run.py`
 
 ## Related ADRs
@@ -96,3 +98,4 @@ Use `make test` for the fast path and `make test-all` (`make check`,
 - {doc}`Task owner and config compose contract </adr/ADR-0003-task-owner-and-config-compose-contract>`
 - {doc}`Registry bootstrap contract </adr/ADR-0004-registry-bootstrap-contract>`
 - {doc}`Unified obs critic env and IPC contract </adr/ADR-0005-unified-obs-critic-env-and-ipc-contract>`
+- {doc}`RL reintegration into unilab.rl and single distribution </adr/ADR-0016-rl-reintegration-into-unilab-rl>`

@@ -23,8 +23,8 @@
 
 ### 2. `runtime_resolver`：算法代码放在自己的仓库
 
-研究者在自己的仓库里 import `uni_rl`（distribution 名 `unilab-rl`）作为库，
-实现 runner / learner / play 逻辑，**不需要 fork unilab_rl**。owner YAML
+研究者在自己的仓库里 import `unilab.rl` 作为库，
+实现 runner / learner / play 逻辑，**不需要 fork UniLab**。owner YAML
 通过 `algo.runtime_resolver` 声明一个 dotted path（`module:attr`）：
 
 ```yaml
@@ -37,16 +37,16 @@ algo:
 - 签名为 `(rl_cfg: dict) -> Runtime | None`；返回 `None` 表示回落到该算法的
   默认 runtime；
 - 返回对象必须携带 `runner_cls`；按算法族可选携带 `play_fn`（APPO 风格）；
-- 解析发生在 uni_rl 侧（`uni_rl.algos.appo.runtime`），dotted path 可以指向
+- 解析发生在 RL runtime 侧（`unilab.rl.algos.appo.runtime`），dotted path 可以指向
   任何可 import 的模块。PPO 路径不再使用 `runtime_resolver` —— 它通过
   `unilab.rl` 直接驱动上游 RSL-RL，因此 PPO 的定制化走
   `class_name` 配置键（第一档）。
 
-### 3. fork unilab_rl：改 `uni_rl/algos/`
+### 3. 在 UniLab 中修改 `unilab/rl/algos/`
 
 只有当需要改动 runner / learner / collector 的共享实现（例如新的 IPC
-生命周期）时，才 fork [unilabsim/unilab_rl](https://github.com/unilabsim/unilab_rl)
-并修改 `uni_rl/algos/`。异步算法应复用 `AsyncRunner`、`ReplayBuffer` /
+生命周期）时，才在本仓库修改
+`src/unilab/rl/algos/`。异步算法应复用 `AsyncRunner`、`ReplayBuffer` /
 `RolloutRingBuffer` 与 `SharedWeightSync`，而不是新建一套 IPC 生命周期。
 
 ## CLI 可路由算法的 footprint
@@ -93,5 +93,6 @@ fail-closed，报错信息列出全部可用 algo（内置 + 约定发现的）�
 - 结构化 config dataclass：`src/unilab/structured_configs.py`
 - 训练辅助工具：`src/unilab/training/common.py`、
   `src/unilab/training/run.py`
-- 现有算法包：[unilabsim/unilab_rl](https://github.com/unilabsim/unilab_rl)
-  的 `uni_rl`
+- 现有算法包：本仓库的 `unilab.rl.algos`（并自原
+  [unilabsim/unilab_rl](https://github.com/unilabsim/unilab_rl)；见
+  {doc}`/adr/ADR-0016-rl-reintegration-into-unilab-rl`）

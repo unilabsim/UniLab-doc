@@ -12,7 +12,7 @@
 | L0 Backend | `unisim.backend` | 物理 backend 抽象、由 backend 拥有的场景 materialization、backend 能力。 |
 | L1 Env | `src/unilab/envs/`、`src/unilab/base/torch_env.py` | MDP 语义、观测、奖励、reset 逻辑、backend 到任务的适配。 |
 | L2 Config 与 Registry | `src/unilab/conf/`、`src/unilab/structured_configs.py`、`src/unilab/base/registry.py`、`src/unilab/training/reward.py` | Hydra compose、owner YAML 身份、env/reward 注册。 |
-| L3 算法与 IPC | `uni_rl` (unilab-rl repo)、`uni_rl.ipc` (unilab-rl repo) | Learner、runner、collector、replay 与 rollout buffer、权重同步。 |
+| L3 算法与 IPC | `src/unilab/rl/algos/`、`src/unilab/rl/runtime/ipc/` | Learner、runner、collector、replay 与 rollout buffer、权重同步。 |
 | L4 Scripts | `scripts/` | 仅做入口装配。 |
 
 ## 规则
@@ -30,6 +30,7 @@
 ## 仓库中的证据
 
 - 架构契约：{doc}`/adr/ADR-0001-runtime-model-and-layer-boundaries`
+- RL 栈分层：{doc}`/adr/ADR-0016-rl-reintegration-into-unilab-rl`
 - Backend 边界：`unisim.backend.base`
 - Env 状态契约：`src/unilab/base/torch_env.py`
 - Registry 构造路径：`src/unilab/base/registry.py`

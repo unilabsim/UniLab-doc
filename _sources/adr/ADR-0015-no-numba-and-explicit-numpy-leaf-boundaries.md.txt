@@ -73,7 +73,7 @@ requirement.
 UniLab task, Manager, env, and training code must not consume legacy NumPy
 `SimBackend` methods such as NumPy stepping/reset, base/body getters, or named
 sensor data. CPU-authoritative exchange is negotiated through public tensor
-lifecycle operations and packed host-bridge plans. UniSim 2.0.0 removes the
+lifecycle operations and packed host-bridge plans. UniSim 1.7.16 removed the
 legacy public lifecycle without aliases; UniLab consumes the tensor/entity
 replacement directly and its architecture gate rejects reintroduction.
 

@@ -3,10 +3,10 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html">
-        <link rel="canonical" href="https://unilabsim.github.io/UniLab-doc/_modules/unilab/base/env_update_graph.html">
+        <link rel="canonical" href="https://unilabsim.github.io/UniLab-doc/_modules/unilab/training/tensor_runtime.html">
 
     <!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>unilab.base.env_update_graph - UniLab 1.3.5 documentation</title>
+        <title>unilab.training.tensor_runtime - UniLab 1.3.5 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d111a655" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
@@ -306,6 +306,7 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../en/3-deployment/3-framework_migration/4-from_skrl.html">Migrating from skrl</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/3-deployment/3-framework_migration/5-task_config_translation.html">Task Config Translation Cheatsheet</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/3-deployment/3-framework_migration/6-reward_porting.html">Reward Porting</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../en/3-deployment/3-framework_migration/7-from_unilab_rl.html">Migrating from unilab-rl (<code class="docutils literal notranslate"><span class="pre">uni_rl</span></code>)</a></li>
 </ul>
 </li>
 </ul>
@@ -440,6 +441,7 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../zh_CN/3-deployment/3-framework_migration/4-from_skrl.html">从 skrl 迁移</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../zh_CN/3-deployment/3-framework_migration/5-task_config_translation.html">任务配置翻译速查表</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../zh_CN/3-deployment/3-framework_migration/6-reward_porting.html">Reward 移植</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../zh_CN/3-deployment/3-framework_migration/7-from_unilab_rl.html">从 unilab-rl（<code class="docutils literal notranslate"><span class="pre">uni_rl</span></code>）迁移</a></li>
 </ul>
 </li>
 </ul>
@@ -517,168 +519,225 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <h1>Source code for unilab.base.env_update_graph</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;Owner-controlled state-update graph mode contract.&quot;&quot;&quot;</span>
+          <h1>Source code for unilab.training.tensor_runtime</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Hydra config resolution for the off-policy tensor-runtime contract.</span>
+
+<span class="sd">Merged from unilab_rl @ 3654e4b (unilab-rl 1.4.15), Apache-2.0; previously</span>
+<span class="sd">``uni_rl.utils.tensor_runtime``. Reading the owner ``DictConfig`` is training</span>
+<span class="sd">assembly business, so these resolvers live here; the bounded constants and</span>
+<span class="sd">value objects they produce live in :mod:`unilab.rl.runtime.settings` and</span>
+<span class="sd">:mod:`unilab.rl.runtime.placement`.</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">enum</span><span class="w"> </span><span class="kn">import</span> <span class="n">Enum</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">omegaconf</span><span class="w"> </span><span class="kn">import</span> <span class="n">DictConfig</span><span class="p">,</span> <span class="n">OmegaConf</span>
 
-
-<div class="viewcode-block" id="EnvUpdateGraphMode">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.env_update_graph.EnvUpdateGraphMode.html#unilab.base.env_update_graph.EnvUpdateGraphMode">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">EnvUpdateGraphMode</span><span class="p">(</span><span class="n">Enum</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Cold-path modes for the no-reset Manager state-update boundary.&quot;&quot;&quot;</span>
-
-    <span class="n">DISABLED</span> <span class="o">=</span> <span class="s2">&quot;disabled&quot;</span>
-    <span class="n">EAGER</span> <span class="o">=</span> <span class="s2">&quot;eager&quot;</span>
-    <span class="n">GRAPH</span> <span class="o">=</span> <span class="s2">&quot;graph&quot;</span></div>
-
-
-
-<span class="n">ENV_UPDATE_GRAPH_MODES</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="n">mode</span><span class="o">.</span><span class="n">value</span> <span class="k">for</span> <span class="n">mode</span> <span class="ow">in</span> <span class="n">EnvUpdateGraphMode</span><span class="p">})</span>
-<span class="n">ENV_UPDATE_GRAPH_MANIFEST_VERSION</span> <span class="o">=</span> <span class="mi">1</span>
-<span class="n">ENV_UPDATE_GRAPH_INVALIDATION_REASONS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span>
-    <span class="p">{</span><span class="s2">&quot;view&quot;</span><span class="p">,</span> <span class="s2">&quot;capacity&quot;</span><span class="p">,</span> <span class="s2">&quot;stream_event&quot;</span><span class="p">,</span> <span class="s2">&quot;allocator&quot;</span><span class="p">,</span> <span class="s2">&quot;capture_failed&quot;</span><span class="p">}</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.rl.runtime.placement</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">InferencePlacement</span><span class="p">,</span>
+    <span class="n">resolve_inference_placement</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.rl.runtime.settings</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">DEFAULT_COLLECTOR_METRICS_INTERVAL</span><span class="p">,</span>
+    <span class="n">DEFAULT_INFERENCE_SLOT_CAPACITY</span><span class="p">,</span>
+    <span class="n">DEFAULT_REPLAY_INGRESS_DEPTH</span><span class="p">,</span>
+    <span class="n">MAX_COLLECTOR_METRICS_INTERVAL</span><span class="p">,</span>
+    <span class="n">MAX_INFERENCE_SLOT_CAPACITY</span><span class="p">,</span>
+    <span class="n">MAX_REPLAY_INGRESS_DEPTH</span><span class="p">,</span>
+    <span class="n">TensorRuntimeSettings</span><span class="p">,</span>
+    <span class="n">_validated_positive_int</span><span class="p">,</span>
 <span class="p">)</span>
 
 
-<div class="viewcode-block" id="resolve_env_update_graph_mode">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.env_update_graph.resolve_env_update_graph_mode.html#unilab.base.env_update_graph.resolve_env_update_graph_mode">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">resolve_env_update_graph_mode</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">EnvUpdateGraphMode</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve and validate one owner-selected state-update execution mode.&quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+<div class="viewcode-block" id="resolve_collector_tensor_native">
+<a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.tensor_runtime.resolve_collector_tensor_native.html#unilab.training.tensor_runtime.resolve_collector_tensor_native">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_collector_tensor_native</span><span class="p">(</span>
+    <span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">device</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">algo_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compatibility resolver returning one placement contract&#39;s tensor mode.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">resolve_inference_transport</span><span class="p">(</span>
+        <span class="n">cfg</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">algo_name</span><span class="o">=</span><span class="n">algo_name</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">collector_tensor_native</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_inference_transport">
+<a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.tensor_runtime.resolve_inference_transport.html#unilab.training.tensor_runtime.resolve_inference_transport">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_inference_transport</span><span class="p">(</span>
+    <span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">device</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">algo_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">env_tensor_native</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">InferencePlacement</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve placement from the owner config&#39;s single config-source tree.&quot;&quot;&quot;</span>
+    <span class="n">requested_transport</span> <span class="o">=</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;training.inference_transport&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">env_device</span> <span class="o">=</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;env.tensor_runtime_device&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">tensor_runtime</span> <span class="o">=</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;env.tensor_runtime&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">tensor_runtime</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">tensor_runtime</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">tensor_runtime</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-            <span class="s2">&quot;env update graph mode must be one of &#39;disabled&#39;, &#39;eager&#39;, or &#39;graph&#39;; &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;got boolean </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">algo_name</span><span class="si">}</span><span class="s2"> env.tensor_runtime must be a boolean or omitted, got </span><span class="si">{</span><span class="n">tensor_runtime</span><span class="si">!r}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">requested_transport</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">requested_transport</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-            <span class="s2">&quot;env update graph mode must be one of &#39;disabled&#39;, &#39;eager&#39;, or &#39;graph&#39;; &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">algo_name</span><span class="si">}</span><span class="s2"> training.inference_transport must be a string or omitted, &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">requested_transport</span><span class="si">!r}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">EnvUpdateGraphMode</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
-    <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-        <span class="n">choices</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">ENV_UPDATE_GRAPH_MODES</span><span class="p">))</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;env update graph mode must be one of </span><span class="si">{</span><span class="n">choices</span><span class="si">}</span><span class="s2">; got </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span></div>
+    <span class="k">if</span> <span class="n">tensor_runtime</span> <span class="ow">and</span> <span class="n">env_device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">env_device</span> <span class="o">=</span> <span class="n">device</span>
+    <span class="k">if</span> <span class="n">tensor_runtime</span> <span class="ow">and</span> <span class="n">env_device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_device</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">algo_name</span><span class="si">}</span><span class="s2"> env.tensor_runtime_device must be a string or omitted, got </span><span class="si">{</span><span class="n">env_device</span><span class="si">!r}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">resolve_inference_placement</span><span class="p">(</span>
+        <span class="n">learner_device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+        <span class="n">transport</span><span class="o">=</span><span class="n">requested_transport</span><span class="p">,</span>
+        <span class="n">tensor_runtime</span><span class="o">=</span><span class="n">tensor_runtime</span><span class="p">,</span>
+        <span class="n">tensor_runtime_device</span><span class="o">=</span><span class="n">env_device</span><span class="p">,</span>
+        <span class="n">env_tensor_native</span><span class="o">=</span><span class="n">env_tensor_native</span><span class="p">,</span>
+        <span class="n">algo_name</span><span class="o">=</span><span class="n">algo_name</span><span class="p">,</span>
+    <span class="p">)</span></div>
 
 
 
-<div class="viewcode-block" id="validate_env_update_graph_manifest">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.env_update_graph.validate_env_update_graph_manifest.html#unilab.base.env_update_graph.validate_env_update_graph_manifest">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">validate_env_update_graph_manifest</span><span class="p">(</span><span class="n">manifest</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fail closed on malformed state-update graph evidence.&quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">manifest</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;env update graph manifest must be a mapping&quot;</span><span class="p">)</span>
-    <span class="n">required</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;contract_version&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;mode&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;requested&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;enabled&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;state&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;capture_id&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;invalidation_reason&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;disable_reason&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;fallback_count&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;replay_count&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;backend_step_receipt&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;update_completion&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;rng_state&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;allocator_snapshots&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;carrier_layout&quot;</span><span class="p">,</span>
-    <span class="p">}</span>
-    <span class="n">missing</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">required</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">manifest</span><span class="p">))</span>
-    <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;env update graph manifest is missing fields: </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;contract_version&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="n">ENV_UPDATE_GRAPH_MANIFEST_VERSION</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_resolve_positive_training_int</span><span class="p">(</span>
+    <span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">default</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">algo_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">maximum</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;training.</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">default</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">default</span>
+    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">algo_name</span><span class="si">}</span><span class="s2"> training.</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2"> must be a positive integer or omitted, got </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">suffix</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span> <span class="k">if</span> <span class="n">maximum</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot; and no greater than </span><span class="si">{</span><span class="n">maximum</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="p">(</span><span class="n">maximum</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">value</span> <span class="o">&gt;</span> <span class="n">maximum</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;unsupported env update graph manifest contract </span><span class="si">{</span><span class="n">manifest</span><span class="p">[</span><span class="s1">&#39;contract_version&#39;</span><span class="p">]</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">algo_name</span><span class="si">}</span><span class="s2"> training.</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2"> must be a positive integer</span><span class="si">{</span><span class="n">suffix</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
-    <span class="n">mode</span> <span class="o">=</span> <span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;mode&quot;</span><span class="p">]</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mode</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="n">mode</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ENV_UPDATE_GRAPH_MODES</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;env update graph manifest has unsupported mode </span><span class="si">{</span><span class="n">mode</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;requested&quot;</span><span class="p">,</span> <span class="s2">&quot;enabled&quot;</span><span class="p">):</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">manifest</span><span class="p">[</span><span class="n">name</span><span class="p">],</span> <span class="nb">bool</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;env update graph manifest </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be a bool&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;fallback_count&quot;</span><span class="p">,</span> <span class="s2">&quot;replay_count&quot;</span><span class="p">):</span>
-        <span class="n">value</span> <span class="o">=</span> <span class="n">manifest</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">value</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;env update graph manifest </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be a non-negative integer&quot;</span><span class="p">)</span>
-    <span class="n">state</span> <span class="o">=</span> <span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;state&quot;</span><span class="p">]</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="n">state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;unavailable&quot;</span><span class="p">,</span> <span class="s2">&quot;eager&quot;</span><span class="p">,</span> <span class="s2">&quot;ready&quot;</span><span class="p">,</span> <span class="s2">&quot;invalidated&quot;</span><span class="p">}:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;env update graph manifest has unsupported state </span><span class="si">{</span><span class="n">state</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">capture_id</span> <span class="o">=</span> <span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;capture_id&quot;</span><span class="p">]</span>
-    <span class="n">reason</span> <span class="o">=</span> <span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;disable_reason&quot;</span><span class="p">]</span>
-    <span class="n">invalidation_reason</span> <span class="o">=</span> <span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;invalidation_reason&quot;</span><span class="p">]</span>
-    <span class="k">if</span> <span class="n">invalidation_reason</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
-        <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">invalidation_reason</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span>
-        <span class="ow">or</span> <span class="n">invalidation_reason</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ENV_UPDATE_GRAPH_INVALIDATION_REASONS</span>
-    <span class="p">):</span>
+    <span class="k">return</span> <span class="n">value</span>
+
+
+<div class="viewcode-block" id="resolve_inference_slot_capacity">
+<a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.tensor_runtime.resolve_inference_slot_capacity.html#unilab.training.tensor_runtime.resolve_inference_slot_capacity">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_inference_slot_capacity</span><span class="p">(</span><span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">algo_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve the bounded inference-ring capacity before IPC construction.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_resolve_positive_training_int</span><span class="p">(</span>
+        <span class="n">cfg</span><span class="p">,</span>
+        <span class="n">key</span><span class="o">=</span><span class="s2">&quot;inference_slot_capacity&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="n">DEFAULT_INFERENCE_SLOT_CAPACITY</span><span class="p">,</span>
+        <span class="n">algo_name</span><span class="o">=</span><span class="n">algo_name</span><span class="p">,</span>
+        <span class="n">maximum</span><span class="o">=</span><span class="n">MAX_INFERENCE_SLOT_CAPACITY</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_collector_metrics_interval">
+<a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.tensor_runtime.resolve_collector_metrics_interval.html#unilab.training.tensor_runtime.resolve_collector_metrics_interval">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_collector_metrics_interval</span><span class="p">(</span><span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">algo_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve the device-metric compaction/reporting interval.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_resolve_positive_training_int</span><span class="p">(</span>
+        <span class="n">cfg</span><span class="p">,</span>
+        <span class="n">key</span><span class="o">=</span><span class="s2">&quot;collector_metrics_interval&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="n">DEFAULT_COLLECTOR_METRICS_INTERVAL</span><span class="p">,</span>
+        <span class="n">algo_name</span><span class="o">=</span><span class="n">algo_name</span><span class="p">,</span>
+        <span class="n">maximum</span><span class="o">=</span><span class="n">MAX_COLLECTOR_METRICS_INTERVAL</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_resolved_training_int</span><span class="p">(</span>
+    <span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">default</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">algo_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">maximum</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]:</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;training.</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">default</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">default</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="n">effective</span> <span class="o">=</span> <span class="n">_validated_positive_int</span><span class="p">(</span>
+        <span class="n">value</span><span class="p">,</span>
+        <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">algo_name</span><span class="si">}</span><span class="s2"> training.</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="n">maximum</span><span class="o">=</span><span class="n">maximum</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">effective</span><span class="p">,</span> <span class="n">effective</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_required_algo_int</span><span class="p">(</span><span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">algo_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;algo.</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;env update graph manifest has unsupported invalidation_reason </span><span class="si">{</span><span class="n">invalidation_reason</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">algo_name</span><span class="si">}</span><span class="s2"> algo.</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2"> must be configured as a positive integer, got None&quot;</span>
         <span class="p">)</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;backend_step_receipt&quot;</span><span class="p">],</span> <span class="n">Mapping</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;env update graph backend_step_receipt must be a mapping&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;update_completion&quot;</span><span class="p">],</span> <span class="n">Mapping</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;env update graph update_completion must be a mapping&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;rng_state&quot;</span><span class="p">],</span> <span class="n">Mapping</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;env update graph rng_state must be a mapping&quot;</span><span class="p">)</span>
-    <span class="n">snapshots</span> <span class="o">=</span> <span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;allocator_snapshots&quot;</span><span class="p">]</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">snapshots</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;env update graph allocator_snapshots must be a list&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">snapshot</span> <span class="ow">in</span> <span class="n">snapshots</span><span class="p">:</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">snapshot</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;each env update graph allocator snapshot must be a mapping&quot;</span><span class="p">)</span>
-        <span class="n">stage</span> <span class="o">=</span> <span class="n">snapshot</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stage&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stage</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">stage</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;each env update graph allocator snapshot requires a stage&quot;</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">snapshot</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="s2">&quot;stage&quot;</span><span class="p">:</span>
-                <span class="k">continue</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">value</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;env update graph allocator snapshot[</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">] must be a non-negative integer&quot;</span>
-                <span class="p">)</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;carrier_layout&quot;</span><span class="p">],</span> <span class="n">Mapping</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;env update graph carrier_layout must be a mapping&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;enabled&quot;</span><span class="p">]:</span>
-        <span class="k">if</span> <span class="n">mode</span> <span class="o">!=</span> <span class="s2">&quot;graph&quot;</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;requested&quot;</span><span class="p">]</span> <span class="ow">or</span> <span class="n">state</span> <span class="o">!=</span> <span class="s2">&quot;ready&quot;</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;an enabled env update graph must be a requested, READY graph mode&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">capture_id</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">capture_id</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;an enabled env update graph requires a non-empty capture_id&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">reason</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;an enabled env update graph must not declare a disable reason&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">invalidation_reason</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;an enabled env update graph must not declare an invalidation reason&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;replay_count&quot;</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;an enabled env update graph requires evidence of a real replay&quot;</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">capture_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;a disabled env update graph must not publish a capture_id&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reason</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">reason</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;a disabled env update graph requires a non-empty disable reason&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">state</span> <span class="o">==</span> <span class="s2">&quot;invalidated&quot;</span> <span class="ow">and</span> <span class="n">invalidation_reason</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;an invalidated env update graph requires an invalidation reason&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">state</span> <span class="o">!=</span> <span class="s2">&quot;invalidated&quot;</span> <span class="ow">and</span> <span class="n">invalidation_reason</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;only an invalidated env update graph may declare an invalidation reason&quot;</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="n">manifest</span><span class="p">[</span><span class="s2">&quot;replay_count&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;a disabled env update graph must not claim graph replays&quot;</span><span class="p">)</span></div>
+    <span class="k">return</span> <span class="n">_validated_positive_int</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">algo_name</span><span class="si">}</span><span class="s2"> algo.</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
 
+<div class="viewcode-block" id="resolve_tensor_runtime_settings">
+<a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.tensor_runtime.resolve_tensor_runtime_settings.html#unilab.training.tensor_runtime.resolve_tensor_runtime_settings">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_tensor_runtime_settings</span><span class="p">(</span>
+    <span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">algo_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorRuntimeSettings</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve all spawn-facing tensor-runtime knobs and learner sampling.&quot;&quot;&quot;</span>
+    <span class="n">inference_capacity</span><span class="p">,</span> <span class="n">configured_inference_capacity</span> <span class="o">=</span> <span class="n">_resolved_training_int</span><span class="p">(</span>
+        <span class="n">cfg</span><span class="p">,</span>
+        <span class="n">key</span><span class="o">=</span><span class="s2">&quot;inference_slot_capacity&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="n">DEFAULT_INFERENCE_SLOT_CAPACITY</span><span class="p">,</span>
+        <span class="n">algo_name</span><span class="o">=</span><span class="n">algo_name</span><span class="p">,</span>
+        <span class="n">maximum</span><span class="o">=</span><span class="n">MAX_INFERENCE_SLOT_CAPACITY</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">metrics_interval</span><span class="p">,</span> <span class="n">configured_metrics_interval</span> <span class="o">=</span> <span class="n">_resolved_training_int</span><span class="p">(</span>
+        <span class="n">cfg</span><span class="p">,</span>
+        <span class="n">key</span><span class="o">=</span><span class="s2">&quot;collector_metrics_interval&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="n">DEFAULT_COLLECTOR_METRICS_INTERVAL</span><span class="p">,</span>
+        <span class="n">algo_name</span><span class="o">=</span><span class="n">algo_name</span><span class="p">,</span>
+        <span class="n">maximum</span><span class="o">=</span><span class="n">MAX_COLLECTOR_METRICS_INTERVAL</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">ingress_depth</span><span class="p">,</span> <span class="n">configured_ingress_depth</span> <span class="o">=</span> <span class="n">_resolved_training_int</span><span class="p">(</span>
+        <span class="n">cfg</span><span class="p">,</span>
+        <span class="n">key</span><span class="o">=</span><span class="s2">&quot;replay_ingress_depth&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="n">DEFAULT_REPLAY_INGRESS_DEPTH</span><span class="p">,</span>
+        <span class="n">algo_name</span><span class="o">=</span><span class="n">algo_name</span><span class="p">,</span>
+        <span class="n">maximum</span><span class="o">=</span><span class="n">MAX_REPLAY_INGRESS_DEPTH</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">ingress_slot_rows</span><span class="p">,</span> <span class="n">configured_ingress_slot_rows</span> <span class="o">=</span> <span class="n">_resolved_training_int</span><span class="p">(</span>
+        <span class="n">cfg</span><span class="p">,</span>
+        <span class="n">key</span><span class="o">=</span><span class="s2">&quot;replay_ingress_slot_rows&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="n">num_envs</span><span class="p">,</span>
+        <span class="n">algo_name</span><span class="o">=</span><span class="n">algo_name</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">batch_size</span> <span class="o">=</span> <span class="n">_required_algo_int</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s2">&quot;batch_size&quot;</span><span class="p">,</span> <span class="n">algo_name</span><span class="o">=</span><span class="n">algo_name</span><span class="p">)</span>
+    <span class="n">updates_per_step</span> <span class="o">=</span> <span class="n">_required_algo_int</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s2">&quot;updates_per_step&quot;</span><span class="p">,</span> <span class="n">algo_name</span><span class="o">=</span><span class="n">algo_name</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">TensorRuntimeSettings</span><span class="p">(</span>
+        <span class="n">inference_slot_capacity</span><span class="o">=</span><span class="n">inference_capacity</span><span class="p">,</span>
+        <span class="n">collector_metrics_interval</span><span class="o">=</span><span class="n">metrics_interval</span><span class="p">,</span>
+        <span class="n">replay_ingress_depth</span><span class="o">=</span><span class="n">ingress_depth</span><span class="p">,</span>
+        <span class="n">replay_ingress_slot_rows</span><span class="o">=</span><span class="n">ingress_slot_rows</span><span class="p">,</span>
+        <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+        <span class="n">updates_per_step</span><span class="o">=</span><span class="n">updates_per_step</span><span class="p">,</span>
+        <span class="n">num_envs</span><span class="o">=</span><span class="n">num_envs</span><span class="p">,</span>
+        <span class="n">configured_batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+        <span class="n">configured_updates_per_step</span><span class="o">=</span><span class="n">updates_per_step</span><span class="p">,</span>
+        <span class="n">configured_inference_slot_capacity</span><span class="o">=</span><span class="n">configured_inference_capacity</span><span class="p">,</span>
+        <span class="n">configured_collector_metrics_interval</span><span class="o">=</span><span class="n">configured_metrics_interval</span><span class="p">,</span>
+        <span class="n">configured_replay_ingress_depth</span><span class="o">=</span><span class="n">configured_ingress_depth</span><span class="p">,</span>
+        <span class="n">configured_replay_ingress_slot_rows</span><span class="o">=</span><span class="n">configured_ingress_slot_rows</span><span class="p">,</span>
+    <span class="p">)</span></div>
 
-<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="s2">&quot;ENV_UPDATE_GRAPH_INVALIDATION_REASONS&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;ENV_UPDATE_GRAPH_MANIFEST_VERSION&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;ENV_UPDATE_GRAPH_MODES&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;EnvUpdateGraphMode&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;resolve_env_update_graph_mode&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;validate_env_update_graph_manifest&quot;</span><span class="p">,</span>
-<span class="p">]</span>
 </pre></div>
         </article>
       </div>
