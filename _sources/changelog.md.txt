@@ -72,6 +72,20 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
 
 ### Fixed / 修复
 
+- Off-policy replay timeout bootstrapping: a transition that returns
+  `terminated=True` and `truncated=True` together is a true terminal and no
+  longer bootstraps. The collector now writes the timeout-bootstrap
+  eligibility mask (`truncated & ~terminated`) into the replay `truncated`
+  column while `dones` keeps the `terminated | truncated` lifecycle semantics
+  and done rows keep the real terminal observations; SAC/FlashSAC targets are
+  unchanged in form and now correct for the overlap case
+  ([unilab_rl#29](https://github.com/unilabsim/unilab_rl/issues/29)).
+  修复 off-policy replay 的 timeout bootstrap：同一 transition 同时返回
+  `terminated=True` 与 `truncated=True` 时是真正的终止，不再 bootstrap。
+  collector 现在把 timeout bootstrap 资格掩码（`truncated & ~terminated`）
+  写入 replay 的 `truncated` 列；`dones` 保持 `terminated | truncated`
+  的生命周期语义，done 行仍携带真实 terminal observation；SAC/FlashSAC 的
+  target 公式形式不变，overlap 情形结果修正（unilab_rl#29）。
 - Multi-term concatenated observations are again caller-owned: the Manager no
   longer publishes rotating internal output carriers through the default eager
   boundary, so observations retained by a transition consumer remain immutable
