@@ -533,12 +533,17 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">HostBridgeTransferPlan</span><span class="p">,</span>
+    <span class="n">SelectedResetPublication</span><span class="p">,</span>
     <span class="n">TensorDataPlane</span><span class="p">,</span>
     <span class="n">TensorExecution</span><span class="p">,</span>
     <span class="n">TensorIOSpec</span><span class="p">,</span>
     <span class="n">TensorLifecycleCapabilities</span><span class="p">,</span>
     <span class="n">TensorProcessTopology</span><span class="p">,</span>
     <span class="n">tensor_device_matches</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ResetRandomizationPayload</span><span class="p">,</span>
+    <span class="n">TensorResetRandomizationPayload</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
@@ -560,7 +565,15 @@
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.tensor.motrix_tensor_capabilities.html#unisim.backend.motrix.tensor.motrix_tensor_capabilities">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">motrix_tensor_capabilities</span><span class="p">(</span><span class="n">backend</span><span class="p">:</span> <span class="n">MotrixBackend</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorLifecycleCapabilities</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the deliberately narrow MotrixSim tensor capability matrix.&quot;&quot;&quot;</span>
-    <span class="k">del</span> <span class="n">backend</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.packed_reset</span><span class="w"> </span><span class="kn">import</span> <span class="n">PACKED_RESET_MODEL_FIELDS</span>
+
+    <span class="n">reset_terms</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">supported_reset_terms</span>
+    <span class="n">supports_packed_layout</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_portable_mode</span> <span class="ow">or</span> <span class="n">backend</span><span class="o">.</span><span class="n">_body_floatingbase</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="n">packed_fields</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="nb">frozenset</span><span class="p">(</span><span class="n">reset_terms</span> <span class="o">&amp;</span> <span class="n">PACKED_RESET_MODEL_FIELDS</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">supports_packed_layout</span>
+        <span class="k">else</span> <span class="nb">frozenset</span><span class="p">()</span>
+    <span class="p">)</span>
     <span class="k">return</span> <span class="n">TensorLifecycleCapabilities</span><span class="p">(</span>
         <span class="n">execution</span><span class="o">=</span><span class="n">TensorExecution</span><span class="o">.</span><span class="n">HOST_BRIDGE</span><span class="p">,</span>
         <span class="n">state_views</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -568,7 +581,11 @@
         <span class="n">sensor_views</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="n">stepping</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="n">selected_reset</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-        <span class="n">reset_randomization</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">reset_randomization</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">reset_terms</span><span class="p">),</span>
+        <span class="n">device_reset_randomization</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">packed_fields</span><span class="p">),</span>
+        <span class="n">packed_reset</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">packed_fields</span><span class="p">),</span>
+        <span class="n">packed_reset_fields</span><span class="o">=</span><span class="n">packed_fields</span><span class="p">,</span>
+        <span class="n">packed_reset_mocap</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="n">fixed_variants</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="n">host_pre_step_control</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="n">packed_host_bridge</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -576,6 +593,8 @@
         <span class="n">data_plane</span><span class="o">=</span><span class="n">TensorDataPlane</span><span class="o">.</span><span class="n">HOST_BRIDGE</span><span class="p">,</span>
         <span class="n">stream_event_ownership</span><span class="o">=</span><span class="n">_STREAM_OWNERSHIP</span><span class="p">,</span>
         <span class="n">torch_devices</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="s2">&quot;cuda&quot;</span><span class="p">),</span>
+        <span class="n">selected_reset_publication</span><span class="o">=</span><span class="n">SelectedResetPublication</span><span class="o">.</span><span class="n">AUTHORITATIVE_VIEWS</span><span class="p">,</span>
+        <span class="n">mask_selected_reset</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span></div>
 
 
@@ -1010,8 +1029,6 @@
     <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
     <span class="n">require_motrix_tensor_runtime</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;MotrixSim tensor reset does not support randomization&quot;</span><span class="p">)</span>
     <span class="n">values</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;env_indices&quot;</span><span class="p">:</span> <span class="n">env_indices</span><span class="p">,</span> <span class="s2">&quot;qpos&quot;</span><span class="p">:</span> <span class="n">qpos</span><span class="p">,</span> <span class="s2">&quot;qvel&quot;</span><span class="p">:</span> <span class="n">qvel</span><span class="p">}</span>
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">values</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
@@ -1034,6 +1051,53 @@
     <span class="k">if</span> <span class="n">qpos</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">source_device</span> <span class="ow">or</span> <span class="n">qvel</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">source_device</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;MotrixSim tensor reset tensors must share one device&quot;</span><span class="p">)</span>
     <span class="n">target</span> <span class="o">=</span> <span class="n">_normalize_device</span><span class="p">(</span><span class="n">source_device</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;direct tensor I/O&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">():</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;MotrixSim tensor reset </span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2"> must be a torch.Tensor&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">source_device</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;MotrixSim tensor reset values must share one device&quot;</span><span class="p">)</span>
+        <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">env_indices</span><span class="p">)</span>
+        <span class="n">host_randomization</span> <span class="o">=</span> <span class="n">ResetRandomizationPayload</span><span class="p">(</span>
+            <span class="o">**</span><span class="p">{</span>
+                <span class="n">field</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+                <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">value</span> <span class="o">:=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">field</span><span class="p">))</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">env_indices</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+        <span class="n">positions</span> <span class="o">=</span> <span class="n">qpos</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+        <span class="n">velocities</span> <span class="o">=</span> <span class="n">qvel</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+            <span class="n">sorted_rows</span> <span class="o">=</span> <span class="n">env_indices</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span><span class="o">.</span><span class="n">values</span>
+            <span class="n">in_range</span> <span class="o">=</span> <span class="p">(</span><span class="n">sorted_rows</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">sorted_rows</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">)</span>
+            <span class="n">unique</span> <span class="o">=</span> <span class="p">(</span><span class="n">sorted_rows</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">!=</span> <span class="n">sorted_rows</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+            <span class="n">valid</span> <span class="o">=</span> <span class="n">in_range</span> <span class="k">if</span> <span class="n">env_indices</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">2</span> <span class="k">else</span> <span class="n">in_range</span> <span class="o">&amp;</span> <span class="n">unique</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">valid</span><span class="o">.</span><span class="n">item</span><span class="p">()):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;MotrixSim tensor reset env_indices must contain unique values in &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;[0, </span><span class="si">{</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="si">}</span><span class="s2">)&quot;</span>
+                <span class="p">)</span>
+            <span class="n">order</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;stable&quot;</span><span class="p">)</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="n">rows</span><span class="p">[</span><span class="n">order</span><span class="p">]</span>
+            <span class="n">positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">positions</span><span class="p">[</span><span class="n">order</span><span class="p">])</span>
+            <span class="n">velocities</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">velocities</span><span class="p">[</span><span class="n">order</span><span class="p">])</span>
+            <span class="n">host_randomization</span> <span class="o">=</span> <span class="n">ResetRandomizationPayload</span><span class="p">(</span>
+                <span class="o">**</span><span class="p">{</span>
+                    <span class="n">field</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">value</span><span class="p">)[</span><span class="n">order</span><span class="p">])</span>
+                    <span class="k">for</span> <span class="n">field</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="p">(</span>
+                        <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">host_randomization</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span>
+                        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">host_randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
+                    <span class="p">)</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">backend</span><span class="o">.</span><span class="n">_host_set_state</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="n">velocities</span><span class="p">,</span> <span class="n">host_randomization</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">ResetRandomizationPayload</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+            <span class="s2">&quot;MotrixSim tensor reset randomization must be &quot;</span>
+            <span class="s2">&quot;ResetRandomizationPayload, TensorResetRandomizationPayload, or None&quot;</span>
+        <span class="p">)</span>
     <span class="n">plan</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_direct_host_bridge_plan</span>
     <span class="k">if</span> <span class="n">plan</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">plan</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">target</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -1042,10 +1106,117 @@
             <span class="n">TensorIOSpec</span><span class="p">(</span><span class="n">state_fields</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="s2">&quot;qvel&quot;</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">target</span><span class="p">)</span>
         <span class="p">)</span>
         <span class="n">backend</span><span class="o">.</span><span class="n">_direct_host_bridge_plan</span> <span class="o">=</span> <span class="n">plan</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">apply_reset</span><span class="p">(</span><span class="n">env_indices</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">apply_reset</span><span class="p">(</span><span class="n">env_indices</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">env_indices</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+        <span class="n">positions</span> <span class="o">=</span> <span class="n">qpos</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+        <span class="n">velocities</span> <span class="o">=</span> <span class="n">qvel</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+        <span class="n">order</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;stable&quot;</span><span class="p">)</span>
+        <span class="n">host_randomization</span> <span class="o">=</span> <span class="n">ResetRandomizationPayload</span><span class="p">(</span>
+            <span class="o">**</span><span class="p">{</span>
+                <span class="n">field</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">value</span><span class="p">)[</span><span class="n">order</span><span class="p">])</span>
+                <span class="k">for</span> <span class="n">field</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="p">(</span>
+                    <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span>
+                    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
+                <span class="p">)</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_host_set_state</span><span class="p">(</span>
+            <span class="n">rows</span><span class="p">[</span><span class="n">order</span><span class="p">],</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">positions</span><span class="p">[</span><span class="n">order</span><span class="p">]),</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">velocities</span><span class="p">[</span><span class="n">order</span><span class="p">]),</span>
+            <span class="n">host_randomization</span><span class="p">,</span>
+        <span class="p">)</span>
     <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">result</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">return</span> <span class="n">result</span></div>
+
+
+
+<div class="viewcode-block" id="motrix_set_state_tensor_mask">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.tensor.motrix_set_state_tensor_mask.html#unisim.backend.motrix.tensor.motrix_set_state_tensor_mask">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">motrix_set_state_tensor_mask</span><span class="p">(</span>
+    <span class="n">backend</span><span class="p">:</span> <span class="n">MotrixBackend</span><span class="p">,</span>
+    <span class="n">reset_mask</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">qpos</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">qvel</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">randomization</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">full_refresh</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Commit full-width reset tensors selected by a backend-owned bool mask.&quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+    <span class="n">require_motrix_tensor_runtime</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">full_refresh</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;full_refresh must be bool&quot;</span><span class="p">)</span>
+    <span class="n">values</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;reset_mask&quot;</span><span class="p">:</span> <span class="n">reset_mask</span><span class="p">,</span> <span class="s2">&quot;qpos&quot;</span><span class="p">:</span> <span class="n">qpos</span><span class="p">,</span> <span class="s2">&quot;qvel&quot;</span><span class="p">:</span> <span class="n">qvel</span><span class="p">}</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">values</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;MotrixSim tensor mask reset </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be a torch.Tensor&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">()):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;MotrixSim tensor mask reset </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be contiguous&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span> <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;MotrixSim tensor reset_mask must be a contiguous 1-D bool tensor&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;MotrixSim tensor reset_mask must have shape </span><span class="si">{</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">widths</span> <span class="o">=</span> <span class="n">_field_widths</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">qpos</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">widths</span><span class="p">[</span><span class="s2">&quot;qpos&quot;</span><span class="p">]):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;MotrixSim tensor mask reset qpos must have shape &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span><span class="w"> </span><span class="n">widths</span><span class="p">[</span><span class="s1">&#39;qpos&#39;</span><span class="p">])</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">qvel</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">widths</span><span class="p">[</span><span class="s2">&quot;qvel&quot;</span><span class="p">]):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;MotrixSim tensor mask reset qvel must have shape &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span><span class="w"> </span><span class="n">widths</span><span class="p">[</span><span class="s1">&#39;qvel&#39;</span><span class="p">])</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">qpos</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span> <span class="ow">or</span> <span class="n">qvel</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;MotrixSim tensor mask reset qpos and qvel must be float32&quot;</span><span class="p">)</span>
+    <span class="n">source_device</span> <span class="o">=</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">device</span>
+    <span class="k">if</span> <span class="n">qpos</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">source_device</span> <span class="ow">or</span> <span class="n">qvel</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">source_device</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;MotrixSim tensor mask reset tensors must share one device&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">qpos</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">())</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">qvel</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;MotrixSim tensor mask reset qpos and qvel must contain finite values&quot;</span><span class="p">)</span>
+    <span class="n">target</span> <span class="o">=</span> <span class="n">_normalize_device</span><span class="p">(</span><span class="n">source_device</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;direct tensor I/O&quot;</span><span class="p">)</span>
+    <span class="k">del</span> <span class="n">target</span>
+    <span class="n">selected_rows</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">as_tuple</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+    <span class="n">host_randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">():</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;MotrixSim tensor mask reset </span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2"> must be a torch.Tensor&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">source_device</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;MotrixSim tensor mask reset values must share one device&quot;</span><span class="p">)</span>
+        <span class="n">host_randomization</span> <span class="o">=</span> <span class="n">ResetRandomizationPayload</span><span class="p">(</span>
+            <span class="o">**</span><span class="p">{</span>
+                <span class="n">field</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+                <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">value</span> <span class="o">:=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">field</span><span class="p">))</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+    <span class="k">elif</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">ResetRandomizationPayload</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="s2">&quot;MotrixSim tensor mask reset randomization must be &quot;</span>
+                <span class="s2">&quot;TensorResetRandomizationPayload or None&quot;</span>
+            <span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+            <span class="s2">&quot;MotrixSim mask reset requires a device-resident TensorResetRandomizationPayload&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">full_refresh</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;MotrixSim tensor mask reset does not support full refresh&quot;</span><span class="p">)</span>
+    <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="n">selected_rows</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_host_set_state</span><span class="p">(</span>
+        <span class="n">rows</span><span class="p">,</span>
+        <span class="n">qpos</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span>
+        <span class="n">qvel</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span>
+        <span class="n">host_randomization</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="p">{}</span> <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">result</span></div>
 
 
 

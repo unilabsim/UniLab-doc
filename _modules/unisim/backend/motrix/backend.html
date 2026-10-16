@@ -4352,6 +4352,65 @@
     <span class="c1"># DOF state                                                          #</span>
     <span class="c1"># ------------------------------------------------------------------ #</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_host_get_state</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">fields</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return detached public qpos/qvel snapshots assembled on the host.</span>
+
+<span class="sd">        Portable scenes serve the composed public layout directly. Whole-MJCF</span>
+<span class="sd">        scenes rebuild the canonical ``[base_pos, base_quat, dofs]`` and</span>
+<span class="sd">        ``[base_lin_vel, base_ang_vel, dofs]`` blocks from the private base</span>
+<span class="sd">        getters and the actuator-ordered DoF columns, matching the layout the</span>
+<span class="sd">        packed tensor bridge publishes.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">requested</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="s2">&quot;qvel&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">fields</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="p">((</span><span class="n">fields</span><span class="p">,)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fields</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">fields</span><span class="p">))</span>
+        <span class="p">)</span>
+        <span class="n">unknown</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">requested</span><span class="p">)</span> <span class="o">-</span> <span class="p">{</span><span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="s2">&quot;qvel&quot;</span><span class="p">,</span> <span class="s2">&quot;ctrl&quot;</span><span class="p">}</span>
+        <span class="k">if</span> <span class="n">unknown</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unknown </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">backend_type</span><span class="si">}</span><span class="s2"> state field(s): </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unknown</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;ctrl&quot;</span> <span class="ow">in</span> <span class="n">requested</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> does not expose control state&quot;</span><span class="p">)</span>
+        <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_mode</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_require_portable_healthy</span><span class="p">(</span><span class="s2">&quot;host state read&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;qpos&quot;</span> <span class="ow">in</span> <span class="n">requested</span><span class="p">:</span>
+                <span class="n">result</span><span class="p">[</span><span class="s2">&quot;qpos&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_state_qpos</span><span class="p">()</span>
+            <span class="k">if</span> <span class="s2">&quot;qvel&quot;</span> <span class="ow">in</span> <span class="n">requested</span><span class="p">:</span>
+                <span class="n">result</span><span class="p">[</span><span class="s2">&quot;qvel&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_state_qvel</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">result</span>
+        <span class="k">if</span> <span class="s2">&quot;qpos&quot;</span> <span class="ow">in</span> <span class="n">requested</span><span class="p">:</span>
+            <span class="n">qpos_indices</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_joint_pos_indices</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_joint_pos_indices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_joint_dof_pos_indices</span>
+            <span class="p">)</span>
+            <span class="n">result</span><span class="p">[</span><span class="s2">&quot;qpos&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_host_get_base_pos</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">),</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_host_get_base_quat</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">),</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="o">.</span><span class="n">dof_pos</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">)[:,</span> <span class="n">qpos_indices</span><span class="p">],</span>
+                <span class="p">),</span>
+                <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;qvel&quot;</span> <span class="ow">in</span> <span class="n">requested</span><span class="p">:</span>
+            <span class="n">qvel_indices</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_joint_vel_indices</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_joint_vel_indices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_joint_dof_vel_indices</span>
+            <span class="p">)</span>
+            <span class="n">result</span><span class="p">[</span><span class="s2">&quot;qvel&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_host_get_base_lin_vel</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">),</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_host_get_base_ang_vel</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">),</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="o">.</span><span class="n">dof_vel</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">)[:,</span> <span class="n">qvel_indices</span><span class="p">],</span>
+                <span class="p">),</span>
+                <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span>
+
     <span class="c1"># ------------------------------------------------------------------ #</span>
     <span class="c1"># Body kinematics — world frame                                      #</span>
     <span class="c1"># ------------------------------------------------------------------ #</span>
@@ -4597,7 +4656,7 @@
 <div class="viewcode-block" id="MotrixBackend.get_tensor_capabilities">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.backend.MotrixBackend.html#unisim.backend.motrix.backend.MotrixBackend.get_tensor_capabilities">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_tensor_capabilities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorLifecycleCapabilities</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the deliberately narrow initial packed host-bridge profile.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the MotrixSim packed host-bridge capability matrix.&quot;&quot;&quot;</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">.tensor</span><span class="w"> </span><span class="kn">import</span> <span class="n">motrix_tensor_capabilities</span>
 
         <span class="k">return</span> <span class="n">motrix_tensor_capabilities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
@@ -4667,6 +4726,34 @@
         <span class="kn">from</span><span class="w"> </span><span class="nn">.tensor</span><span class="w"> </span><span class="kn">import</span> <span class="n">motrix_set_state_tensor</span>
 
         <span class="k">return</span> <span class="n">motrix_set_state_tensor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_indices</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span><span class="p">,</span> <span class="n">randomization</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MotrixBackend.set_state_tensor_mask">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.backend.MotrixBackend.html#unisim.backend.motrix.backend.MotrixBackend.set_state_tensor_mask">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_state_tensor_mask</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">qpos</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">qvel</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">full_refresh</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Commit full-width accelerator reset state selected by a bool mask.&quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.tensor</span><span class="w"> </span><span class="kn">import</span> <span class="n">motrix_set_state_tensor_mask</span>
+
+        <span class="k">return</span> <span class="n">motrix_set_state_tensor_mask</span><span class="p">(</span>
+            <span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span><span class="p">,</span> <span class="n">randomization</span><span class="p">,</span> <span class="n">full_refresh</span><span class="o">=</span><span class="n">full_refresh</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MotrixBackend.begin_packed_reset">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.backend.MotrixBackend.html#unisim.backend.motrix.backend.MotrixBackend.begin_packed_reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">begin_packed_reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Begin a host-bridge transaction with one packed reset commit boundary.&quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.packed_reset</span><span class="w"> </span><span class="kn">import</span> <span class="n">TorchPackedResetComposer</span>
+
+        <span class="k">return</span> <span class="n">TorchPackedResetComposer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_bind_sensor_data_reader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
