@@ -17,6 +17,17 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
 
 ### Breaking changes / 破坏性变更
 
+- `training.collector_tensor_device`, `manager_torch_device`, `env.tensor_runtime`,
+  and `env.tensor_runtime_device` are removed. Use `training.sim_carrier_device`
+  (routed to `env.sim_carrier_device`) and the resolved learner device for
+  tensor-native inference. Removed keys fail closed with migration hints, `cuda`
+  no longer maps silently to MPS, and `run_config.json` records configured-to-resolved
+  devices ([#2382](https://github.com/Motphys/UniLab/issues/2382)).
+  `training.collector_tensor_device`、`manager_torch_device`、`env.tensor_runtime`
+  与 `env.tensor_runtime_device` 已移除。请使用
+  `training.sim_carrier_device`（路由到 `env.sim_carrier_device`），并让 tensor-native
+  推理跟随已解析 learner 设备。移除键会带迁移提示 fail closed，`cuda` 不再静默映射
+  MPS，`run_config.json` 会记录“配置值 → 解析值”设备映射。
 - The former `unilab-rl` distribution (import namespace `uni_rl`) is merged
   into the `unilab` package under `unilab.rl` (contracts / adapters / algos /
   runtime / logging layers), and the release surface converges to the single

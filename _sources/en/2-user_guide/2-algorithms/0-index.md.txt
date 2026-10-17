@@ -11,6 +11,14 @@ lives, and which command shape selects it. For general flags, see
 | SAC | off-policy | `src/unilab/scripts/train_sac.py` | `src/unilab/conf/sac/config.yaml` |
 | FlashSAC | off-policy | `src/unilab/scripts/train_flashsac.py` | `src/unilab/conf/flashsac/config.yaml` |
 
+Selection and log names are intentional: `--algo flashsac` composes
+`algo.algo=flashsac`, records `algo.algo_log_name=flash_sac`, and imports the
+implementation from `unilab.rl.algos.flash_sac`. `--algo ppo` keeps
+`algo.algo=ppo`, records `algo.algo_log_name=rsl_rl_ppo`, and delegates to
+upstream RSL-RL. PPO exposes `algo.obs_groups` as a list for its single policy
+group; APPO, SAC, and FlashSAC use a mapping so policy and critic groups can
+differ.
+
 ```{toctree}
 :hidden:
 

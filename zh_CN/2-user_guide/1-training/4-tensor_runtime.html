@@ -471,25 +471,77 @@
 <code class="docutils literal notranslate"><span class="pre">collector_metrics_interval</span></code> 覆盖为 <code class="docutils literal notranslate"><span class="pre">100</span></code>；其他 tensor-runtime 默认值仍保持
 上表所示。</p>
 </section>
-<section id="collector-tensor-device-mujoco-host-bridge">
-<h2>Collector tensor device（MuJoCo host bridge）<a class="headerlink" href="#collector-tensor-device-mujoco-host-bridge" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device</span></code> 选择 MuJoCo HOST_BRIDGE Manager 的可选加速器
-Torch carrier（路由到 <code class="docutils literal notranslate"><span class="pre">manager_torch_device</span></code> owner 字段）。取值为 <code class="docutils literal notranslate"><span class="pre">auto</span></code>
-（默认）、<code class="docutils literal notranslate"><span class="pre">cpu</span></code> 或不带序号的 <code class="docutils literal notranslate"><span class="pre">cuda</span></code>；<code class="docutils literal notranslate"><span class="pre">cuda:3</span></code> 这类带序号的值会被拒绝。</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">auto</span></code> 跟随 learner 设备：CUDA learner 会路由 rank-local 带序号的 learner
-设备（例如 <code class="docutils literal notranslate"><span class="pre">cuda:3</span></code>），使 collector 的 observation 与 action 留在 learner GPU
-上，runtime 探针（<code class="docutils literal notranslate"><span class="pre">unilab.rl.contracts.probe</span></code>）无需额外配置即可解析 CUDA
-inference transport。CPU 与
-torch.mps（Metal Performance Shaders）learner 保持 CPU carrier。</p></li>
-<li><p>显式 <code class="docutils literal notranslate"><span class="pre">cpu</span></code>/<code class="docutils literal notranslate"><span class="pre">cuda</span></code> 优先于 <code class="docutils literal notranslate"><span class="pre">auto</span></code>。<code class="docutils literal notranslate"><span class="pre">cuda</span></code> 仍只支持 MuJoCo HOST_BRIDGE 后端；
-对其他后端该 knob 是 no-op，但请求 <code class="docutils literal notranslate"><span class="pre">cuda</span></code> 会 fail closed。</p></li>
-</ul>
-<p>迁移说明：之前在 CUDA learner 下沿用 <code class="docutils literal notranslate"><span class="pre">cpu</span></code> 默认值的 MuJoCo 配置，现在会通过
-packed host bridge 呈现 CUDA tensor，并解析为 CUDA inference transport。此时每个
-collector 进程会在 learner GPU 上额外持有一个 CUDA context（双 context 拓扑见
-<a class="reference internal" href="7-tensor_runtime_production.html"><span class="doc">Tensor Runtime 生产指南</span></a>）。如需保留原先的 CPU carrier，请显式固定
-<code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device=cpu</span></code>。</p>
+<section id="id1">
+<h2>设备语义与解析<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<p>设备相关设置按消费层分离：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>配置键</p></th>
+<th class="head"><p>生效层</p></th>
+<th class="head"><p>合法值</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">training.sim_carrier_device</span></code></p></td>
+<td><p>训练装配层，路由到环境</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">auto</span></code>、<code class="docutils literal notranslate"><span class="pre">cpu</span></code>、不带序号的 <code class="docutils literal notranslate"><span class="pre">cuda</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">env.sim_carrier_device</span></code></p></td>
+<td><p>MuJoCo HOST_BRIDGE 的 Manager 公共 tensor</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">cpu</span></code>、<code class="docutils literal notranslate"><span class="pre">cuda</span></code>、<code class="docutils literal notranslate"><span class="pre">cuda:&lt;index&gt;</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">training.inference_transport</span></code></p></td>
+<td><p>off-policy IPC placement</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">cpu</span></code> 或 <code class="docutils literal notranslate"><span class="pre">cuda</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">training.device</span></code></p></td>
+<td><p>learner 与 rank-local 进程选择</p></td>
+<td><p>具体 Torch device 标签</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>训练键是唯一面向用户的 carrier 请求。<code class="docutils literal notranslate"><span class="pre">auto</span></code> 跟随已解析的 learner 设备：
+CUDA 路由 rank-local 带序号设备；CPU 与 torch.mps（Metal Performance
+Shaders）保持 CPU carrier。显式 <code class="docutils literal notranslate"><span class="pre">cpu</span></code>/<code class="docutils literal notranslate"><span class="pre">cuda</span></code> 优先于 <code class="docutils literal notranslate"><span class="pre">auto</span></code>。<code class="docutils literal notranslate"><span class="pre">cuda</span></code> 是具体
+设备家族，绝不映射到 MPS；无 CUDA 主机上的 CUDA 请求会 fail closed。</p>
+<p><code class="docutils literal notranslate"><span class="pre">cuda</span></code> 只支持 MuJoCo HOST_BRIDGE carrier。其他后端忽略 <code class="docutils literal notranslate"><span class="pre">auto</span></code>/<code class="docutils literal notranslate"><span class="pre">cpu</span></code>，但
+<code class="docutils literal notranslate"><span class="pre">cuda</span></code> 请求会 fail closed。<code class="docutils literal notranslate"><span class="pre">run_config.json</span></code> 保留组合后的配置，并在
+<code class="docutils literal notranslate"><span class="pre">run.resolved_devices</span></code> 记录每个“配置值 → 解析值”映射；启动日志打印同一映射。</p>
+<p>已移除键会带迁移错误 fail closed：用 <code class="docutils literal notranslate"><span class="pre">training.sim_carrier_device</span></code> 替代
+<code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device</span></code>，用 <code class="docutils literal notranslate"><span class="pre">env.sim_carrier_device</span></code> 替代
+<code class="docutils literal notranslate"><span class="pre">manager_torch_device</span></code>，并用已解析的 learner 设备替代
+<code class="docutils literal notranslate"><span class="pre">env.tensor_runtime_device</span></code>。</p>
+<p>迁移说明：默认 <code class="docutils literal notranslate"><span class="pre">auto</span></code> 下的 CUDA learner 会通过 packed host bridge 呈现 CUDA
+tensor，并解析为 CUDA inference transport。此时每个 collector 进程会在
+learner GPU 上额外持有一个 CUDA context（拓扑见
+<a class="reference internal" href="7-tensor_runtime_production.html"><span class="doc">Tensor Runtime 生产指南</span></a>）。如需保留 CPU carrier，请固定
+<code class="docutils literal notranslate"><span class="pre">training.sim_carrier_device=cpu</span></code>。</p>
+<p>“worker”一词同样按层区分：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>术语</p></th>
+<th class="head"><p>含义</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Collector worker</p></td>
+<td><p>APPO 或 off-policy 中推进环境并发布 rollout 的进程</p></td>
+</tr>
+<tr class="row-odd"><td><p>Backend worker</p></td>
+<td><p>后端自有外部模拟器进程（例如 Isaac）</p></td>
+</tr>
+<tr class="row-even"><td><p>torchrun rank</p></td>
+<td><p>PPO 多 GPU launcher 启动的分布式 learner rank</p></td>
+</tr>
+<tr class="row-odd"><td><p>Backend process device</p></td>
+<td><p>进程全局加速器绑定，不是 Manager carrier 键</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 </section>
 <section id="replay-ingress">
 <h2>Replay ingress 权衡<a class="headerlink" href="#replay-ingress" title="Link to this heading">¶</a></h2>
@@ -506,8 +558,8 @@ vector。shutdown 时可能保留一个尚未完整发布 vector 的有效行前
 非法 transition 行。replay ingress 计数器与 shutdown schema 见
 <a class="reference internal" href="3-logging.html"><span class="doc">日志</span></a>。</p>
 </section>
-<section id="id1">
-<h2>随机数生成<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<section id="id2">
+<h2>随机数生成<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
 <p>Manager 环境持有 <code class="docutils literal notranslate"><span class="pre">unilab.managers.TorchManagerRng</span></code>，它是训练 runtime 的
 唯一 RNG。该适配器包装一个显式 CPU/CUDA <code class="docutils literal notranslate"><span class="pre">torch.Generator</span></code>，校验种子和
 未支持的采样语义，并始终在该 generator 的设备上返回 tensor。它不是 NumPy
@@ -602,9 +654,9 @@ execution-sharing 证据；默认 <code class="docutils literal notranslate"><sp
             <ul>
 <li><a class="reference internal" href="#">Tensor runtime</a><ul>
 <li><a class="reference internal" href="#owner">Owner 默认值与边界</a></li>
-<li><a class="reference internal" href="#collector-tensor-device-mujoco-host-bridge">Collector tensor device（MuJoCo host bridge）</a></li>
+<li><a class="reference internal" href="#id1">设备语义与解析</a></li>
 <li><a class="reference internal" href="#replay-ingress">Replay ingress 权衡</a></li>
-<li><a class="reference internal" href="#id1">随机数生成</a></li>
+<li><a class="reference internal" href="#id2">随机数生成</a></li>
 <li><a class="reference internal" href="#runtime-evidence">Runtime evidence</a></li>
 </ul>
 </li>

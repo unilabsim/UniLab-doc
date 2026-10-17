@@ -27,29 +27,47 @@ string `mps`. The G1 Motion Tracking / MJWarp owner intentionally overrides only
 `collector_metrics_interval` to `100`; all other tensor-runtime defaults remain
 as listed above.
 
-## Collector tensor device (MuJoCo host bridge)
+## Device semantics and resolution
 
-`training.collector_tensor_device` selects the optional accelerator Torch
-carriers of the MuJoCo HOST_BRIDGE Manager (routed to the
-`manager_torch_device` owner field). It accepts `auto` (the default), `cpu`,
-or unindexed `cuda`; indexed values such as `cuda:3` are rejected.
+Device-related settings are separated by the layer that consumes them:
 
-- `auto` follows the learner device: a CUDA learner routes the rank-local
-  indexed learner device (for example `cuda:3`), so collector observations and
-  actions stay on the learner GPU and the runtime probe
-  (`unilab.rl.contracts.probe`) resolves CUDA inference
-  transport with no further configuration. CPU and torch.mps (Metal Performance
-  Shaders) learners keep the CPU carrier.
-- Explicit `cpu` or `cuda` values win over `auto`. `cuda` remains supported
-  only for the MuJoCo HOST_BRIDGE backend; for every other backend the knob is
-  a no-op unless it requests `cuda`, which fails closed.
+| Configuration key | Effective layer | Valid values |
+| --- | --- | --- |
+| `training.sim_carrier_device` | Training assembly routes it to the environment | `auto`, `cpu`, or unindexed `cuda` |
+| `env.sim_carrier_device` | Manager public tensors for a MuJoCo HOST_BRIDGE | `cpu`, `cuda`, or `cuda:<index>` |
+| `training.inference_transport` | Off-policy IPC placement | `cpu` or `cuda` |
+| `training.device` | Learner and rank-local process selection | Concrete Torch device label |
 
-Migration note: existing MuJoCo configurations that ran a CUDA learner under
-the previous `cpu` default now present CUDA tensors through the packed host
-bridge and resolve CUDA inference transport. Each collector process then holds
-one additional CUDA context on the learner GPU (see
-{doc}`7-tensor_runtime_production` for the two-context topology). Pin
-`training.collector_tensor_device=cpu` to keep the previous CPU carrier.
+The training key is the only user-facing carrier request. `auto` follows the
+resolved learner device: CUDA routes the rank-local indexed device, while CPU
+and torch.mps (Metal Performance Shaders) keep the CPU carrier. Explicit
+`cpu` or `cuda` wins over `auto`. `cuda` is concrete and never maps to MPS; a
+CUDA request on a host without CUDA fails closed.
+
+`cuda` is supported only for the MuJoCo HOST_BRIDGE carrier. Other backends
+ignore `auto`/`cpu`, but a `cuda` request fails closed. `run_config.json`
+retains the composed configuration and records `run.resolved_devices` with
+each configured-to-resolved mapping; startup logs print the same mapping.
+
+Removed keys fail closed with a migration error: use `training.sim_carrier_device`
+instead of `training.collector_tensor_device`, `env.sim_carrier_device` instead
+of `manager_torch_device`, and the resolved learner device instead of
+`env.tensor_runtime_device`.
+
+Migration note: a CUDA learner with the default `auto` presents CUDA tensors
+through the packed host bridge and resolves CUDA inference transport. Each
+collector process then holds one additional CUDA context on the learner GPU
+(see {doc}`7-tensor_runtime_production`). Pin
+`training.sim_carrier_device=cpu` to keep the CPU carrier.
+
+The word “worker” is likewise layer-specific:
+
+| Term | Meaning |
+| --- | --- |
+| Collector worker | APPO or off-policy process that steps environments and publishes rollouts |
+| Backend worker | Backend-owned external simulator process (for example Isaac) |
+| torchrun rank | Distributed learner rank launched by the PPO multi-GPU launcher |
+| Backend process device | Process-global accelerator binding, not a Manager carrier key |
 
 ## Replay ingress tradeoffs
 

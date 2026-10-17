@@ -116,8 +116,8 @@ NVIDIA 驱动与容器运行时不匹配，再调整任务配置。设置了
 
 在 macOS 与 ROCm 上请使用 CPU-authoritative host-bridge 后端。在 ROCm 上，只要
 MuJoCo 训练的 learner 设备为 CUDA——默认的
-`training.collector_tensor_device=auto` 会跟随 learner 设备——或训练显式设置
-`training.collector_tensor_device=cuda`，且后端接受被路由的 `cuda`
-`manager_torch_device`，Manager/TorchEnv 就使用当前 GPU；CPU 与 torch.mps
+`training.sim_carrier_device=auto` 会跟随 learner 设备——或训练显式设置
+`training.sim_carrier_device=cuda`，且后端接受被路由的 `cuda`
+`env.sim_carrier_device`，Manager/TorchEnv 就使用当前 GPU；CPU 与 torch.mps
 learner 保持 CPU carrier，直接构造环境仍为 CPU。host bridge 使用 GPU Torch
 buffer 不代表 GPU physics，也不代表 device-resident 后端生命周期。

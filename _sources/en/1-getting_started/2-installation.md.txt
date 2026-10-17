@@ -252,8 +252,8 @@ ROCm notes:
 - With ROCm PyTorch and an available GPU, a `HOST_BRIDGE` backend accepting
   `cuda` buffers uses the current GPU for Manager/TorchEnv tensors whenever the
   MuJoCo training learner resolves to CUDA: the default
-  `training.collector_tensor_device=auto` follows the learner device, and an
-  explicit `training.collector_tensor_device=cuda` forces the same routing for
+  `training.sim_carrier_device=auto` follows the learner device, and an
+  explicit `training.sim_carrier_device=cuda` forces the same routing for
   other learner devices. Direct environment construction remains CPU. MuJoCo
   physics stays on CPU; packed transfers connect it to the GPU observations,
   actions, rewards, and resets. CUDA-only physics backends remain unsupported

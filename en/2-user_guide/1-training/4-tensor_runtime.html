@@ -471,29 +471,79 @@ string <code class="docutils literal notranslate"><span class="pre">mps</span></
 <code class="docutils literal notranslate"><span class="pre">collector_metrics_interval</span></code> to <code class="docutils literal notranslate"><span class="pre">100</span></code>; all other tensor-runtime defaults remain
 as listed above.</p>
 </section>
-<section id="collector-tensor-device-mujoco-host-bridge">
-<h2>Collector tensor device (MuJoCo host bridge)<a class="headerlink" href="#collector-tensor-device-mujoco-host-bridge" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device</span></code> selects the optional accelerator Torch
-carriers of the MuJoCo HOST_BRIDGE Manager (routed to the
-<code class="docutils literal notranslate"><span class="pre">manager_torch_device</span></code> owner field). It accepts <code class="docutils literal notranslate"><span class="pre">auto</span></code> (the default), <code class="docutils literal notranslate"><span class="pre">cpu</span></code>,
-or unindexed <code class="docutils literal notranslate"><span class="pre">cuda</span></code>; indexed values such as <code class="docutils literal notranslate"><span class="pre">cuda:3</span></code> are rejected.</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">auto</span></code> follows the learner device: a CUDA learner routes the rank-local
-indexed learner device (for example <code class="docutils literal notranslate"><span class="pre">cuda:3</span></code>), so collector observations and
-actions stay on the learner GPU and the runtime probe
-(<code class="docutils literal notranslate"><span class="pre">unilab.rl.contracts.probe</span></code>) resolves CUDA inference
-transport with no further configuration. CPU and torch.mps (Metal Performance
-Shaders) learners keep the CPU carrier.</p></li>
-<li><p>Explicit <code class="docutils literal notranslate"><span class="pre">cpu</span></code> or <code class="docutils literal notranslate"><span class="pre">cuda</span></code> values win over <code class="docutils literal notranslate"><span class="pre">auto</span></code>. <code class="docutils literal notranslate"><span class="pre">cuda</span></code> remains supported
-only for the MuJoCo HOST_BRIDGE backend; for every other backend the knob is
-a no-op unless it requests <code class="docutils literal notranslate"><span class="pre">cuda</span></code>, which fails closed.</p></li>
-</ul>
-<p>Migration note: existing MuJoCo configurations that ran a CUDA learner under
-the previous <code class="docutils literal notranslate"><span class="pre">cpu</span></code> default now present CUDA tensors through the packed host
-bridge and resolve CUDA inference transport. Each collector process then holds
-one additional CUDA context on the learner GPU (see
-<a class="reference internal" href="7-tensor_runtime_production.html"><span class="doc">Tensor Runtime Production Guide</span></a> for the two-context topology). Pin
-<code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device=cpu</span></code> to keep the previous CPU carrier.</p>
+<section id="device-semantics-and-resolution">
+<h2>Device semantics and resolution<a class="headerlink" href="#device-semantics-and-resolution" title="Link to this heading">¶</a></h2>
+<p>Device-related settings are separated by the layer that consumes them:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Configuration key</p></th>
+<th class="head"><p>Effective layer</p></th>
+<th class="head"><p>Valid values</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">training.sim_carrier_device</span></code></p></td>
+<td><p>Training assembly routes it to the environment</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">auto</span></code>, <code class="docutils literal notranslate"><span class="pre">cpu</span></code>, or unindexed <code class="docutils literal notranslate"><span class="pre">cuda</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">env.sim_carrier_device</span></code></p></td>
+<td><p>Manager public tensors for a MuJoCo HOST_BRIDGE</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">cpu</span></code>, <code class="docutils literal notranslate"><span class="pre">cuda</span></code>, or <code class="docutils literal notranslate"><span class="pre">cuda:&lt;index&gt;</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">training.inference_transport</span></code></p></td>
+<td><p>Off-policy IPC placement</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">cpu</span></code> or <code class="docutils literal notranslate"><span class="pre">cuda</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">training.device</span></code></p></td>
+<td><p>Learner and rank-local process selection</p></td>
+<td><p>Concrete Torch device label</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The training key is the only user-facing carrier request. <code class="docutils literal notranslate"><span class="pre">auto</span></code> follows the
+resolved learner device: CUDA routes the rank-local indexed device, while CPU
+and torch.mps (Metal Performance Shaders) keep the CPU carrier. Explicit
+<code class="docutils literal notranslate"><span class="pre">cpu</span></code> or <code class="docutils literal notranslate"><span class="pre">cuda</span></code> wins over <code class="docutils literal notranslate"><span class="pre">auto</span></code>. <code class="docutils literal notranslate"><span class="pre">cuda</span></code> is concrete and never maps to MPS; a
+CUDA request on a host without CUDA fails closed.</p>
+<p><code class="docutils literal notranslate"><span class="pre">cuda</span></code> is supported only for the MuJoCo HOST_BRIDGE carrier. Other backends
+ignore <code class="docutils literal notranslate"><span class="pre">auto</span></code>/<code class="docutils literal notranslate"><span class="pre">cpu</span></code>, but a <code class="docutils literal notranslate"><span class="pre">cuda</span></code> request fails closed. <code class="docutils literal notranslate"><span class="pre">run_config.json</span></code>
+retains the composed configuration and records <code class="docutils literal notranslate"><span class="pre">run.resolved_devices</span></code> with
+each configured-to-resolved mapping; startup logs print the same mapping.</p>
+<p>Removed keys fail closed with a migration error: use <code class="docutils literal notranslate"><span class="pre">training.sim_carrier_device</span></code>
+instead of <code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device</span></code>, <code class="docutils literal notranslate"><span class="pre">env.sim_carrier_device</span></code> instead
+of <code class="docutils literal notranslate"><span class="pre">manager_torch_device</span></code>, and the resolved learner device instead of
+<code class="docutils literal notranslate"><span class="pre">env.tensor_runtime_device</span></code>.</p>
+<p>Migration note: a CUDA learner with the default <code class="docutils literal notranslate"><span class="pre">auto</span></code> presents CUDA tensors
+through the packed host bridge and resolves CUDA inference transport. Each
+collector process then holds one additional CUDA context on the learner GPU
+(see <a class="reference internal" href="7-tensor_runtime_production.html"><span class="doc">Tensor Runtime Production Guide</span></a>). Pin
+<code class="docutils literal notranslate"><span class="pre">training.sim_carrier_device=cpu</span></code> to keep the CPU carrier.</p>
+<p>The word “worker” is likewise layer-specific:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Term</p></th>
+<th class="head"><p>Meaning</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Collector worker</p></td>
+<td><p>APPO or off-policy process that steps environments and publishes rollouts</p></td>
+</tr>
+<tr class="row-odd"><td><p>Backend worker</p></td>
+<td><p>Backend-owned external simulator process (for example Isaac)</p></td>
+</tr>
+<tr class="row-even"><td><p>torchrun rank</p></td>
+<td><p>Distributed learner rank launched by the PPO multi-GPU launcher</p></td>
+</tr>
+<tr class="row-odd"><td><p>Backend process device</p></td>
+<td><p>Process-global accelerator binding, not a Manager carrier key</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 </section>
 <section id="replay-ingress-tradeoffs">
 <h2>Replay ingress tradeoffs<a class="headerlink" href="#replay-ingress-tradeoffs" title="Link to this heading">¶</a></h2>
@@ -612,7 +662,7 @@ reproduction, artifacts, and troubleshooting, see
             <ul>
 <li><a class="reference internal" href="#">Tensor runtime</a><ul>
 <li><a class="reference internal" href="#owner-defaults-and-bounds">Owner defaults and bounds</a></li>
-<li><a class="reference internal" href="#collector-tensor-device-mujoco-host-bridge">Collector tensor device (MuJoCo host bridge)</a></li>
+<li><a class="reference internal" href="#device-semantics-and-resolution">Device semantics and resolution</a></li>
 <li><a class="reference internal" href="#replay-ingress-tradeoffs">Replay ingress tradeoffs</a></li>
 <li><a class="reference internal" href="#random-number-generation">Random number generation</a></li>
 <li><a class="reference internal" href="#runtime-evidence">Runtime evidence</a></li>

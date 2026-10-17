@@ -10,6 +10,13 @@
 | SAC | off-policy | `src/unilab/scripts/train_sac.py` | `src/unilab/conf/sac/config.yaml` |
 | FlashSAC | off-policy | `src/unilab/scripts/train_flashsac.py` | `src/unilab/conf/flashsac/config.yaml` |
 
+选择名与日志名是有意区分的：`--algo flashsac` 组合
+`algo.algo=flashsac`，记录 `algo.algo_log_name=flash_sac`，并从
+`unilab.rl.algos.flash_sac` 导入实现。`--algo ppo` 保持
+`algo.algo=ppo`，记录 `algo.algo_log_name=rsl_rl_ppo`，并直接委托上游
+RSL-RL。PPO 的 `algo.obs_groups` 是单一 policy group 的列表；APPO、SAC 与
+FlashSAC 使用 mapping，以便 policy/critic group 可以不同。
+
 ```{toctree}
 :hidden:
 

@@ -60,15 +60,16 @@ NumPy remains allowed only inside a backend adapter that declares a `HOST_BRIDGE
 owns its explicit packed conversion boundary. MuJoCo remains a production backend and is the
 canonical in-process host-bridge implementation; it is not a test-only fallback.
 
-`env.tensor_runtime` and `env.tensor_runtime_device` are removed. Tensor execution is an invariant
+`env.tensor_runtime` and `env.tensor_runtime_device` are removed without compatibility reads.
+Tensor execution is an invariant
 of the Manager runtime. Placement is derived from the declared backend data plane and, for a
 `HOST_BRIDGE`, the process's explicit carrier request. No NumPy/dual-runtime compatibility alias
 or hidden fallback is retained.
 
 For a `HOST_BRIDGE` backend, CPU-authoritative physics keeps the default Manager/TorchEnv
 carriers on CPU. MuJoCo training may explicitly request the unindexed accelerator family with
-`training.collector_tensor_device=cuda`; routing maps that request to the existing
-`manager_torch_device` owner field, and the collector process resolves it to its current
+`training.sim_carrier_device=cuda`; routing maps that request to the
+`env.sim_carrier_device` owner field, and the collector process resolves it to its current
 rank-local Torch CUDA ordinal. UniLab validates the request against the backend's declared
 Torch devices. Learner CUDA selection, GPU visibility, and backend device acceptance alone
 are not placement requests. `DEVICE_RESIDENT` adapters keep their own CUDA-only placement and
@@ -83,6 +84,13 @@ physics engines ROCm-compatible.
 > the CPU carrier, and explicit `cpu`/`cuda` values are unchanged and win over `auto`.
 > Decision record:
 > <https://github.com/Motphys/UniLab/issues/2365#issuecomment-6189905767>.
+>
+> **Addendum (2026-10-17, issue #2382):** `training.collector_tensor_device` and
+> `manager_torch_device` are renamed to `training.sim_carrier_device` and
+> `env.sim_carrier_device` without dual-read compatibility. Removed keys fail closed with a
+> migration hint. `run_config.json` records the configured-to-resolved device map, and `cuda`
+> never silently maps to `mps`; only the abstract `gpu` alias may select an available
+> accelerator family.
 
 ### Manager-owned RNG
 
