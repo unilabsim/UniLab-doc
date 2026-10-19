@@ -47,7 +47,7 @@ algo:
 只有当需要改动 runner / learner / collector 的共享实现（例如新的 IPC
 生命周期）时，才在本仓库修改
 `src/unilab/rl/algos/`。异步算法应复用 `AsyncRunner`、`ReplayBuffer` /
-`RolloutRingBuffer` 与 `SharedWeightSync`，而不是新建一套 IPC 生命周期。
+`TensorRolloutRingBuffer` 与 `SharedWeightSync`，而不是新建一套 IPC 生命周期。
 
 ## CLI 可路由算法的 footprint
 

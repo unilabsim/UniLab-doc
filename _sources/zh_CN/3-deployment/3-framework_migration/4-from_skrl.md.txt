@@ -8,7 +8,7 @@ skrl 的强项在于算法广度。UniLab 专注于一组精选算法（PPO、SA
 | skrl | UniLab |
 |---|---|
 | `Agent`（PPO、SAC……） | `unilab.rl.algos.*` |
-| `RolloutMemory` | `unilab.rl.runtime.ipc.rollout_ring_buffer` |
+| `RolloutMemory` | `unilab.rl.runtime.ipc.tensor_rollout_ring_buffer` |
 | `ReplayMemory` | `unilab.rl.runtime.ipc.replay_buffer` |
 | `Trainer` | `unilab.training.run` |
 | 用于 env 的 `Wrapper` | 继承 `TorchEnv` |

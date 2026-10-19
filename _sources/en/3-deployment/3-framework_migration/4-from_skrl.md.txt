@@ -9,7 +9,7 @@ deployment path.
 | skrl | UniLab |
 |---|---|
 | `Agent` (PPO, SAC, …) | `unilab.rl.algos.*` |
-| `RolloutMemory` | `unilab.rl.runtime.ipc.rollout_ring_buffer` |
+| `RolloutMemory` | `unilab.rl.runtime.ipc.tensor_rollout_ring_buffer` |
 | `ReplayMemory` | `unilab.rl.runtime.ipc.replay_buffer` |
 | `Trainer` | `unilab.training.run` |
 | `Wrapper` for env | `TorchEnv` subclassing |

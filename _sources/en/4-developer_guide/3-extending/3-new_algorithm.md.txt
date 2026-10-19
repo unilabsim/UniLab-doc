@@ -54,7 +54,7 @@ Only when you need to change the shared runner / learner / collector
 implementation (for example a new IPC lifecycle) should you modify
 `src/unilab/rl/algos/` in this repository. Async algorithms should reuse
 `AsyncRunner`, `ReplayBuffer` /
-`RolloutRingBuffer`, and `SharedWeightSync` instead of creating a new IPC
+`TensorRolloutRingBuffer`, and `SharedWeightSync` instead of creating a new IPC
 lifecycle.
 
 ## Footprint Of A CLI-Routable Algorithm

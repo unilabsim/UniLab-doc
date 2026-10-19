@@ -27,7 +27,7 @@ runtime, and the RL logging stack ship in the base install.
 | Old import (`uni_rl.*`) | New import |
 |---|---|
 | `uni_rl.env_contract` | `unilab.rl.contracts.env` |
-| `uni_rl.training_state` | `unilab.rl.contracts.training_state` |
+| `uni_rl.training_state` | no replacement (`unilab.training.experiment` owns checkpoint save/load) |
 | `uni_rl.utils.observations` | `unilab.rl.contracts.observations` |
 | `uni_rl.algos.common.device` (probe) | `unilab.rl.contracts.probe` |
 | `uni_rl.algos.appo` / `.sac` / `.flash_sac` / `.common` | `unilab.rl.algos.*` (same subpackage names) |

@@ -31,7 +31,7 @@ Environment tensor loop -> shared IPC carrier -> learner
         +------------- SharedWeightSync -------+
 ```
 
-- APPO 使用 `APPORunner`、`RolloutRingBuffer` 与 `SharedWeightSync`。
+- APPO 使用 `APPORunner`、`TensorRolloutRingBuffer` 与 `SharedWeightSync`。
 - SAC 与 FlashSAC 只使用一条 off-policy execution path：`ReplayBuffer`
   提供有界 host ingress，完整 ring 驻留在一个 CUDA/MPS learner device，
   `SharedWeightSync` 负责发布 actor 权重。
@@ -55,5 +55,5 @@ Environment tensor loop -> shared IPC carrier -> learner
 - APPO runner：`unilab.rl.algos.appo.runner`
 - Off-policy runner：`unilab.rl.runtime.offpolicy.double_buffer_runner`
 - IPC 原语：`unilab.rl.runtime.async_runner`、
-  `unilab.rl.runtime.ipc.rollout_ring_buffer`、`unilab.rl.runtime.ipc.replay_buffer`、
+  `unilab.rl.runtime.ipc.tensor_rollout_ring_buffer`、`unilab.rl.runtime.ipc.replay_buffer`、
   `unilab.rl.runtime.ipc.weight_sync`

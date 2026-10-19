@@ -45,8 +45,8 @@ collective 继续由上游 rsl-rl 提供，不建立自研 `algos/ppo`。
 `src/unilab/rl/` 按语义分五层：
 
 - `rl/contracts/`：env 注入契约（`EnvProtocol`/`EnvFactory`/capabilities）、obs/critic 与
-  final-observation 语义、冷路径环境契约探测、纯 JSON 训练状态协议。只依赖类型与通用
-  tensor 库，不导入具体环境、registry、manager、backend 或算法。
+  final-observation 语义、冷路径环境契约探测。只依赖类型与通用 tensor 库，不导入具体
+  环境、registry、manager、backend 或算法。
 - `rl/adapters/rsl_rl/`：第三方协议适配。`vec_env.py` 持有唯一 `RslRlVecEnvAdapter`；
   `distributed.py` 持有 PPO 专属 rank seed/device/样本数/结束/回放拓扑助手。
 - `rl/algos/{appo,sac,flash_sac,common}/`：自研算法 runner/learner/网络与算法专属
@@ -59,7 +59,8 @@ collective 继续由上游 rsl-rl 提供，不建立自研 `algos/ppo`。
 - `rl/logging/`：RL logger、metric schema、trace。
 
 相邻层职责：`training/` 管实验装配与落盘（含 Hydra rank 配置转换、removed-device 配置
-拒绝），`base/process_device.py` 管 simulator 专属设备绑定。`CUDA_VISIBLE_DEVICES` 的
+拒绝、plain JSON 训练状态 checkpoint 序列化/复制），`base/process_device.py` 管
+simulator 专属设备绑定。`CUDA_VISIBLE_DEVICES` 的
 通用 token 解析下沉到 stdlib-only 的 `unilab/process_context.py`，供 base 与 RL 共用；
 backend payload/device namespace 翻译留在 base。runtime 不反向 import training。
 

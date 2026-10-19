@@ -17,7 +17,7 @@ runner；它们不应另起第二套 collector/learner 协议。
 
 - `src/unilab/scripts/train_rsl_rl.py` 使用
   `unilab.rl.RslRlVecEnvAdapter` 与 RSL-RL 的 `OnPolicyRunner`。
-- `src/unilab/scripts/train_appo.py` 使用 `APPORunner`、`RolloutRingBuffer` 与
+- `src/unilab/scripts/train_appo.py` 使用 `APPORunner`、`TensorRolloutRingBuffer` 与
   `SharedWeightSync`。
 - `src/unilab/scripts/train_sac.py` 与 `src/unilab/scripts/train_flashsac.py`
   使用 off-policy runner，配合 `ReplayBuffer` 与

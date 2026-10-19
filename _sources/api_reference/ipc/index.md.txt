@@ -9,8 +9,7 @@ sync.
 | Submodule | Role |
 |---|---|
 | `unilab.rl.runtime.async_runner` | The high-level orchestration loop |
-| `unilab.rl.runtime.ipc.shared_buffer` | NumPy-backed shared-memory ring/buffer |
-| `unilab.rl.runtime.ipc.rollout_ring_buffer` | Rollout window used by on-policy collectors |
+| `unilab.rl.runtime.ipc.tensor_rollout_ring_buffer` | Tensor-backed rollout window used by APPO collectors |
 | `unilab.rl.runtime.ipc.replay_buffer` | Bounded shared ingress for off-policy transitions |
 | `unilab.rl.runtime.ipc.replay_pipelines.*` | Authoritative CUDA/MPS replay ring, device gather, and native H2D |
 | `unilab.rl.runtime.ipc.inference_ring` | Bounded, ordered observation/action exchange for learner-owned off-policy inference |
