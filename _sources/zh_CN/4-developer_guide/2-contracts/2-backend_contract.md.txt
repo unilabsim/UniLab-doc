@@ -53,5 +53,6 @@ Owner-subset command 生命周期仍以 fixed-width bool mask 作为输入 carri
 - Backend 工厂：`src/unilab/base/backend_factory.py`
 - MuJoCo backend：`unisim.backend.mujoco.backend`
 - Motrix backend：`unisim.backend.motrix.backend`
-- Backend 契约测试：`tests/base/test_sim_backend.py`、
+- Backend 契约测试：`tests/base/test_backend_conformance.py`、
+  `tests/base/test_sim_backend_smoke.py`、
   `tests/base/test_backend_imports.py`、`tests/base/test_motrix_backend_options.py`

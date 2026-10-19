@@ -29,7 +29,8 @@
 ## 在风险点附近验证
 
 - 后端导入与接口测试：`tests/base/test_backend_imports.py`、
-  `tests/base/test_sim_backend.py`
+  `tests/base/test_backend_conformance.py`、
+  `tests/base/test_sim_backend_smoke.py`
 - 特性边界附近的后端特定行为测试，例如
   `tests/base/test_motrix_backend_options.py`
 - Task/backend config 组合：`tests/config/test_config_system.py`

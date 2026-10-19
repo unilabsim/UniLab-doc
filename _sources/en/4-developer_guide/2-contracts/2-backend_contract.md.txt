@@ -59,5 +59,6 @@ Owner-subset command lifecycles retain the fixed-width bool mask as their input 
 - MuJoCo backend: `unisim.backend.mujoco.backend`
 - Motrix backend: `unisim.backend.motrix.backend`
 - Backend contract tests: `tests/base/test_backend_sensor_view.py`,
-  `tests/base/test_backend_conformance.py`, `tests/base/test_sim_backend.py`,
+  `tests/base/test_backend_conformance.py`,
+  `tests/base/test_sim_backend_smoke.py`,
   `tests/base/test_backend_imports.py`, `tests/base/test_motrix_backend_options.py`

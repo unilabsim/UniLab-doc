@@ -32,7 +32,8 @@ A third backend is therefore an architecture change, not just a new package.
 ## Validation Near Risk
 
 - Backend import and interface tests: `tests/base/test_backend_imports.py`,
-  `tests/base/test_sim_backend.py`
+  `tests/base/test_backend_conformance.py`,
+  `tests/base/test_sim_backend_smoke.py`
 - Backend-specific behavior tests near the feature boundary, such as
   `tests/base/test_motrix_backend_options.py`
 - Task/backend config composition: `tests/config/test_config_system.py`
