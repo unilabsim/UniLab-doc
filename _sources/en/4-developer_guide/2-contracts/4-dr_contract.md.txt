@@ -21,6 +21,11 @@ provider protocol and the environment does not carry a DR manager.
 - **Reset:** event terms write through Entity bindings into
   `ResetStateTransaction`; the transaction composes all staged writes in the
   backend-owned packed transaction and commits through it exactly once.
+- **Range spelling:** lifecycle selection changes only the sampling boundary.
+  In owner YAML, scalar bounds use the reset-owner array form such as
+  `mass_distribution_params: [lo, hi]`; the mass/COM family keeps its axis
+  mapping such as `com_range: {x: [lo, hi], y: [lo, hi], z: [lo, hi]}` in both
+  startup and reset declarations.
 - **Interval:** event terms use backend-owned interval plans through the public
   `SimBackend` contract.
 

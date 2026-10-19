@@ -18,6 +18,10 @@ Manager-Based event term 是 UniLab 唯一的 DR lifecycle。任务 provider 协
 - **Reset：** event term 通过 Entity binding 写入 `ResetStateTransaction`；
   transaction 将全部 staged 写入组合进 backend-owned packed 事务，并恰好提交
   一次。
+- **Range 写法：**生命周期选择只改变采样边界。owner YAML 中标量范围沿用
+  reset owner 的数组形式，例如 `mass_distribution_params: [lo, hi]`；mass/COM
+  家族在 startup 与 reset 声明中都保持轴映射，例如
+  `com_range: {x: [lo, hi], y: [lo, hi], z: [lo, hi]}`。
 - **Interval：** event term 通过公开 `SimBackend` contract 使用 backend-owned
   interval plan。
 
