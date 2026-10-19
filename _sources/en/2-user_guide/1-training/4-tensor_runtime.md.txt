@@ -35,7 +35,7 @@ Device-related settings are separated by the layer that consumes them:
 | --- | --- | --- |
 | `training.sim_carrier_device` | Training assembly routes it to the environment | `auto`, `cpu`, or unindexed `cuda` |
 | `env.sim_carrier_device` | Manager public tensors for a MuJoCo HOST_BRIDGE | `cpu`, `cuda`, or `cuda:<index>` |
-| `training.inference_transport` | Off-policy IPC placement | `cpu` or `cuda` |
+| `training.inference_transport` | Off-policy IPC placement | `host`, `cuda`, or `null` (auto) |
 | `training.device` | Learner and rank-local process selection | Concrete Torch device label |
 
 The training key is the only user-facing carrier request. `auto` follows the
@@ -59,6 +59,16 @@ through the packed host bridge and resolves CUDA inference transport. Each
 collector process then holds one additional CUDA context on the learner GPU
 (see {doc}`7-tensor_runtime_production`). Pin
 `training.sim_carrier_device=cpu` to keep the CPU carrier.
+
+For off-policy inference, `host` names the transport boundary rather than a
+complete learner topology: observations and actions use the CPU inference ring,
+while the learner itself may be CPU or Apple MPS. This spelling serves pure CPU
+tests and the macOS MPS host-boundary cell. `cuda` follows Torch device-type
+semantics and covers both NVIDIA CUDA and AMD ROCm. It does not relax separate
+platform gates: CUDA-only tensor backends still fail closed on ROCm/HIP, and
+`training.cuda_process_sharing` remains available only to the NVIDIA-specific
+CUDA MPS daemon and native H2D implementation. The removed `cpu` spelling fails
+closed; use `host`.
 
 The word “worker” is likewise layer-specific:
 

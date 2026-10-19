@@ -34,7 +34,7 @@ SAC 与 FlashSAC 会在探测环境或构造 learner 之前解析所有面向进
 | --- | --- | --- |
 | `training.sim_carrier_device` | 训练装配层，路由到环境 | `auto`、`cpu`、不带序号的 `cuda` |
 | `env.sim_carrier_device` | MuJoCo HOST_BRIDGE 的 Manager 公共 tensor | `cpu`、`cuda`、`cuda:<index>` |
-| `training.inference_transport` | off-policy IPC placement | `cpu` 或 `cuda` |
+| `training.inference_transport` | off-policy IPC placement | `host`、`cuda` 或 `null`（auto） |
 | `training.device` | learner 与 rank-local 进程选择 | 具体 Torch device 标签 |
 
 训练键是唯一面向用户的 carrier 请求。`auto` 跟随已解析的 learner 设备：
@@ -56,6 +56,14 @@ tensor，并解析为 CUDA inference transport。此时每个 collector 进程�
 learner GPU 上额外持有一个 CUDA context（拓扑见
 {doc}`7-tensor_runtime_production`）。如需保留 CPU carrier，请固定
 `training.sim_carrier_device=cpu`。
+
+对 off-policy inference，`host` 命名的是传输边界，而不是完整 learner 拓扑：
+观测与动作使用 CPU inference ring，learner 本身可以是 CPU 或 Apple MPS。该
+取值同时服务纯 CPU 测试与 macOS MPS 的 host 边界场景。`cuda` 遵循 Torch
+device type 语义，覆盖 NVIDIA CUDA 与 AMD ROCm。它不会放宽独立平台 gate：
+CUDA-only tensor backend 在 ROCm/HIP 上仍 fail closed，`training.cuda_process_sharing`
+仍只开放给 NVIDIA 专属的 CUDA MPS daemon 与 native H2D 实现。已移除的
+`cpu` 拼写会 fail closed；请使用 `host`。
 
 “worker”一词同样按层区分：
 
