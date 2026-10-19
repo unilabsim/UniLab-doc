@@ -13,8 +13,8 @@
   CUDA / macOS profile，执行 `git restore -- pyproject.toml uv.lock` 后重新
   `make setup`。
 - Linux Intel XPU：`make sync-xpu`
-- 如果更喜欢直接使用 uv，完整默认环境为 `uv sync --extra mujoco`
-  （RL 栈已内置；旧 `uni_rl` extra 现为空的过渡壳）。
+- 如果更喜欢直接使用 uv，完整默认环境为 `uv sync --extra mujoco`；
+  RL 栈已内置。
 
 ```bash
 # 选择一条核心安装路径：

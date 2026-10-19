@@ -163,14 +163,8 @@ data-parallel runtimes are included in the base install. The former
 `unilab-rl` package is merged into this repository (issue #2372, decision in
 {doc}`/adr/ADR-0016-rl-reintegration-into-unilab-rl`).
 
-The legacy `uni_rl` extra remains as an empty transitional shell so old
-install commands keep working without error; it installs nothing and will be
-removed in a later release:
-
-```bash
-uv sync --extra uni_rl        # accepted, installs nothing
-pip install unilab[uni_rl]    # accepted, installs nothing
-```
+The legacy `uni_rl` extra has been removed. Do not pass it to `uv sync` or
+`pip install`; the RL stack is included with the base distribution.
 
 If your code imports `uni_rl` directly, see
 {doc}`../3-deployment/3-framework_migration/7-from_unilab_rl` for the

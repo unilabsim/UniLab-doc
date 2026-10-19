@@ -148,13 +148,8 @@ runtime 变量、渲染器要求和验证命令见 scoped 后端页面：
 `unilab-rl` 包已并入本仓库（issue #2372，决策见
 {doc}`/adr/ADR-0016-rl-reintegration-into-unilab-rl`）。
 
-旧 `uni_rl` extra 保留为空的过渡壳，旧安装命令不会报错，但不会安装任何
-内容，并将在后续版本移除：
-
-```bash
-uv sync --extra uni_rl        # 命令仍被接受，但不安装任何内容
-pip install unilab[uni_rl]    # 命令仍被接受，但不安装任何内容
-```
+旧 `uni_rl` extra 已移除。不要再将其传给 `uv sync` 或 `pip install`；
+RL 栈已包含在基础发行版中。
 
 如果你的代码直接 `import uni_rl`，请参见
 {doc}`../3-deployment/3-framework_migration/7-from_unilab_rl` 中的

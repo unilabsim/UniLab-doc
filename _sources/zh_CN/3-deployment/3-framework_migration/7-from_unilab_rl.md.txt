@@ -14,8 +14,8 @@
 
 - 从 `uv sync` 命令中去掉 `--extra uni_rl`，pip 安装中去掉
   `unilab[uni_rl]`；RL 栈不需要任何 extra。
-- `uni_rl` extra 保留为空的过渡壳：旧命令不会报错，但不安装任何内容，
-  将在后续版本移除。
+- 空的过渡期 `uni_rl` extra 已移除，旧命令会因 unknown extra 报错。请从
+  脚本和 CI 中删除该 extra。
 - 从环境中卸载独立的 `unilab-rl`（`pip uninstall unilab-rl`），避免旧
   实现残留并与 `unilab.rl` 并存。
 - CLI 算法名、日志路径、checkpoint 字段与 metric schema 均不变。

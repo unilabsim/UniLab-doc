@@ -15,8 +15,7 @@ optional simulator extras used by the repository's checks:
   uv.lock` and re-run `make setup`.
 - Linux Intel XPU: `make sync-xpu`
 - If you prefer direct uv commands, the full default setup is
-  `uv sync --extra mujoco` (the RL stack is built in; the legacy `uni_rl`
-  extra is an empty transitional shell).
+  `uv sync --extra mujoco`; the RL stack is built in.
 
 ```bash
 # Choose one core setup path:

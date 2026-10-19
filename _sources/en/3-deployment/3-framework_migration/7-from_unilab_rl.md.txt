@@ -14,9 +14,8 @@ runtime, and the RL logging stack ship in the base install.
 
 - Drop `--extra uni_rl` from `uv sync` commands and `unilab[uni_rl]` from
   pip installs; the RL stack needs no extra.
-- The `uni_rl` extra remains as an empty transitional shell, so old commands
-  keep working without error but install nothing. It will be removed in a
-  later release.
+- The empty transitional `uni_rl` extra has been removed, so the old commands
+  now fail with an unknown-extra error. Remove the extra from scripts and CI.
 - Remove any standalone `unilab-rl` install from your environment
   (`pip uninstall unilab-rl`) so no stale copy of the old implementation
   lingers next to `unilab.rl`.

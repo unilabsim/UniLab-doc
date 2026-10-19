@@ -8,6 +8,8 @@ orphan: true
 
 - Status: Proposed
 - Date: 2026-10-16
+- Update: 2026-10-19 —— 下文“保留空 extra”的过渡安排已执行完毕，
+  `uni_rl` extra 及 `--extra uni_rl` 安装入口已移除。
 - Owners: RL / Runtime / Packaging maintainers
 - Supersedes: None（替代 roadmap #1476 确立的 unilab-rl 独立发行决策；该决策当时未记录为 ADR）
 - Superseded by: None

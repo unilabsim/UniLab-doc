@@ -33,18 +33,18 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
 - The former `unilab-rl` distribution (import namespace `uni_rl`) is merged
   into the `unilab` package under `unilab.rl` (contracts / adapters / algos /
   runtime / logging layers), and the release surface converges to the single
-  `unilab` distribution. The `uni_rl` extra is kept as an empty transitional
-  shell: `pip install unilab[uni_rl]` still succeeds but installs nothing, and
-  permanent `import uni_rl` support is not guaranteed. See
+  `unilab` distribution. The transitional `uni_rl` extra has been removed:
+  legacy `--extra uni_rl` / `pip install unilab[uni_rl]` commands are no longer
+  valid, and permanent `import uni_rl` support is not guaranteed. See
   {doc}`/adr/ADR-0016-rl-reintegration-into-unilab-rl` and the
   `uni_rl.*` → `unilab.rl.*` import-path mapping in
   {doc}`/en/3-deployment/3-framework_migration/7-from_unilab_rl`
   ([#2372](https://github.com/Motphys/UniLab/issues/2372)).
   原 `unilab-rl` distribution（import namespace `uni_rl`）并入 `unilab` 包的
   `unilab.rl`（contracts / adapters / algos / runtime / logging 分层），
-  发行面收敛为单一 `unilab` distribution。`uni_rl` extra 保留为空的过渡壳：
-  `pip install unilab[uni_rl]` 仍可执行但不安装任何内容，且不承诺永久支持
-  `import uni_rl`。决策见 ADR-0016，`uni_rl.*` → `unilab.rl.*` 的 import
+  发行面收敛为单一 `unilab` distribution。过渡期 `uni_rl` extra 已移除，
+  旧 `--extra uni_rl` / `pip install unilab[uni_rl]` 命令不再有效，且不承诺
+  永久支持 `import uni_rl`。决策见 ADR-0016，`uni_rl.*` → `unilab.rl.*` 的 import
   路径映射见迁移页
   {doc}`/zh_CN/3-deployment/3-framework_migration/7-from_unilab_rl`（#2372）。
 - Removed the collector CUDA-graph public lifecycle and graph-named completion
