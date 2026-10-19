@@ -79,6 +79,12 @@ Use Conventional Commit titles. State whether the change affects MuJoCo, Motrix,
 another backend, macOS, Linux, or training behavior. A documentation-only change
 uses its focused docs checks as well as the repository gate required for its PR.
 
+Dependency maintenance is dual-track: a change to `pyproject.toml` dependency
+pins must apply the same bump to `pyproject.rocm.toml` and `uv.rocm.lock` in
+the same PR. For a published-dependency transition the upstream release must
+exist on PyPI before the bump lands; see the tensor-runtime transition
+subsection below.
+
 ## Architecture Decisions
 
 When work changes a runtime, backend, config, registry, or other public
