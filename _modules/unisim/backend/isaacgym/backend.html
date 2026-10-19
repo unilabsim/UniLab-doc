@@ -541,6 +541,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">BackendPlayCapabilities</span><span class="p">,</span>
     <span class="n">PhysicsStateLayout</span><span class="p">,</span>
+    <span class="n">PublicStateWidths</span><span class="p">,</span>
     <span class="n">SelectedResetPublication</span><span class="p">,</span>
     <span class="n">TensorDataPlane</span><span class="p">,</span>
     <span class="n">TensorExecution</span><span class="p">,</span>
@@ -576,6 +577,7 @@
     <span class="n">FixedVariantLayout</span><span class="p">,</span>
     <span class="n">IntervalRandomizationPlan</span><span class="p">,</span>
     <span class="n">ResetRandomizationPayload</span><span class="p">,</span>
+    <span class="n">TensorResetRandomizationPayload</span><span class="p">,</span>
     <span class="n">_validate_reset_term</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneResetRequest</span>
@@ -649,6 +651,12 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="n">math</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">env_spacing</span><span class="p">))</span> <span class="ow">or</span> <span class="n">env_spacing</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;env_spacing must be positive and finite, got </span><span class="si">{</span><span class="n">env_spacing</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_env_spacing</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">env_spacing</span><span class="p">)</span>
+        <span class="n">requested_device_id</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;device_id&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">requested_device_id</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">requested_device_id</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;device_id must be an integer or None, got </span><span class="si">{</span><span class="n">requested_device_id</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">requested_device_id</span> <span class="o">&lt;</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;device_id must be -1 or &gt;= 0, got </span><span class="si">{</span><span class="n">requested_device_id</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_requested_device_id</span> <span class="o">=</span> <span class="n">requested_device_id</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">scene</span><span class="p">,</span> <span class="n">num_envs</span><span class="p">,</span> <span class="n">sim_dt</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_staged_body_wrench</span> <span class="o">=</span> <span class="p">(</span>
             <span class="kc">None</span>
@@ -909,9 +917,9 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_dr_capabilities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DomainRandomizationCapabilities</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Advertise mapped-scene reset DR and interval wrenches.</span>
 
-<span class="sd">        The model-file raw-MJCF path keeps the fail-closed empty declaration; mapped</span>
-<span class="sd">        entity scenes declare the reset terms the worker writes and reads back</span>
-<span class="sd">        natively.  Per-env ``gravity``/``dof_damping`` have no PhysX channel</span>
+<span class="sd">        The model-file raw-MJCF path declares only the selected-reset PD-gain</span>
+<span class="sd">        bridge; mapped entity scenes declare the reset terms the worker writes</span>
+<span class="sd">        and reads back natively.  Per-env ``gravity``/``dof_damping`` have no PhysX channel</span>
 <span class="sd">        (sim-wide parameter, drive-only joint damping) and the multi-root scene</span>
 <span class="sd">        has no single ``base`` target, so those terms stay unsupported.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -927,7 +935,10 @@
             <span class="k">else</span> <span class="p">{}</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">DomainRandomizationCapabilities</span><span class="p">(</span><span class="o">**</span><span class="n">variant_kwargs</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">DomainRandomizationCapabilities</span><span class="p">(</span>
+                <span class="n">supported_reset_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">({</span><span class="n">RESET_TERM_KP</span><span class="p">,</span> <span class="n">RESET_TERM_KD</span><span class="p">}),</span>
+                <span class="o">**</span><span class="n">variant_kwargs</span><span class="p">,</span>
+            <span class="p">)</span>
         <span class="k">return</span> <span class="n">DomainRandomizationCapabilities</span><span class="p">(</span>
             <span class="n">supported_reset_terms</span><span class="o">=</span><span class="n">_MAPPED_RESET_TERMS</span><span class="p">,</span>
             <span class="n">supported_interval_terms</span><span class="o">=</span><span class="n">_MAPPED_INTERVAL_TERMS</span><span class="p">,</span>
@@ -1079,7 +1090,14 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_reset_term_default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return per-environment variant-assigned mapped reset defaults.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_reset_term_default</span><span class="p">(</span><span class="n">term</span><span class="p">)</span>
+            <span class="n">_validate_reset_term</span><span class="p">(</span><span class="n">term</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">supports_reset_term</span><span class="p">(</span><span class="n">term</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;IsaacGymBackend does not support reset term </span><span class="si">{</span><span class="n">term</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">kp</span><span class="p">,</span> <span class="n">kd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_actuator_gains</span><span class="p">()</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">kp</span> <span class="k">if</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_KP</span> <span class="k">else</span> <span class="n">kd</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">setflags</span><span class="p">(</span><span class="n">write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">result</span>
         <span class="n">_validate_reset_term</span><span class="p">(</span><span class="n">term</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">supports_reset_term</span><span class="p">(</span><span class="n">term</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;IsaacGymBackend does not support reset term </span><span class="si">{</span><span class="n">term</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -1546,7 +1564,13 @@
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacgym.backend.IsaacGymBackend.html#unisim.backend.isaacgym.backend.IsaacGymBackend.tensor_execution">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">tensor_execution</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorExecution</span><span class="p">:</span>
         <span class="n">info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_info</span>
-        <span class="k">if</span> <span class="n">info</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">info</span><span class="p">,</span> <span class="s2">&quot;use_gpu_pipeline&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)):</span>
+        <span class="k">if</span> <span class="n">info</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="n">TensorExecution</span><span class="o">.</span><span class="n">DEVICE_RESIDENT</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_requested_device_id</span> <span class="o">&gt;=</span> <span class="mi">0</span>
+                <span class="k">else</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">UNSUPPORTED</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">info</span><span class="p">,</span> <span class="s2">&quot;use_gpu_pipeline&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)):</span>
             <span class="k">return</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">UNSUPPORTED</span>
         <span class="k">return</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">DEVICE_RESIDENT</span></div>
 
@@ -1563,7 +1587,6 @@
             <span class="n">sensor_views</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">stepping</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">selected_reset</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-            <span class="n">reset_randomization</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
             <span class="n">fixed_variants</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
             <span class="n">host_pre_step_control</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
             <span class="n">packed_host_bridge</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
@@ -1573,6 +1596,11 @@
                 <span class="s2">&quot;collector records control/reset-ready and worker records state-ready; &quot;</span>
                 <span class="s2">&quot;caller owns Torch stream&quot;</span>
             <span class="p">),</span>
+            <span class="n">reset_randomization</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">device_reset_randomization</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">packed_reset</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">packed_reset_fields</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">({</span><span class="n">RESET_TERM_KP</span><span class="p">,</span> <span class="n">RESET_TERM_KD</span><span class="p">}),</span>
+            <span class="n">mask_selected_reset</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">torch_devices</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;cuda&quot;</span><span class="p">,),</span>
             <span class="n">selected_reset_publication</span><span class="o">=</span><span class="n">SelectedResetPublication</span><span class="o">.</span><span class="n">AUTHORITATIVE_VIEWS</span><span class="p">,</span>
             <span class="n">requires_post_construction_publication_barrier</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -1615,16 +1643,108 @@
         <span class="k">return</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">views</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">requested</span><span class="p">}</span></div>
 
 
+<div class="viewcode-block" id="IsaacGymBackend.get_public_state_widths">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacgym.backend.IsaacGymBackend.html#unisim.backend.isaacgym.backend.IsaacGymBackend.get_public_state_widths">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_public_state_widths</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PublicStateWidths</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the synthetic raw-MJCF public tensor state widths.&quot;&quot;&quot;</span>
+
+        <span class="n">layout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_physics_state_layout</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">PublicStateWidths</span><span class="p">(</span><span class="n">nq</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">layout</span><span class="o">.</span><span class="n">nq</span><span class="p">),</span> <span class="n">nv</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">layout</span><span class="o">.</span><span class="n">nv</span><span class="p">))</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_cuda_derived_sensor_specs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return frame sensors projectable from public CUDA body state.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="n">name</span><span class="p">:</span> <span class="n">mapped</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">mapped</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_sensor_map&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">mapped</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">kind</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;framepos&quot;</span><span class="p">,</span> <span class="s2">&quot;framequat&quot;</span><span class="p">,</span> <span class="s2">&quot;framezaxis&quot;</span><span class="p">)</span>
+        <span class="p">}</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_cuda_quat_rotate</span><span class="p">(</span><span class="n">torch</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">quat_wxyz</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">vectors</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="n">vector</span> <span class="o">=</span> <span class="n">quat_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span>
+        <span class="n">cross</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">vector</span><span class="p">,</span> <span class="n">vectors</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">vectors</span> <span class="o">+</span> <span class="n">quat_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">cross</span><span class="p">)</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">vector</span><span class="p">,</span> <span class="n">cross</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_cuda_quat_mul</span><span class="p">(</span><span class="n">torch</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">left_wxyz</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">right_wxyz</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="n">left_vector</span> <span class="o">=</span> <span class="n">left_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span>
+        <span class="n">right_vector</span> <span class="o">=</span> <span class="n">right_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span>
+        <span class="n">vector</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">left_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">right_vector</span>
+            <span class="o">+</span> <span class="n">right_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">left_vector</span>
+            <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">left_vector</span><span class="p">,</span> <span class="n">right_vector</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">scalar</span> <span class="o">=</span> <span class="n">left_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">right_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">torch</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
+            <span class="n">left_vector</span> <span class="o">*</span> <span class="n">right_vector</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">scalar</span><span class="p">,</span> <span class="n">vector</span><span class="p">),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_cuda_derived_sensor_view</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">(</span><span class="n">qualified</span><span class="p">,</span> <span class="n">mapped</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">qualified</span><span class="p">,</span> <span class="n">mapped</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_derived_sensor_specs</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">qualified</span> <span class="o">==</span> <span class="n">name</span> <span class="ow">or</span> <span class="n">qualified</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;/</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">candidates</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">_</span><span class="p">,</span> <span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="n">_body_id</span><span class="p">)</span> <span class="o">=</span> <span class="n">candidates</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">body_name</span> <span class="o">=</span> <span class="n">spec</span><span class="o">.</span><span class="n">body_name</span>
+        <span class="n">body_pos</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">get_sensor_view</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;track_pos_w_</span><span class="si">{</span><span class="n">body_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">body_quat</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">get_sensor_view</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;track_quat_w_</span><span class="si">{</span><span class="n">body_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;framepos&quot;</span><span class="p">:</span>
+            <span class="n">local_pos</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span>
+                <span class="n">spec</span><span class="o">.</span><span class="n">local_pos</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">body_pos</span><span class="o">.</span><span class="n">device</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">body_pos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">3</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">body_pos</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_quat_rotate</span><span class="p">(</span><span class="n">torch</span><span class="p">,</span> <span class="n">body_quat</span><span class="p">,</span> <span class="n">local_pos</span><span class="p">)</span>
+        <span class="n">local_quat</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span>
+            <span class="n">spec</span><span class="o">.</span><span class="n">local_quat</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">body_quat</span><span class="o">.</span><span class="n">device</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">body_quat</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">4</span><span class="p">)</span>
+        <span class="n">world_quat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_quat_mul</span><span class="p">(</span><span class="n">torch</span><span class="p">,</span> <span class="n">body_quat</span><span class="p">,</span> <span class="n">local_quat</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;framequat&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">world_quat</span>
+        <span class="n">world_z</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">body_pos</span><span class="p">)</span>
+        <span class="n">world_z</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_quat_rotate</span><span class="p">(</span><span class="n">torch</span><span class="p">,</span> <span class="n">world_quat</span><span class="p">,</span> <span class="n">world_z</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_bind_sensor_data_reader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind the cold NumPy shape contract over CUDA sensor views.&quot;&quot;&quot;</span>
+        <span class="n">plan</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_cuda_ipc_plan&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">plan</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">compile_cuda_ipc_io</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">read</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
+                <span class="p">[</span><span class="n">plan</span><span class="o">.</span><span class="n">get_sensor_view</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">],</span>
+                <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">read</span>
+
 <div class="viewcode-block" id="IsaacGymBackend.get_sensor_view">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacgym.backend.IsaacGymBackend.html#unisim.backend.isaacgym.backend.IsaacGymBackend.get_sensor_view">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_sensor_view</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pelvis_local_linvel&quot;</span><span class="p">,</span> <span class="s2">&quot;torso_gyro&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span>
-            <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">prefix</span> <span class="ow">in</span> <span class="p">(</span>
-                <span class="s2">&quot;track_pos_w_&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;track_quat_w_&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;track_linvel_w_&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;track_angvel_w_&quot;</span><span class="p">,</span>
+        <span class="n">derived_candidates</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">qualified</span>
+            <span class="k">for</span> <span class="n">qualified</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_derived_sensor_specs</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">qualified</span> <span class="o">==</span> <span class="n">name</span> <span class="ow">or</span> <span class="n">qualified</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;/</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pelvis_local_linvel&quot;</span><span class="p">,</span> <span class="s2">&quot;torso_gyro&quot;</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">derived_candidates</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span>
+            <span class="ow">and</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span>
+                <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">prefix</span> <span class="ow">in</span> <span class="p">(</span>
+                    <span class="s2">&quot;track_pos_w_&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;track_quat_w_&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;track_linvel_w_&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;track_angvel_w_&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
             <span class="p">)</span>
         <span class="p">):</span>
             <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unknown IsaacGym CUDA IPC tensor sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -1638,6 +1758,9 @@
                 <span class="n">current_device</span><span class="o">=</span><span class="n">plan</span><span class="o">.</span><span class="n">device_index</span><span class="p">,</span>
                 <span class="n">label</span><span class="o">=</span><span class="s2">&quot;IsaacGym CUDA IPC sensor views&quot;</span><span class="p">,</span>
             <span class="p">)</span>
+        <span class="n">derived</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_derived_sensor_view</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">plan</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">derived</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">derived</span>
         <span class="k">return</span> <span class="n">plan</span><span class="o">.</span><span class="n">get_sensor_view</span><span class="p">(</span><span class="n">name</span><span class="p">)</span></div>
 
 
@@ -1650,6 +1773,54 @@
         <span class="k">return</span> <span class="n">plan</span><span class="o">.</span><span class="n">step_tensor</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="n">nsteps</span><span class="p">)</span></div>
 
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_cuda_tensor_reset_wire_payload</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">row_count</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">device</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate PD gains and cross the worker reset-property boundary.&quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="s2">&quot;isaacgym CUDA IPC reset randomization requires a TensorResetRandomizationPayload&quot;</span>
+            <span class="p">)</span>
+        <span class="n">supported</span> <span class="o">=</span> <span class="p">{</span><span class="n">RESET_TERM_KP</span><span class="p">,</span> <span class="n">RESET_TERM_KD</span><span class="p">}</span>
+        <span class="n">unsupported</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">())</span> <span class="o">-</span> <span class="n">supported</span>
+        <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;isaacgym CUDA IPC reset randomization does not support terms: &quot;</span>
+                <span class="o">+</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">))</span>
+            <span class="p">)</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">wire</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">supported</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">term</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">expected</span> <span class="o">=</span> <span class="p">(</span><span class="n">row_count</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_actuators</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;isaacgym CUDA IPC reset </span><span class="si">{</span><span class="n">term</span><span class="si">}</span><span class="s2"> must be a torch.Tensor&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">()):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;isaacgym CUDA IPC reset </span><span class="si">{</span><span class="n">term</span><span class="si">}</span><span class="s2"> must be contiguous float32&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="n">expected</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;isaacgym CUDA IPC reset </span><span class="si">{</span><span class="n">term</span><span class="si">}</span><span class="s2"> must have shape </span><span class="si">{</span><span class="n">expected</span><span class="si">}</span><span class="s2">, &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">device</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;isaacgym CUDA IPC reset </span><span class="si">{</span><span class="n">term</span><span class="si">}</span><span class="s2"> device does not match arena&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;isaacgym CUDA IPC reset </span><span class="si">{</span><span class="n">term</span><span class="si">}</span><span class="s2"> values must be finite&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">bool</span><span class="p">((</span><span class="n">value</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;isaacgym CUDA IPC reset </span><span class="si">{</span><span class="n">term</span><span class="si">}</span><span class="s2"> values must be nonnegative&quot;</span><span class="p">)</span>
+            <span class="n">wire</span><span class="p">[</span><span class="n">term</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="k">return</span> <span class="n">wire</span> <span class="ow">or</span> <span class="kc">None</span>
+
 <div class="viewcode-block" id="IsaacGymBackend.set_state_tensor">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacgym.backend.IsaacGymBackend.html#unisim.backend.isaacgym.backend.IsaacGymBackend.set_state_tensor">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_state_tensor</span><span class="p">(</span>
@@ -1659,12 +1830,103 @@
         <span class="n">qvel</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">randomization</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
-        <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;IsaacGym CUDA IPC reset randomization is not implemented&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
+            <span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="s2">&quot;IsaacGym CUDA IPC reset randomization requires a TensorResetRandomizationPayload&quot;</span>
+            <span class="p">)</span>
         <span class="n">plan</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_cuda_ipc_plan&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">plan</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">compile_cuda_ipc_io</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">plan</span><span class="o">.</span><span class="n">set_state_tensor</span><span class="p">(</span><span class="n">env_indices</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span><span class="p">)</span></div>
+        <span class="n">wire_randomization</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_tensor_reset_wire_payload</span><span class="p">(</span>
+                <span class="n">randomization</span><span class="p">,</span>
+                <span class="n">row_count</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">env_indices</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+                <span class="n">device</span><span class="o">=</span><span class="n">plan</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">plan</span><span class="o">.</span><span class="n">set_state_tensor</span><span class="p">(</span><span class="n">env_indices</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span><span class="p">,</span> <span class="n">wire_randomization</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="IsaacGymBackend.set_state_tensor_mask">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacgym.backend.IsaacGymBackend.html#unisim.backend.isaacgym.backend.IsaacGymBackend.set_state_tensor_mask">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_state_tensor_mask</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">qpos</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">qvel</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">full_refresh</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Commit full-width state through a backend-owned mask projection.&quot;&quot;&quot;</span>
+
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="k">if</span> <span class="n">full_refresh</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;isaacgym CUDA IPC mask reset is a selected-row boundary&quot;</span><span class="p">)</span>
+        <span class="n">plan</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_cuda_ipc_plan&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">plan</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">compile_cuda_ipc_io</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;isaacgym CUDA IPC reset mask must be a torch.Tensor&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">reset_mask</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span>
+            <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bool</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">())</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;isaacgym CUDA IPC reset mask must be a contiguous 1-D bool tensor&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;isaacgym CUDA IPC reset mask must have shape </span><span class="si">{</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">qpos</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">qvel</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;isaacgym CUDA IPC reset states must be torch.Tensors&quot;</span><span class="p">)</span>
+        <span class="n">expected_qpos</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">plan</span><span class="o">.</span><span class="n">arena</span><span class="o">.</span><span class="n">nq</span><span class="p">)</span>
+        <span class="n">expected_qvel</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">plan</span><span class="o">.</span><span class="n">arena</span><span class="o">.</span><span class="n">nv</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">qpos</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span> <span class="ow">or</span> <span class="n">qvel</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;isaacgym CUDA IPC reset states must be float32&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">qpos</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="n">expected_qpos</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;isaacgym CUDA IPC reset qpos must have shape </span><span class="si">{</span><span class="n">expected_qpos</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">qvel</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="n">expected_qvel</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;isaacgym CUDA IPC reset qvel must have shape </span><span class="si">{</span><span class="n">expected_qvel</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">qpos</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">device</span> <span class="ow">or</span> <span class="n">qvel</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;isaacgym CUDA IPC mask reset tensors must share one device&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_tensor_reset_wire_payload</span><span class="p">(</span>
+            <span class="n">randomization</span><span class="p">,</span>
+            <span class="n">row_count</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">plan</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">any</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()):</span>
+            <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;set_state_tensor_mask_ms&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">}}</span>
+
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">as_tuple</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+        <span class="n">selected_payload</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+            <span class="n">selected_payload</span> <span class="o">=</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">(</span>
+                <span class="o">**</span><span class="p">{</span>
+                    <span class="n">term</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">term</span><span class="p">)</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+                    <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="p">(</span><span class="n">RESET_TERM_KP</span><span class="p">,</span> <span class="n">RESET_TERM_KD</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">term</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_state_tensor</span><span class="p">(</span>
+            <span class="n">rows</span><span class="p">,</span>
+            <span class="n">qpos</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
+            <span class="n">qvel</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
+            <span class="n">selected_payload</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="IsaacGymBackend.begin_packed_reset">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacgym.backend.IsaacGymBackend.html#unisim.backend.isaacgym.backend.IsaacGymBackend.begin_packed_reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">begin_packed_reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Begin a packed transaction over the external CUDA IPC reset boundary.&quot;&quot;&quot;</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.packed_reset</span><span class="w"> </span><span class="kn">import</span> <span class="n">TorchPackedResetComposer</span>
+
+        <span class="k">return</span> <span class="n">TorchPackedResetComposer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="IsaacGymBackend.close">

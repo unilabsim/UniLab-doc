@@ -420,16 +420,16 @@
 <section class="tex2jax_ignore mathjax_ignore" id="isaacsim-backend">
 <h1>IsaacSim Backend<a class="headerlink" href="#isaacsim-backend" title="Link to this heading">¶</a></h1>
 <blockquote>
-<div><p><strong>IsaacSim is temporarily shelved.</strong> This adapter is outside the tensor-only Manager runtime during #1811 and is not a production support claim. The train/eval CLI rejects it until new capability, parity, and support-matrix evidence is provided.</p>
+<div><p><strong>IsaacSim is an explicit external-worker owner.</strong> It requires the isolated
+Python 3.11 IsaacSim/IsaacLab runtime, a mapped entity scene, and same-GPU
+CUDA IPC. The first restored SAC owner is headless-training scoped.</p>
 </div></blockquote>
 <p>UniLab’s <code class="docutils literal notranslate"><span class="pre">isaacsim</span></code> backend runs IsaacSim 5.1.0 and IsaacLab v2.3.0 in a
-dedicated Python 3.11 worker process. The host process keeps the regular
-<code class="docutils literal notranslate"><span class="pre">SimBackend</span></code> NumPy contract; pipe messages carry lifecycle commands and shared
-memory carries batched state. The current support boundary is headless physics
-plus eval-owned native rendering for the registered G1 flat task owners. The
-support matrix intentionally marks the PPO and SAC owners as <code class="docutils literal notranslate"><span class="pre">Configured</span></code>, not
-<code class="docutils literal notranslate"><span class="pre">Tested</span></code>, because the rendering protocol is covered by deterministic worker
-tests but has not completed playback on the currently available IsaacSim host.</p>
+dedicated Python 3.11 worker process. Pipe messages carry lifecycle metadata
+while canonical qpos/qvel/control/reset arenas cross same-GPU CUDA IPC. The
+current restored boundary is headless SAC <code class="docutils literal notranslate"><span class="pre">g1_walk_flat</span></code> training with a mapped
+entity scene. Native interactive/record playback remains a separate runtime
+follow-up and is not part of the training support claim.</p>
 <section id="runtime-boundary">
 <h2>Runtime boundary<a class="headerlink" href="#runtime-boundary" title="Link to this heading">¶</a></h2>
 <p>IsaacSim 5.1.0 is installed in a separate Python 3.11 environment because the
@@ -467,13 +467,18 @@ non-uniform. Invalid or placeholder frames fail closed instead of producing a
 video. Width and height default to 1280 x 720 in the IsaacSim owner YAML and
 can be overridden through <code class="docutils literal notranslate"><span class="pre">env.isaacsim_render_width</span></code> and
 <code class="docutils literal notranslate"><span class="pre">env.isaacsim_render_height</span></code> before env creation.</p>
+<p>Mapped scenes are cloned on a grid with a 2 m backend default. A finite,
+positive <code class="docutils literal notranslate"><span class="pre">env.isaacsim_env_spacing</span></code> can widen that grid before env creation;
+large task-local support surfaces should use more than twice the surface’s
+half-width so adjacent clones cannot overlap. IsaacSim reports the effective
+spacing and environment origins back to the host, which rejects a mismatch.</p>
 <p>The current worker supports MJCF materialization, batched articulation state,
 position-target stepping, masked root/joint resets, a native Kit viewer, and
 headless IsaacLab RGB camera capture. Contact-force sensors, reset or interval
 domain randomization, and host pre-step callbacks remain unsupported and fail
 closed.</p>
 <p>Use the top-level CLI to select the backend and owner:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>isaacsim
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>isaacsim
 uv<span class="w"> </span>run<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>isaacsim<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--load-run<span class="w"> </span>&lt;run-id&gt;<span class="w"> </span>--render-mode<span class="w"> </span>record<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>training.play_steps<span class="o">=</span><span class="m">120</span><span class="w"> </span>training.play_env_num<span class="o">=</span><span class="m">1</span><span class="w"> </span>training.export_onnx<span class="o">=</span><span class="nb">false</span>
@@ -483,8 +488,20 @@ uv<span class="w"> </span>run<span class="w"> </span><span class="nb">eval</span
 </div>
 <p>Record mode writes <code class="docutils literal notranslate"><span class="pre">play_video.mp4</span></code> in the selected run directory. These
 commands require the external runtime and an NVIDIA CUDA device. The repository
-does not claim completed full training or stable native playback; those claims
-require a maintainer validation entry.</p>
+has a headless SAC training completion record below, while native playback
+remains a separate validation and is not claimed as stable.</p>
+</section>
+<section id="training-validation">
+<h2>Training Validation<a class="headerlink" href="#training-validation" title="Link to this heading">¶</a></h2>
+<p>Issue #2387’s semantic-quality follow-up completed one full headless SAC run on
+the restored owner (RTX 4090, IsaacSim 5.1.0 / IsaacLab 2.3.0) after fixing
+derived-sensor refresh and the mapped finite floor. It completed 5000/5000
+iterations and 10,260,480 environment steps in 363.04 seconds of tracked
+training wall time. Final/best mean reward was 291.201/298.049, mean episode
+length was 993.99/1000, and final/tail throughput was 28,673/29,314 steps/s.</p>
+<p>The reward and episode length reach the range of the validated MuJoCo-family
+SAC runs for this canonical training workload. Native playback remains a
+separate renderer validation and is not claimed here.</p>
 </section>
 <section id="current-runtime-validation">
 <h2>Current Runtime Validation<a class="headerlink" href="#current-runtime-validation" title="Link to this heading">¶</a></h2>
@@ -497,9 +514,9 @@ Ubuntu 24.04.4, an RTX 4090, and NVIDIA driver 595.84. Both paths crashed during
 EGL initialization warnings. A minimal camera-enabled <code class="docutils literal notranslate"><span class="pre">AppLauncher</span></code> probe also
 failed with <code class="docutils literal notranslate"><span class="pre">multi_gpu=False</span></code>.</p>
 <p>This is a runtime blocker, not successful playback evidence. The backend keeps
-the render protocol and its fail-closed tests, while the support matrix remains
-at <code class="docutils literal notranslate"><span class="pre">Configured</span></code>. No placeholder video is generated when the real renderer does
-not initialize.</p>
+the render protocol and its fail-closed tests; the SAC training cell is
+<code class="docutils literal notranslate"><span class="pre">Tested</span></code>, but renderer/playback capability remains unpromoted. No placeholder
+video is generated when the real renderer does not initialize.</p>
 </section>
 <section id="inspecting-the-contract">
 <h2>Inspecting The Contract<a class="headerlink" href="#inspecting-the-contract" title="Link to this heading">¶</a></h2>
@@ -571,7 +588,7 @@ runtime; it is not a training or playback validation.</p>
 <tr class="row-even"><td><p>Offline RGB</p></td>
 <td><p>IsaacLab <code class="docutils literal notranslate"><span class="pre">Camera</span></code> + <code class="docutils literal notranslate"><span class="pre">CameraCfg</span></code></p></td>
 <td><p>Protocol tests verify video writing and reject bad shape, dtype, or uniform frames; current real host crashes before camera creation</p></td>
-<td><p>Require finite steps and keep support at <code class="docutils literal notranslate"><span class="pre">Configured</span></code> until real playback succeeds</p></td>
+<td><p>Require finite steps and keep renderer/playback claims unpromoted until real playback succeeds</p></td>
 </tr>
 <tr class="row-odd"><td><p>Interactive viewer</p></td>
 <td><p>non-headless Kit + <code class="docutils literal notranslate"><span class="pre">SimulationContext.set_camera_view</span></code></p></td>
@@ -636,6 +653,7 @@ in <a class="reference internal" href="../../5-reference/5-support_matrix.html">
             <ul>
 <li><a class="reference internal" href="#">IsaacSim Backend</a><ul>
 <li><a class="reference internal" href="#runtime-boundary">Runtime boundary</a></li>
+<li><a class="reference internal" href="#training-validation">Training Validation</a></li>
 <li><a class="reference internal" href="#current-runtime-validation">Current Runtime Validation</a></li>
 <li><a class="reference internal" href="#inspecting-the-contract">Inspecting The Contract</a></li>
 <li><a class="reference internal" href="#contract-matrix">Contract matrix</a></li>

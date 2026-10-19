@@ -530,6 +530,7 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">replace</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span>
@@ -548,6 +549,12 @@
 
 <span class="n">_CUDA_BACKEND_INT_DEVICE_FIELDS</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">&quot;genesis&quot;</span><span class="p">:</span> <span class="s2">&quot;genesis_device_id&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;isaacgym&quot;</span><span class="p">:</span> <span class="s2">&quot;isaacgym_device_id&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;isaacsim&quot;</span><span class="p">:</span> <span class="s2">&quot;isaacsim_device_id&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+<span class="n">_EXTERNAL_WORKER_DEVICE_FIELDS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;isaacgym&quot;</span><span class="p">:</span> <span class="s2">&quot;isaacgym_device_id&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;isaacsim&quot;</span><span class="p">:</span> <span class="s2">&quot;isaacsim_device_id&quot;</span><span class="p">,</span>
 <span class="p">}</span>
 
 
@@ -567,8 +574,9 @@
     <span class="n">field</span> <span class="o">=</span> <span class="n">_CUDA_BACKEND_INT_DEVICE_FIELDS</span><span class="p">[</span><span class="n">backend_type</span><span class="p">]</span>
     <span class="n">device_id</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">device_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="c1"># Genesis follows its current/default process device when unset.</span>
-        <span class="k">return</span> <span class="s2">&quot;cuda&quot;</span>
+        <span class="c1"># Genesis follows its current/default process device when unset. Isaac</span>
+        <span class="c1"># workers default their payload to ordinal zero.</span>
+        <span class="k">return</span> <span class="s2">&quot;cuda:0&quot;</span> <span class="k">if</span> <span class="n">backend_type</span> <span class="ow">in</span> <span class="n">_EXTERNAL_WORKER_DEVICE_FIELDS</span> <span class="k">else</span> <span class="s2">&quot;cuda&quot;</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">device_id</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">device_id</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">device_id</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2"> must be a non-negative integer or None, got </span><span class="si">{</span><span class="n">device_id</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">device_id</span><span class="si">}</span><span class="s2">&quot;</span>
@@ -700,6 +708,40 @@
             <span class="s2">&quot;Use an index below torch.cuda.device_count() after CUDA_VISIBLE_DEVICES remapping.&quot;</span><span class="p">,</span>
         <span class="p">)</span>
 
+    <span class="n">field</span> <span class="o">=</span> <span class="n">_EXTERNAL_WORKER_DEVICE_FIELDS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">payload_id</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+        <span class="n">payload_index</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">payload_id</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">payload_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">payload_index</span> <span class="o">!=</span> <span class="n">current_device</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">_fail_closed_cuda_only</span><span class="p">(</span>
+                <span class="n">backend_type</span><span class="p">,</span>
+                <span class="n">requested_device</span><span class="p">,</span>
+                <span class="n">runtime_state</span><span class="p">,</span>
+                <span class="p">(</span>
+                    <span class="s2">&quot;the external worker payload device does not match the learner&#39;s &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;current Torch CUDA device (</span><span class="si">{</span><span class="n">payload_index</span><span class="si">}</span><span class="s2"> != </span><span class="si">{</span><span class="n">current_device</span><span class="si">}</span><span class="s2">)&quot;</span>
+                <span class="p">),</span>
+                <span class="s2">&quot;Bind the rank learner and its Isaac worker to the same CUDA ordinal &quot;</span>
+                <span class="s2">&quot;before construction.&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">set_device</span><span class="p">(</span><span class="n">payload_index</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_validate_isaacsim_tensor_cuda_ipc_runtime</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fail closed when UniSim does not understand its CUDA IPC option.&quot;&quot;&quot;</span>
+
+    <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.isaacsim</span><span class="w"> </span><span class="kn">import</span> <span class="n">IsaacSimBackend</span>
+
+    <span class="n">parameter</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">signature</span><span class="p">(</span><span class="n">IsaacSimBackend</span><span class="o">.</span><span class="fm">__init__</span><span class="p">)</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;tensor_cuda_ipc&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">parameter</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">parameter</span><span class="o">.</span><span class="n">kind</span> <span class="ow">is</span> <span class="n">inspect</span><span class="o">.</span><span class="n">Parameter</span><span class="o">.</span><span class="n">VAR_KEYWORD</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="s2">&quot;isaacsim_tensor_cuda_ipc requires a unisim-core IsaacSim backend with the &quot;</span>
+            <span class="s2">&quot;tensor_cuda_ipc constructor contract; the installed unisim-core IsaacSim &quot;</span>
+            <span class="s2">&quot;backend does not provide it&quot;</span>
+        <span class="p">)</span>
+
 
 <div class="viewcode-block" id="env_backend_kwargs">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.backend_factory.env_backend_kwargs.html#unilab.base.backend_factory.env_backend_kwargs">[docs]</a>
@@ -724,8 +766,21 @@
         <span class="s2">&quot;genesis_solver_iterations&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">genesis_solver_iterations</span><span class="p">,</span>
         <span class="s2">&quot;drake_backend_mode&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">drake_backend_mode</span><span class="p">,</span>
         <span class="s2">&quot;drake_nthread&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">drake_nthread</span><span class="p">,</span>
+        <span class="s2">&quot;isaacgym_device_id&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacgym_device_id</span><span class="p">,</span>
+        <span class="s2">&quot;isaacgym_worker_timeout_s&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacgym_worker_timeout_s</span><span class="p">,</span>
+        <span class="s2">&quot;isaacsim_device_id&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacsim_device_id</span><span class="p">,</span>
+        <span class="s2">&quot;isaacsim_worker_timeout_s&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacsim_worker_timeout_s</span><span class="p">,</span>
+        <span class="s2">&quot;isaacsim_render_mode&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacsim_render_mode</span><span class="p">,</span>
+        <span class="s2">&quot;isaacsim_render_width&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacsim_render_width</span><span class="p">,</span>
+        <span class="s2">&quot;isaacsim_render_height&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacsim_render_height</span><span class="p">,</span>
         <span class="s2">&quot;superdex_execution_mode&quot;</span><span class="p">:</span> <span class="n">cfg</span><span class="o">.</span><span class="n">superdex_execution_mode</span><span class="p">,</span>
     <span class="p">}</span>
+    <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacsim_tensor_cuda_ipc</span><span class="p">:</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;isaacsim_tensor_cuda_ipc&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacsim_share_friction_materials</span><span class="p">:</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;share_friction_materials&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacsim_env_spacing</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;isaacsim_env_spacing&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">isaacsim_env_spacing</span>
     <span class="c1"># Forward the explicit Genesis device id only when a rank selected one;</span>
     <span class="c1"># when absent, unisim-core&#39;s factory default applies and Genesis picks</span>
     <span class="c1"># its own device.</span>
@@ -751,6 +806,8 @@
     <span class="k">if</span> <span class="n">scene</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;SceneCfg must be provided&quot;</span><span class="p">)</span>
     <span class="n">_validate_cuda_only_backend_platform</span><span class="p">(</span><span class="n">backend_type</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">backend_type</span> <span class="o">==</span> <span class="s2">&quot;isaacsim&quot;</span> <span class="ow">and</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;isaacsim_tensor_cuda_ipc&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="n">_validate_isaacsim_tensor_cuda_ipc_runtime</span><span class="p">()</span>
     <span class="n">superdex_assets_root</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;superdex_assets_root&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">backend_type</span> <span class="o">==</span> <span class="s2">&quot;superdex&quot;</span> <span class="ow">and</span> <span class="n">scene</span><span class="o">.</span><span class="n">model_file</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;.superdex_bot&quot;</span><span class="p">):</span>
         <span class="n">scene</span> <span class="o">=</span> <span class="n">replace</span><span class="p">(</span>

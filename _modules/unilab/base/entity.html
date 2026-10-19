@@ -840,7 +840,6 @@
                 <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">prefix</span> <span class="ow">in</span> <span class="n">_TENSOR_BODY_SENSOR_FIELDS</span><span class="p">:</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">_packet_sensor_owners</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">prefix</span> <span class="o">+</span> <span class="n">body_name</span><span class="p">,</span> <span class="n">entity_name</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packet</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="n">MappingProxyType</span><span class="p">({})</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_stable_sensor_views</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_refreshed</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_closed</span> <span class="o">=</span> <span class="kc">False</span></div>
 
@@ -887,7 +886,7 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_plan_value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">packet</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_packet</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_host_plan_value</span><span class="o">.</span><span class="n">read_state_sensors</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">packet</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reuse_stable_device_packet</span><span class="p">()</span>
+            <span class="n">packet</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_device_resident_packet</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_publish_packet</span><span class="p">(</span><span class="n">packet</span><span class="p">)</span></div>
 
 
@@ -904,21 +903,20 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_plan_value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">packet</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_packet</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_host_plan_value</span><span class="o">.</span><span class="n">read_selected_state_sensors</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">packet</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reuse_stable_device_packet</span><span class="p">()</span>
+            <span class="n">packet</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_device_resident_packet</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_publish_packet</span><span class="p">(</span><span class="n">packet</span><span class="p">)</span></div>
 
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_reuse_stable_device_packet</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish stable device-resident views without another sensor crossing.</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_read_device_resident_packet</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish one authoritative device-resident packet for this phase.</span>
 
-<span class="sd">        The first device-resident refresh owns the public adapter projection</span>
-<span class="sd">        crossing. Stable aliases remain live after mask reset, so a</span>
-<span class="sd">        subsequent read phase can republish them without repeating one</span>
-<span class="sd">        Python/DLPack boundary per sensor family.</span>
+<span class="sd">        Some device-resident backends materialize derived sensors into</span>
+<span class="sd">        adapter-owned outputs when their public ``get_sensor_view`` boundary is</span>
+<span class="sd">        crossed. Those outputs are stable storage, but they are not necessarily</span>
+<span class="sd">        aliases of native physics state. Refresh every compiled sensor name so</span>
+<span class="sd">        post-step and post-reset packets cannot republish stale projections.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_refreshed</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_packet</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
-        <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_packet</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_packet</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
 
 <div class="viewcode-block" id="SceneTensorReadPlan.invalidate">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.entity.SceneTensorReadPlan.html#unilab.base.entity.SceneTensorReadPlan.invalidate">[docs]</a>
@@ -1195,6 +1193,7 @@
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_plan_value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_host_plan_value</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
         <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_aggregate_body_views</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_packet</span> <span class="o">=</span> <span class="n">MappingProxyType</span><span class="p">({})</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_refreshed</span> <span class="o">=</span> <span class="kc">False</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_closed</span> <span class="o">=</span> <span class="kc">True</span></div>
@@ -1222,18 +1221,13 @@
                 <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="c1"># DEVICE_RESIDENT views alias stable backend storage. Crossing</span>
-                <span class="c1"># one named-sensor boundary per phase refreshes adapter-owned</span>
-                <span class="c1"># projections; the remaining live views are reusable without a</span>
-                <span class="c1"># second Python/DLPack boundary per sensor term.</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packet_names</span><span class="p">:</span>
-                    <span class="n">backend</span><span class="o">.</span><span class="n">get_sensor_view</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_packet_names</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
+                <span class="c1"># Every sensor must cross its public backend boundary. Genesis,</span>
+                <span class="c1"># Newton, and Isaac workers may project derived values into</span>
+                <span class="c1"># stable adapter-owned storage here; only a fresh call proves</span>
+                <span class="c1"># that storage reflects the current post-step/post-reset state.</span>
                 <span class="n">raw</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">get_state_views</span><span class="p">((</span><span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="s2">&quot;qvel&quot;</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">))</span>
                 <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packet_names</span><span class="p">:</span>
-                    <span class="n">view</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_sensor_views</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
-                    <span class="k">if</span> <span class="n">view</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                        <span class="n">view</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_sensor_view</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
-                        <span class="bp">self</span><span class="o">.</span><span class="n">_stable_sensor_views</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">view</span>
+                    <span class="n">view</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_sensor_view</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
                     <span class="n">raw</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">view</span>
             <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="ne">NotImplementedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="nb">type</span><span class="p">(</span><span class="n">exc</span><span class="p">)(</span>
@@ -3386,9 +3380,20 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage a full-width device-resident 13-D world-frame root state.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_physical_entity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="s2">&quot;mapped entity tensor root-state reset requires a public entity transaction&quot;</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">scene_layout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">owner</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">scene_layout</span><span class="o">.</span><span class="n">get_entity</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_physical_entity</span><span class="p">)</span>
+            <span class="n">layout</span> <span class="o">=</span> <span class="n">BackendRootStateLayout</span><span class="p">(</span>
+                <span class="n">qpos_indices</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">owner</span><span class="o">.</span><span class="n">root_qpos_indices</span><span class="p">),</span>
+                <span class="n">qvel_indices</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">owner</span><span class="o">.</span><span class="n">root_qvel_indices</span><span class="p">),</span>
             <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">write_root_state_tensor</span><span class="p">(</span>
+                <span class="n">reset_mask</span><span class="p">,</span>
+                <span class="n">layout</span><span class="p">,</span>
+                <span class="n">root_state</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span>
+                <span class="n">term_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.write_root_state_tensor_to_sim&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span>
         <span class="n">reset_state</span><span class="p">,</span> <span class="n">layout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_root_state_write</span><span class="p">()</span>
         <span class="n">reset_state</span><span class="o">.</span><span class="n">write_root_state_tensor</span><span class="p">(</span>
             <span class="n">reset_mask</span><span class="p">,</span>

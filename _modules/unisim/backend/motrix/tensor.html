@@ -826,8 +826,15 @@
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">body_index</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)</span> <span class="ow">in</span> <span class="n">resolved</span><span class="o">.</span><span class="n">body_slots</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="n">sources</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">arrays_by_prefix</span><span class="p">[</span><span class="n">prefix</span><span class="p">][:,</span> <span class="n">body_index</span><span class="p">,</span> <span class="p">:],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">resolved</span><span class="o">.</span><span class="n">physical</span><span class="p">:</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+            <span class="n">backend</span><span class="o">.</span><span class="n">_host_read_sensor_rows_batch</span><span class="p">(</span><span class="n">resolved</span><span class="o">.</span><span class="n">physical</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">),</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="mi">0</span>
         <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">resolved</span><span class="o">.</span><span class="n">physical</span><span class="p">:</span>
-            <span class="n">sources</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_host_read_sensor_rows</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">)</span>
+            <span class="n">width</span> <span class="o">=</span> <span class="n">resolved</span><span class="o">.</span><span class="n">physical_widths</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+            <span class="n">sources</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">values</span><span class="p">[:,</span> <span class="n">cursor</span> <span class="p">:</span> <span class="n">cursor</span> <span class="o">+</span> <span class="n">width</span><span class="p">]</span>
+            <span class="n">cursor</span> <span class="o">+=</span> <span class="n">width</span>
     <span class="k">del</span> <span class="n">sensor_names</span>
     <span class="k">return</span> <span class="n">sources</span>
 
@@ -879,14 +886,16 @@
     <span class="n">widths</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
     <span class="n">rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">resolved</span><span class="p">:</span> <span class="n">_ResolvedSensorNames</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">states</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">selected</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">rows</span>
     <span class="n">canonical_fields</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="s2">&quot;qvel&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">state_fields</span><span class="p">)</span>
-    <span class="n">states</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">_read_selected_states</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">canonical_fields</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">canonical_fields</span>
-        <span class="k">else</span> <span class="p">(</span><span class="n">_canonical_states</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">canonical_fields</span><span class="p">)</span> <span class="k">if</span> <span class="n">canonical_fields</span> <span class="k">else</span> <span class="p">{})</span>
-    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">states</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">states</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">_read_selected_states</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">canonical_fields</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">canonical_fields</span>
+            <span class="k">else</span> <span class="p">(</span><span class="n">_canonical_states</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">canonical_fields</span><span class="p">)</span> <span class="k">if</span> <span class="n">canonical_fields</span> <span class="k">else</span> <span class="p">{})</span>
+        <span class="p">)</span>
     <span class="k">if</span> <span class="s2">&quot;ctrl&quot;</span> <span class="ow">in</span> <span class="n">state_fields</span><span class="p">:</span>
         <span class="n">states</span><span class="p">[</span><span class="s2">&quot;ctrl&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_current_controls</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">state_fields</span><span class="p">:</span>
@@ -1117,8 +1126,7 @@
             <span class="o">**</span><span class="p">{</span>
                 <span class="n">field</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">value</span><span class="p">)[</span><span class="n">order</span><span class="p">])</span>
                 <span class="k">for</span> <span class="n">field</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="p">(</span>
-                    <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span>
-                    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
+                    <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
                 <span class="p">)</span>
             <span class="p">}</span>
         <span class="p">)</span>
@@ -1164,13 +1172,11 @@
     <span class="n">widths</span> <span class="o">=</span> <span class="n">_field_widths</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">qpos</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">widths</span><span class="p">[</span><span class="s2">&quot;qpos&quot;</span><span class="p">]):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;MotrixSim tensor mask reset qpos must have shape &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span><span class="w"> </span><span class="n">widths</span><span class="p">[</span><span class="s1">&#39;qpos&#39;</span><span class="p">])</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;MotrixSim tensor mask reset qpos must have shape </span><span class="si">{</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span><span class="w"> </span><span class="n">widths</span><span class="p">[</span><span class="s1">&#39;qpos&#39;</span><span class="p">])</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
     <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">qvel</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">widths</span><span class="p">[</span><span class="s2">&quot;qvel&quot;</span><span class="p">]):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;MotrixSim tensor mask reset qvel must have shape &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span><span class="w"> </span><span class="n">widths</span><span class="p">[</span><span class="s1">&#39;qvel&#39;</span><span class="p">])</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;MotrixSim tensor mask reset qvel must have shape </span><span class="si">{</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span><span class="w"> </span><span class="n">widths</span><span class="p">[</span><span class="s1">&#39;qvel&#39;</span><span class="p">])</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
     <span class="k">if</span> <span class="n">qpos</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span> <span class="ow">or</span> <span class="n">qvel</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;MotrixSim tensor mask reset qpos and qvel must be float32&quot;</span><span class="p">)</span>
@@ -1210,15 +1216,12 @@
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;MotrixSim tensor mask reset does not support full refresh&quot;</span><span class="p">)</span>
     <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
     <span class="n">rows</span> <span class="o">=</span> <span class="n">selected_rows</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_host_set_state</span><span class="p">(</span>
-        <span class="n">rows</span><span class="p">,</span>
-        <span class="n">qpos</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span>
-        <span class="n">qvel</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span>
-        <span class="n">host_randomization</span><span class="p">,</span>
-    <span class="p">)</span>
+    <span class="n">host_qpos</span> <span class="o">=</span> <span class="n">qpos</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+    <span class="n">host_qvel</span> <span class="o">=</span> <span class="n">qvel</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_host_set_state</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">host_qpos</span><span class="p">,</span> <span class="n">host_qvel</span><span class="p">,</span> <span class="n">host_randomization</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">plan</span> <span class="ow">in</span> <span class="n">backend</span><span class="o">.</span><span class="n">_host_bridge_plans</span><span class="p">:</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">plan</span><span class="p">,</span> <span class="n">MotrixHostBridgeTransferPlan</span><span class="p">):</span>
-            <span class="n">plan</span><span class="o">.</span><span class="n">_publish_mask_reset_rows</span><span class="p">(</span><span class="n">selected_rows</span><span class="p">)</span>
+            <span class="n">plan</span><span class="o">.</span><span class="n">_publish_mask_reset_rows</span><span class="p">(</span><span class="n">selected_rows</span><span class="p">,</span> <span class="n">host_qpos</span><span class="p">,</span> <span class="n">host_qvel</span><span class="p">)</span>
     <span class="k">return</span> <span class="p">{}</span> <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">result</span></div>
 
 
@@ -1315,6 +1318,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_control_ready</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_rows_host</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_rows_device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qpos_host</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qvel_host</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_closed</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_layout</span><span class="p">()</span>
         <span class="c1"># Selected reads publish only reset rows into the full-width packet.</span>
@@ -1407,7 +1412,9 @@
             <span class="p">}</span>
         <span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_pack_host_packet</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_pack_host_packet</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">states</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
         <span class="n">buffers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffers</span><span class="p">()</span>
         <span class="n">packet</span> <span class="o">=</span> <span class="n">buffers</span><span class="o">.</span><span class="n">selected_host</span><span class="p">[:</span> <span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">buffers</span><span class="o">.</span><span class="n">host_packet</span>
         <span class="n">packet_np</span> <span class="o">=</span> <span class="n">packet</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
@@ -1420,6 +1427,7 @@
             <span class="p">{</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_field_widths</span><span class="p">,</span> <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_sensor_widths</span><span class="p">},</span>
             <span class="n">rows</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_resolved_sensors</span><span class="p">,</span>
+            <span class="n">states</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="n">packet</span>
 
@@ -1517,6 +1525,8 @@
         <span class="n">require_motrix_tensor_runtime</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_rows_host</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_rows_device</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qpos_host</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qvel_host</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">last_timing</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;MotrixSim packed reset does not support randomization&quot;</span><span class="p">)</span>
@@ -1586,6 +1596,8 @@
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_rows_host</span> <span class="o">=</span> <span class="n">rows</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_rows_device</span> <span class="o">=</span> <span class="n">rows_device</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qpos_host</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">host_qpos</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qvel_host</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">host_qvel</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_record</span><span class="p">(</span>
             <span class="s2">&quot;d2h&quot;</span><span class="p">,</span>
             <span class="s2">&quot;reset&quot;</span><span class="p">,</span>
@@ -1596,15 +1608,29 @@
         <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">last_timing</span><span class="p">)}</span></div>
 
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_publish_mask_reset_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_publish_mask_reset_rows</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">qpos</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">qvel</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_open</span><span class="p">()</span>
         <span class="n">order</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">selected_rows</span><span class="p">)</span>
         <span class="n">rows_device</span> <span class="o">=</span> <span class="n">selected_rows</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">order</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
         <span class="n">rows</span> <span class="o">=</span> <span class="n">rows_device</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">host_order</span> <span class="o">=</span> <span class="n">order</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">selected_values</span><span class="p">(</span><span class="n">values</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+            <span class="n">selected</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">values</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">order</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
+                <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">values</span><span class="p">)[</span><span class="n">host_order</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">selected</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_rows_host</span> <span class="o">=</span> <span class="n">rows</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_rows_device</span> <span class="o">=</span> <span class="n">rows_device</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qpos_host</span> <span class="o">=</span> <span class="n">selected_values</span><span class="p">(</span><span class="n">qpos</span><span class="p">)</span> <span class="k">if</span> <span class="n">qpos</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qvel_host</span> <span class="o">=</span> <span class="n">selected_values</span><span class="p">(</span><span class="n">qvel</span><span class="p">)</span> <span class="k">if</span> <span class="n">qvel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
 
 <div class="viewcode-block" id="MotrixHostBridgeTransferPlan.read_selected_state_sensors">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.tensor.MotrixHostBridgeTransferPlan.html#unisim.backend.motrix.tensor.MotrixHostBridgeTransferPlan.read_selected_state_sensors">[docs]</a>
@@ -1619,7 +1645,18 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">last_timing</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
-        <span class="n">selected_host</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pack_host_packet</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+        <span class="n">states</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qpos_host</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qvel_host</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Reset randomization currently changes dynamics terms only, and the</span>
+            <span class="c1"># qpos conversion used by `_host_set_state` is an exact quaternion</span>
+            <span class="c1"># round-trip. The committed reset payload therefore equals a canonical</span>
+            <span class="c1"># re-read. If state commit ever mutates qpos/qvel, publish that state</span>
+            <span class="c1"># here instead so this cache cannot diverge from canonical state.</span>
+            <span class="n">states</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;qpos&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qpos_host</span><span class="p">,</span>
+                <span class="s2">&quot;qvel&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qvel_host</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="n">selected_host</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pack_host_packet</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">states</span><span class="o">=</span><span class="n">states</span><span class="p">)</span>
         <span class="n">buffers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffers</span><span class="p">()</span>
         <span class="n">buffers</span><span class="o">.</span><span class="n">selected_packet</span><span class="p">[:</span><span class="n">count</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">selected_host</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_pin</span><span class="p">)</span>
         <span class="n">_synchronize_device</span><span class="p">(</span><span class="n">buffers</span><span class="o">.</span><span class="n">selected_packet</span><span class="p">)</span>
@@ -1643,6 +1680,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_control_ready</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_rows_host</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_rows_device</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qpos_host</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_qvel_host</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_buffer_slots</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_closed</span> <span class="o">=</span> <span class="kc">True</span></div>
 

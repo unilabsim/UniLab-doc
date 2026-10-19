@@ -1,15 +1,10 @@
 # Simulation Backends
 
-The tensor-only Manager runtime currently exposes `mujoco`, `mjwarp`, `genesis`,
-`newton`, `motrix`, `superdex`, and the scoped Drake owner described below.
-User commands select one with `--sim`, which routes to the matching task owner
-YAML; do not switch a run by overriding `training.sim_backend` alone.
-
-The `isaacgym` and `isaacsim` adapters remain temporarily shelved
-by `unisim-core` during issue #1811. Their historical pages are retained for
-adapter context only and are not production support claims. The train/eval CLI
-rejects these names until new capability, parity, and support-matrix evidence is
-provided.
+The tensor-only Manager runtime exposes `mujoco`, `mjwarp`, `genesis`, `newton`,
+`motrix`, `superdex`, the scoped Drake owner, and the explicit external-worker
+Isaac owners described below. User commands select one with `--sim`, which routes
+to the matching task owner YAML; do not switch a run by overriding
+`training.sim_backend` alone.
 
 ## Runtime Prerequisites
 
@@ -31,6 +26,9 @@ provided.
   `go2_joystick_flat` owner uses CPU physics and the packed HOST_BRIDGE
   lifecycle; floating-root and reset-randomization events remain disabled until
   the backend contract supports them.
+- IsaacGym and IsaacSim require isolated Python 3.8 and Python 3.11 workers,
+  respectively, plus same-GPU CUDA IPC. They are explicit owner selections and
+  never implicit fallback backends.
 
 ## OS and GPU Support
 
@@ -43,6 +41,8 @@ provided.
 | Motrix | Linux / macOS / Windows | CPU-authoritative physics; Torch CUDA buffers are optional |
 | SuperDex | Linux x86_64 (CPython 3.12/3.13) | CPU-authoritative physics; Torch CUDA buffers are optional |
 | Drake | Linux x86_64 / Apple Silicon macOS | CPU-authoritative physics; Torch CUDA buffers are optional |
+| IsaacGym | Linux | Required: external Python 3.8 worker and NVIDIA CUDA |
+| IsaacSim | Linux | Required: external Python 3.11 IsaacLab worker and NVIDIA CUDA |
 
 Backend device requirements are independent of the learner device: MuJoCo can
 still train with its learner on CUDA, ROCm, MPS, or XPU. See the platform

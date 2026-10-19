@@ -10,8 +10,9 @@
 
 ## Backend 选择规则
 
-- 当前 tensor-only Manager runtime 只支持 `mujoco`、`mjwarp`、`genesis`、
-  `newton`、`motrix`，以及下方 scoped Drake owner。
+- 当前 tensor-only Manager runtime 支持 `mujoco`、`mjwarp`、`genesis`、
+  `newton`、`motrix`、scoped Drake owner，以及下方显式 external-worker
+  Isaac owner。
 - 默认后端是 `mujoco`
 - `--sim mjwarp` 使用前需安装 `mjwarp` extra；已完成验证的组合以下方生成矩阵为准，其他入口也按矩阵查证
 - `--sim genesis` 使用前需安装 `genesis` extra；真实 CUDA 依赖和平台约束见生成矩阵
@@ -20,11 +21,12 @@
   HOST_BRIDGE profile 见生成矩阵
 - `--sim drake` 需要本地 Drake extra 与 DrakeUni batch extension；当前 scoped
   支持范围仅为 PPO `go2_joystick_flat`
+- `--sim isaacgym` 与 `--sim isaacsim` 需要各自隔离的外部 Python worker 以及
+  同 GPU CUDA IPC；安装方式见对应后端页面。
 - `--algo`、`--task`、`--sim` 共同选择 owner YAML
 - 不要把 `training.sim_backend` 当独立 backend switch
-- `isaacgym`、`isaacsim`、`superdex` 暂时不在本 runtime 支持范围内。adapter
-  保留在 UniSim，但不构成 UniLab 生产支持声明；重新启用需要 capability、parity
-  和支持矩阵证据（#1811）
+- Isaac 支持等级继续受 task/evidence 约束；`superdex` 仍限于已配置的
+  research owner。
 
 ## Playback Differences
 
@@ -69,25 +71,27 @@ uv run scripts/generate_support_matrix.py --write
 | `motrix` | Host bridge / in-process / host bridge | CPU / CUDA | Required only when the learner requests CUDA state/control buffers | Supported: CPU-authoritative physics with optional CUDA Torch buffers | CPU-authoritative host bridge only; no CUDA physics claim | CPU-authoritative host bridge with explicit ROCm Torch buffers (`cuda`) | In-process; no external Python worker | unknown | 不支持 | 不支持 | 支持 |
 | `drake` | Host bridge / in-process / host bridge | CPU / CUDA | Required only when the learner requests CUDA state/control buffers | Supported: CPU-authoritative physics with optional CUDA Torch buffers | CPU-authoritative host bridge only; no CUDA physics claim | CPU-authoritative host bridge with explicit ROCm Torch buffers (`cuda`) | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 支持 |
 | `mjwarp` | Device-resident / in-process / direct | CUDA | Required for the entire tensor lifecycle | Supported: Linux CUDA only | Unsupported; no CPU, MPS, or ROCm fallback | Unsupported; no CPU, MPS, or ROCm fallback | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 不支持 |
-| `newton` | Device-resident / in-process / direct | CUDA | Required for the entire tensor lifecycle | Supported: Linux CUDA only | Unsupported; no CPU, MPS, or ROCm fallback | Unsupported; no CPU, MPS, or ROCm fallback | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 不支持 |
+| `newton` | Device-resident / in-process / direct | CUDA | Required for the entire tensor lifecycle | Supported: Linux CUDA only | Unsupported; no CPU, MPS, or ROCm fallback | Unsupported; no CPU, MPS, or ROCm fallback | In-process; no external Python worker | 支持 | 不支持 | 不支持 | 不支持 |
 | `superdex` | Host bridge / in-process / host bridge | CPU / CUDA | Required only when the learner requests CUDA state/control buffers | Supported: CPU-authoritative physics with optional CUDA Torch buffers | CPU-authoritative host bridge only; no CUDA physics claim | CPU-authoritative host bridge with explicit ROCm Torch buffers (`cuda`) | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 支持 |
-| `genesis` | Device-resident / in-process / direct | CUDA | Required for the entire tensor lifecycle | Supported: Linux CUDA only | Unsupported; no CPU, MPS, or ROCm fallback | Unsupported; no CPU, MPS, or ROCm fallback | In-process; no external Python worker | 不支持 | 不支持 | 不支持 | 不支持 |
+| `genesis` | Device-resident / in-process / direct | CUDA | Required for the entire tensor lifecycle | Supported: Linux CUDA only | Unsupported; no CPU, MPS, or ROCm fallback | Unsupported; no CPU, MPS, or ROCm fallback | In-process; no external Python worker | 支持 | 不支持 | 不支持 | 不支持 |
+| `isaacgym` | Device-resident / external worker / cuda ipc | CUDA | Required for the entire tensor lifecycle | Supported: Linux CUDA only | Unsupported; no CPU, MPS, or ROCm fallback | Unsupported; no CPU, MPS, or ROCm fallback | Dedicated external Python 3.8 worker; host Python paths are not inherited | 支持 | 不支持 | 不支持 | 不支持 |
+| `isaacsim` | Device-resident / external worker / cuda ipc | CUDA | Required for the entire tensor lifecycle | Supported: Linux CUDA only | Unsupported; no CPU, MPS, or ROCm fallback | Unsupported; no CPU, MPS, or ROCm fallback | Dedicated external Python 3.11 worker; host Python paths are not inherited | 支持 | 不支持 | 不支持 | 不支持 |
 
 ### Entrypoint x Task Owner
 
-| Entrypoint | Task owner | MuJoCo | Motrix | Drake | mjwarp | Newton | SuperDex | Genesis |
-|------------|------------|---|---|---|---|---|---|---|
-| PPO (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | Tested | Configured | - | - | Configured | - |
-| PPO (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Tested | - | Tested | Registered | - | Configured |
-| PPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | - | Registered | Registered | - | Registered |
-| APPO (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | Tested | Registered | - | - | Registered | - |
-| APPO (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Registered | - | Registered | Registered | - | Registered |
-| APPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | - | Registered | Registered | - | Registered |
-| SAC (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Tested | - | Tested | Tested | - | Tested |
-| SAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | - | Configured | Registered | - | Configured |
-| FlashSAC (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | Registered | Registered | - | - | Registered | - |
-| FlashSAC (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Tested | - | Configured | Registered | - | Registered |
-| FlashSAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | - | Configured | Configured | - | Configured |
+| Entrypoint | Task owner | MuJoCo | Motrix | Drake | mjwarp | Newton | SuperDex | Genesis | IsaacGym | IsaacSim |
+|------------|------------|---|---|---|---|---|---|---|---|---|
+| PPO (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | Tested | Configured | - | - | Configured | - | - | - |
+| PPO (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Tested | - | Tested | Registered | - | Configured | Registered | Registered |
+| PPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | - | Registered | Registered | - | Registered | - | - |
+| APPO (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | Tested | Registered | - | - | Registered | - | - | - |
+| APPO (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Registered | - | Registered | Registered | - | Registered | Registered | Registered |
+| APPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | - | Registered | Registered | - | Registered | - | - |
+| SAC (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Tested | - | Tested | Tested | - | Tested | Tested | Tested |
+| SAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | - | Configured | Registered | - | Configured | - | - |
+| FlashSAC (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | Registered | Registered | - | - | Registered | - | - | - |
+| FlashSAC (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Tested | - | Configured | Registered | - | Registered | Registered | Registered |
+| FlashSAC (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested | - | Configured | Configured | - | Configured | - | - |
 
 ### Source Index
 

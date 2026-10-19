@@ -1,14 +1,9 @@
 # 仿真后端
 
 当前 tensor-only Manager runtime 暴露 `mujoco`、`mjwarp`、`genesis`、
-`newton`、`motrix`、`superdex`，以及下文描述的 scoped Drake owner。用户命令
-通过 `--sim` 选择后端，并组合对应的 task owner YAML；不要单独覆盖
-`training.sim_backend`。
-
-`isaacgym` 与 `isaacsim` 适配器在 issue #1811 期间由
-`unisim-core` 暂时搁置。历史页面仅用于 adapter 背景，不构成生产支持声明。
-在提供新的 capability、parity 与支持矩阵证据之前，train/eval CLI 会直接
-拒绝这些后端。
+`newton`、`motrix`、`superdex`、scoped Drake owner，以及下文描述的显式
+external-worker Isaac owner。用户命令通过 `--sim` 选择后端，并组合对应的
+task owner YAML；不要单独覆盖 `training.sim_backend`。
 
 ## Runtime 前置条件
 
@@ -27,6 +22,8 @@
   `go2_joystick_flat` owner 使用 CPU physics 与 packed HOST_BRIDGE
   lifecycle；在 backend contract 补齐前，浮动根重置与 reset randomization
   事件保持禁用。
+- IsaacGym 与 IsaacSim 分别需要隔离的 Python 3.8 / Python 3.11 worker 以及
+  同 GPU CUDA IPC。它们是显式 owner 选择，不会成为隐式 fallback 后端。
 
 ## OS 与 GPU 支持
 
@@ -39,6 +36,8 @@
 | Motrix | Linux / macOS / Windows | CPU-authoritative physics；Torch CUDA buffer 可选 |
 | SuperDex | Linux x86_64（CPython 3.12/3.13） | CPU-authoritative physics；Torch CUDA buffer 可选 |
 | Drake | Linux x86_64 / Apple Silicon macOS | CPU-authoritative physics；Torch CUDA buffer 可选 |
+| IsaacGym | Linux | 要求：外部 Python 3.8 worker 与 NVIDIA CUDA |
+| IsaacSim | Linux | 要求：外部 Python 3.11 IsaacLab worker 与 NVIDIA CUDA |
 
 后端设备要求与 learner 设备独立：MuJoCo 仍可以让 learner 使用 CUDA、ROCm、MPS
 或 XPU。平台配置见 {doc}`../../1-getting_started/2-installation`。

@@ -1,6 +1,8 @@
 # IsaacGym 后端
 
-> **IsaacGym 暂时搁置。** 该适配器在 #1811 期间不属于 tensor-only Manager runtime，也不构成生产支持声明。在提供新的 capability、parity 与支持矩阵证据之前，train/eval CLI 会直接拒绝该后端。
+> **IsaacGym 是显式 external-worker owner。** 它需要隔离的 Python 3.8
+> Preview 4 runtime，且不会作为隐式 fallback 后端。task/algorithm 证据以
+> 生成支持矩阵为准。
 
 
 IsaacGym（NVIDIA Preview 4）是 NVIDIA 已停止维护（EOL）的 GPU 物理仿真器，
@@ -9,8 +11,8 @@ IsaacGym（NVIDIA Preview 4）是 NVIDIA 已停止维护（EOL）的 GPU 物理�
 定位该环境，不写入任何机器本地路径。
 
 当前状态：`IsaacGymBackend`（subprocess 后端，物理跑在外部 Python 3.8
-worker 中）已实现并注册到 registry；`g1_walk_flat` 提供 isaacgym owner
-配置（`src/unilab/conf/{ppo,sac}/task/g1_walk_flat/isaacgym.yaml`），跨后端契约审计
+worker 中）已实现并注册到 registry；SAC `g1_walk_flat` 提供 isaacgym owner
+配置（`src/unilab/conf/sac/task/g1_walk_flat/isaacgym.yaml`），跨后端契约审计
 （`scripts/audit_sim2sim_contracts.py`）覆盖 mujoco↔isaacgym。回放渲染走
 IsaacGym 原生渲染（viewer + camera sensor），交互与录视频两种模式均可用
 （见下文「训练与评估」）。真机端到端
@@ -35,9 +37,11 @@ benchmark 脚本
   `<contact><exclude>` 配对（如 G1 的 elbow↔wrist、pelvis↔hip 重叠）
   无法通过 gymapi 按 link 对复现；整体关闭自碰撞是生态通行近似，且是
   这些排除项的超集。依赖自身接触的模型不会被忠实复现。
-- **关节限位**：importer 会丢弃 joint range，因此 PhysX 侧没有关节
-  限位；`get_joint_range()` 仍返回 XML 值。关节 `armature` 与
-  `frictionloss`（经 MJCF default class 解析）会应用到 PhysX dof。
+- **关节限位**：importer 会丢弃原生 joint stop。worker 传递 host 侧扫描的
+  XML range，并把每个 position target clamp 到该边界；`get_joint_range()`
+  返回同一 source 值。这恢复的是 commanded boundary，不是原生 hard-stop
+  仿真，外部动量下动力学仍可能过冲。关节 `armature` 与 `frictionloss`
+  （经 MJCF default class 解析）会应用到 PhysX dof。
 - **固定模型变体**：`env.fixed_model_variants` 通过 actor 级资产选择实现。
   每个完整 MJCF 源只装载一次，每个环境的 actor 按不可变 assignment 行创建；
   dof/body 数量与名称顺序必须与规范变体一致，内部 PhysX shape 数量可以不同。
@@ -106,7 +110,7 @@ uv run --no-project "$UNILAB_BENCHMARK_HSGYM_PYTHON" \
 uv run train --algo sac --task g1_walk_flat --sim isaacgym
 
 # PPO
-uv run train --algo ppo --task g1_walk_flat --sim isaacgym
+uv run train --algo sac --task g1_walk_flat --sim isaacgym
 ```
 
 回放渲染由 IsaacGym 原生提供：交互模式在 worker 进程里打开 gym viewer，

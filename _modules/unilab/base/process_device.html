@@ -544,6 +544,8 @@
 <span class="c1"># optional accelerator Manager buffers are selected separately through</span>
 <span class="c1"># ``env.sim_carrier_device``.</span>
 <span class="n">BACKEND_ENV_DEVICE_FIELDS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;isaacgym&quot;</span><span class="p">:</span> <span class="s2">&quot;isaacgym_device_id&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;isaacsim&quot;</span><span class="p">:</span> <span class="s2">&quot;isaacsim_device_id&quot;</span><span class="p">,</span>
     <span class="s2">&quot;genesis&quot;</span><span class="p">:</span> <span class="s2">&quot;genesis_device_id&quot;</span><span class="p">,</span>
 <span class="p">}</span>
 
@@ -562,6 +564,7 @@
 <span class="c1"># MuJoCo is the scoped HOST_BRIDGE backend whose training collector may explicitly</span>
 <span class="c1"># request accelerator Torch carriers across its packed boundary.</span>
 <span class="n">_SIM_CARRIER_BACKENDS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;mujoco&quot;</span><span class="p">}</span>
+<span class="n">_EXTERNAL_CUDA_IPC_BACKENDS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;isaacgym&quot;</span><span class="p">,</span> <span class="s2">&quot;isaacsim&quot;</span><span class="p">}</span>
 
 
 <span class="c1"># Set once ``bind_genesis_process_device`` has pinned CUDA_VISIBLE_DEVICES for</span>
@@ -810,7 +813,10 @@
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.resolve_backend_process_device.html#unilab.base.process_device.resolve_backend_process_device">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">resolve_backend_process_device</span><span class="p">(</span><span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;mjwarp&quot;</span><span class="p">,</span> <span class="s2">&quot;newton&quot;</span><span class="p">,</span> <span class="s2">&quot;genesis&quot;</span><span class="p">}:</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;mjwarp&quot;</span><span class="p">,</span> <span class="s2">&quot;newton&quot;</span><span class="p">,</span> <span class="s2">&quot;genesis&quot;</span><span class="p">}</span>
+        <span class="ow">and</span> <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_EXTERNAL_CUDA_IPC_BACKENDS</span>
+    <span class="p">):</span>
         <span class="k">return</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="n">learner_device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend</span><span class="si">}</span><span class="s2"> requires an explicit CUDA process device&quot;</span><span class="p">)</span>
@@ -823,11 +829,58 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_bind_external_cuda_ipc_process_device</span><span class="p">(</span>
+    <span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">resolved</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">backend_device_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+    <span class="n">learner_index</span> <span class="o">=</span> <span class="n">_cuda_device_index</span><span class="p">(</span><span class="n">resolved</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">learner_index</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend_type</span><span class="si">}</span><span class="s2"> requires a CUDA process device shared with its learner; &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">resolved</span><span class="si">!r}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">backend_device_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend_device_id</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend_device_id</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">backend_device_id</span> <span class="o">&lt;</span> <span class="mi">0</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend_type</span><span class="si">}</span><span class="s2"> backend device id must be a non-negative integer or None, &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">backend_device_id</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">backend_device_id</span> <span class="o">!=</span> <span class="n">learner_index</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend_type</span><span class="si">}</span><span class="s2"> learner device </span><span class="si">{</span><span class="n">resolved</span><span class="si">!r}</span><span class="s2"> does not match its backend &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;payload device id </span><span class="si">{</span><span class="n">backend_device_id</span><span class="si">}</span><span class="s2">; refusing to construct cross-device &quot;</span>
+                <span class="s2">&quot;CUDA IPC&quot;</span>
+            <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend_type</span><span class="si">}</span><span class="s2"> requires CUDA device </span><span class="si">{</span><span class="n">resolved</span><span class="si">!r}</span><span class="s2">, but CUDA is unavailable &quot;</span>
+            <span class="s2">&quot;in this process&quot;</span>
+        <span class="p">)</span>
+    <span class="n">visible_count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">())</span>
+    <span class="k">if</span> <span class="n">learner_index</span> <span class="o">&gt;=</span> <span class="n">visible_count</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend_type</span><span class="si">}</span><span class="s2"> device index </span><span class="si">{</span><span class="n">learner_index</span><span class="si">}</span><span class="s2"> is out of range; &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;torch.cuda.device_count()=</span><span class="si">{</span><span class="n">visible_count</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">set_device</span><span class="p">(</span><span class="n">learner_index</span><span class="p">)</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">learner_index</span><span class="si">}</span><span class="s2">&quot;</span>
+
+
 <div class="viewcode-block" id="configure_backend_process_device">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.configure_backend_process_device.html#unilab.base.process_device.configure_backend_process_device">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">configure_backend_process_device</span><span class="p">(</span>
     <span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">backend_device_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">resolved</span> <span class="o">=</span> <span class="n">resolve_backend_process_device</span><span class="p">(</span><span class="n">backend_type</span><span class="p">,</span> <span class="n">learner_device</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">resolved</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -835,6 +888,12 @@
     <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;genesis&quot;</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">bind_genesis_process_device</span><span class="p">(</span><span class="n">resolved</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">backend</span> <span class="ow">in</span> <span class="n">_EXTERNAL_CUDA_IPC_BACKENDS</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_bind_external_cuda_ipc_process_device</span><span class="p">(</span>
+            <span class="n">backend</span><span class="p">,</span>
+            <span class="n">resolved</span><span class="p">,</span>
+            <span class="n">backend_device_id</span><span class="o">=</span><span class="n">backend_device_id</span><span class="p">,</span>
+        <span class="p">)</span>
     <span class="k">return</span> <span class="n">bind_backend_process_device_for_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">,</span> <span class="n">resolved</span><span class="p">)</span></div>
 
 

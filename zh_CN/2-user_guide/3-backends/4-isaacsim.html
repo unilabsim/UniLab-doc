@@ -421,14 +421,15 @@
 <section class="tex2jax_ignore mathjax_ignore" id="isaacsim">
 <h1>IsaacSim 后端<a class="headerlink" href="#isaacsim" title="Link to this heading">¶</a></h1>
 <blockquote>
-<div><p><strong>IsaacSim 暂时搁置。</strong> 该适配器在 #1811 期间不属于 tensor-only Manager runtime，也不构成生产支持声明。在提供新的 capability、parity 与支持矩阵证据之前，train/eval CLI 会直接拒绝该后端。</p>
+<div><p><strong>IsaacSim 是显式 external-worker owner。</strong> 它需要隔离的 Python 3.11
+IsaacSim/IsaacLab runtime、mapped entity scene 以及同 GPU CUDA IPC。首个
+恢复的 SAC owner 仅限 headless training。</p>
 </div></blockquote>
 <p>UniLab 的 <code class="docutils literal notranslate"><span class="pre">isaacsim</span></code> 后端在独立的 Python 3.11 worker 进程中运行 IsaacSim
-5.1.0 和 IsaacLab v2.3.0。主进程保留标准 <code class="docutils literal notranslate"><span class="pre">SimBackend</span></code> NumPy contract；管道
-传输生命周期命令，共享内存传输批量状态。当前支持边界是已注册 G1 flat
-task owner 的 headless physics 与 eval 专用原生渲染。支持矩阵仍将 PPO/SAC
-owner 标为 <code class="docutils literal notranslate"><span class="pre">Configured</span></code>，不是 <code class="docutils literal notranslate"><span class="pre">Tested</span></code>：渲染协议有确定性 worker 测试，但在
-当前可用 IsaacSim 主机上还没有完成真实 playback。</p>
+5.1.0 和 IsaacLab v2.3.0。管道传输生命周期 metadata，canonical
+qpos/qvel/control/reset arena 通过同 GPU CUDA IPC 传输。当前恢复边界是使用
+mapped entity scene 的 headless SAC <code class="docutils literal notranslate"><span class="pre">g1_walk_flat</span></code> training。原生
+interactive/record playback 仍是独立后续项，不属于本次训练支持声明。</p>
 <section id="id1">
 <h2>运行时边界<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
 <p>IsaacSim 5.1.0 只能在独立 Python 3.11 环境中运行，而 UniLab 主环境支持
@@ -459,12 +460,16 @@ headless 离线录制。</p></li>
 <p>离线帧 contract 为 <code class="docutils literal notranslate"><span class="pre">(height,</span> <span class="pre">width,</span> <span class="pre">3)</span></code>、<code class="docutils literal notranslate"><span class="pre">uint8</span></code>、连续且非均匀。错误帧或占位帧
 会 fail closed，不会写出伪视频。IsaacSim owner 默认 1280 x 720，可在 env 创建前
 通过 <code class="docutils literal notranslate"><span class="pre">env.isaacsim_render_width</span></code> 和 <code class="docutils literal notranslate"><span class="pre">env.isaacsim_render_height</span></code> 覆盖。</p>
+<p>mapped scene 使用 backend 默认 2 m 的网格克隆间距。可在 env 创建前用有限正数
+<code class="docutils literal notranslate"><span class="pre">env.isaacsim_env_spacing</span></code> 扩大该间距；较大的任务局部支撑面应使用大于其半宽
+两倍的间距，避免相邻 clone 重叠。IsaacSim 会把生效间距和 environment origin
+回报给 host，host 检测到不一致时拒绝启动。</p>
 <p>当前 worker 支持 MJCF 材质化、批量 articulation 状态、位置 target 步进和
 masked root/joint reset，以及 Kit 原生 viewer 和 headless IsaacLab RGB camera。
 contact-force sensor、reset/interval domain randomization 和 host pre-step
 callback 仍不支持，并会 fail closed。</p>
 <p>使用顶层 CLI 选择 backend 和 owner：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>isaacsim
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>isaacsim
 uv<span class="w"> </span>run<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>isaacsim<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--load-run<span class="w"> </span>&lt;run-id&gt;<span class="w"> </span>--render-mode<span class="w"> </span>record<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>training.play_steps<span class="o">=</span><span class="m">120</span><span class="w"> </span>training.play_env_num<span class="o">=</span><span class="m">1</span><span class="w"> </span>training.export_onnx<span class="o">=</span><span class="nb">false</span>
@@ -473,11 +478,32 @@ uv<span class="w"> </span>run<span class="w"> </span><span class="nb">eval</span
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">record</span></code> 会在所选 run 目录写入 <code class="docutils literal notranslate"><span class="pre">play_video.mp4</span></code>。这些命令需要外部运行时和
-NVIDIA CUDA 设备。仓库不声称已完成完整训练或稳定的原生 playback；该声明
-需要 maintainer validation 记录。</p>
+NVIDIA CUDA 设备。仓库已有上方的 headless SAC training 完整运行记录；原生
+playback 仍是独立验证，当前不声称稳定可用。</p>
 </section>
+<section id="training-validation">
+<h2>Training Validation<a class="headerlink" href="#training-validation" title="Link to this heading">¶</a></h2>
+<p>Issue #2387 在恢复后的 owner 上只执行了一次完整 headless SAC 运行
+（RTX 4090，IsaacSim 5.1.0 / IsaacLab 2.3.0）。该运行完成 5000/5000
+iterations 与 10,260,480 environment steps，tracked training wall time 为
+350.03 秒（端到端 7:32.82）。final/best mean reward 为 15.021/18.840，mean
+episode length 为 58.21，final/tail throughput 为 29,517/29,203 steps/s。</p>
+<p>该记录证明 external worker、mapped scene、CUDA IPC arena、tensor reset 与
+SAC training lifecycle 可以完整跑完。低 reward 和短 episode 使语义策略质量
+相对 MuJoCo-family owner 仍保持开放；这不建立跨 backend 步态 parity。</p>
 <section id="id2">
-<h2>当前运行时验证<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<h3>2026-10-18 语义质量复测<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<p>修复 derived-sensor refresh 与 mapped finite floor 后，canonical SAC
+<code class="docutils literal notranslate"><span class="pre">g1_walk_flat</span></code> 重新完成 5000/5000 iterations / 10,260,480 environment
+steps。final/best mean reward 为 291.201/298.049，mean episode length 为
+993.99/1000，tracked training wall time 为 363.04 秒，final/tail
+throughput 为 28,673/29,314 steps/s。该结果的 reward 与 episode length 进入
+已验证 MuJoCo-family SAC run 的区间；上方早期低 reward 记录已被本次语义修复
+复测取代。native playback 仍是独立 renderer 验证。</p>
+</section>
+</section>
+<section id="id3">
+<h2>当前运行时验证<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
 <p>已使用现有 SAC checkpoint 在 IsaacSim 5.1.0、IsaacLab v2.3.0、Kit 107.3.3、
 Ubuntu 24.04.4、RTX 4090 和 NVIDIA driver 595.84 上分别执行有界 record eval
 和 interactive eval。两条路径均在 <code class="docutils literal notranslate"><span class="pre">AppLauncher</span></code> 初始化期间、camera 或 viewer
@@ -486,8 +512,8 @@ Ubuntu 24.04.4、RTX 4090 和 NVIDIA driver 595.84 上分别执行有界 record 
 <code class="docutils literal notranslate"><span class="pre">libomni.hydra.rtx.plugin.so</span></code>，崩溃前有 EGL 初始化警告。最小 camera-enabled
 <code class="docutils literal notranslate"><span class="pre">AppLauncher</span></code> probe 即使设置 <code class="docutils literal notranslate"><span class="pre">multi_gpu=False</span></code> 也失败。</p>
 <p>这是真实 runtime blocker，不是 playback 成功证据。backend 保留渲染协议和
-fail-closed 测试，支持矩阵仍为 <code class="docutils literal notranslate"><span class="pre">Configured</span></code>；真实 renderer 未初始化时不会生成
-占位视频。</p>
+fail-closed 测试；SAC training cell 为 <code class="docutils literal notranslate"><span class="pre">Tested</span></code>，renderer/playback 能力仍不
+提升。真实 renderer 未初始化时不会生成占位视频。</p>
 </section>
 <section id="contract">
 <h2>检查 Contract<a class="headerlink" href="#contract" title="Link to this heading">¶</a></h2>
@@ -503,8 +529,8 @@ uv<span class="w"> </span>run<span class="w"> </span>--active<span class="w"> </
 <p>该命令是有界的开发者探测，只在 cold-path 材质化阶段访问 XML/importer，适合
 检查新安装的运行时；它不是训练或 playback 验证。</p>
 </section>
-<section id="id3">
-<h2>Contract 矩阵<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<section id="id4">
+<h2>Contract 矩阵<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -558,7 +584,7 @@ uv<span class="w"> </span>run<span class="w"> </span>--active<span class="w"> </
 <tr class="row-even"><td><p>离线 RGB</p></td>
 <td><p>IsaacLab <code class="docutils literal notranslate"><span class="pre">Camera</span></code> + <code class="docutils literal notranslate"><span class="pre">CameraCfg</span></code></p></td>
 <td><p>协议测试验证视频写入，并拒绝错误 shape、dtype 或均匀帧；当前真实主机在 camera 创建前崩溃</p></td>
-<td><p>要求有限步数；真实 playback 成功前支持等级保持 <code class="docutils literal notranslate"><span class="pre">Configured</span></code></p></td>
+<td><p>要求有限步数；真实 playback 成功前 renderer/playback 声明不提升</p></td>
 </tr>
 <tr class="row-odd"><td><p>交互窗口</p></td>
 <td><p>非 headless Kit + <code class="docutils literal notranslate"><span class="pre">SimulationContext.set_camera_view</span></code></p></td>
@@ -622,9 +648,13 @@ worker 建立 name-to-index 映射并重排所有状态和控制数组；按位�
             <ul>
 <li><a class="reference internal" href="#">IsaacSim 后端</a><ul>
 <li><a class="reference internal" href="#id1">运行时边界</a></li>
-<li><a class="reference internal" href="#id2">当前运行时验证</a></li>
+<li><a class="reference internal" href="#training-validation">Training Validation</a><ul>
+<li><a class="reference internal" href="#id2">2026-10-18 语义质量复测</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id3">当前运行时验证</a></li>
 <li><a class="reference internal" href="#contract">检查 Contract</a></li>
-<li><a class="reference internal" href="#id3">Contract 矩阵</a></li>
+<li><a class="reference internal" href="#id4">Contract 矩阵</a></li>
 </ul>
 </li>
 </ul>

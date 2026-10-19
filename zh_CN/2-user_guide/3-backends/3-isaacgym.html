@@ -421,15 +421,17 @@
 <section class="tex2jax_ignore mathjax_ignore" id="isaacgym">
 <h1>IsaacGym 后端<a class="headerlink" href="#isaacgym" title="Link to this heading">¶</a></h1>
 <blockquote>
-<div><p><strong>IsaacGym 暂时搁置。</strong> 该适配器在 #1811 期间不属于 tensor-only Manager runtime，也不构成生产支持声明。在提供新的 capability、parity 与支持矩阵证据之前，train/eval CLI 会直接拒绝该后端。</p>
+<div><p><strong>IsaacGym 是显式 external-worker owner。</strong> 它需要隔离的 Python 3.8
+Preview 4 runtime，且不会作为隐式 fallback 后端。task/algorithm 证据以
+生成支持矩阵为准。</p>
 </div></blockquote>
 <p>IsaacGym（NVIDIA Preview 4）是 NVIDIA 已停止维护（EOL）的 GPU 物理仿真器，
 只支持 Python 3.6–3.8。UniLab 主环境要求 Python &gt;= 3.10，因此 IsaacGym 不能
 装进主环境，必须通过外部独立的 Python 3.8 环境使用；仓库内一律通过环境变量
 定位该环境，不写入任何机器本地路径。</p>
 <p>当前状态：<code class="docutils literal notranslate"><span class="pre">IsaacGymBackend</span></code>（subprocess 后端，物理跑在外部 Python 3.8
-worker 中）已实现并注册到 registry；<code class="docutils literal notranslate"><span class="pre">g1_walk_flat</span></code> 提供 isaacgym owner
-配置（<code class="docutils literal notranslate"><span class="pre">src/unilab/conf/{ppo,sac}/task/g1_walk_flat/isaacgym.yaml</span></code>），跨后端契约审计
+worker 中）已实现并注册到 registry；SAC <code class="docutils literal notranslate"><span class="pre">g1_walk_flat</span></code> 提供 isaacgym owner
+配置（<code class="docutils literal notranslate"><span class="pre">src/unilab/conf/sac/task/g1_walk_flat/isaacgym.yaml</span></code>），跨后端契约审计
 （<code class="docutils literal notranslate"><span class="pre">scripts/audit_sim2sim_contracts.py</span></code>）覆盖 mujoco↔isaacgym。回放渲染走
 IsaacGym 原生渲染（viewer + camera sensor），交互与录视频两种模式均可用
 （见下文「训练与评估」）。真机端到端
@@ -453,9 +455,11 @@ forcerange 的 scene 会在扫描时 fail-closed。</p></li>
 <code class="docutils literal notranslate"><span class="pre">&lt;contact&gt;&lt;exclude&gt;</span></code> 配对（如 G1 的 elbow↔wrist、pelvis↔hip 重叠）
 无法通过 gymapi 按 link 对复现；整体关闭自碰撞是生态通行近似，且是
 这些排除项的超集。依赖自身接触的模型不会被忠实复现。</p></li>
-<li><p><strong>关节限位</strong>：importer 会丢弃 joint range，因此 PhysX 侧没有关节
-限位；<code class="docutils literal notranslate"><span class="pre">get_joint_range()</span></code> 仍返回 XML 值。关节 <code class="docutils literal notranslate"><span class="pre">armature</span></code> 与
-<code class="docutils literal notranslate"><span class="pre">frictionloss</span></code>（经 MJCF default class 解析）会应用到 PhysX dof。</p></li>
+<li><p><strong>关节限位</strong>：importer 会丢弃原生 joint stop。worker 传递 host 侧扫描的
+XML range，并把每个 position target clamp 到该边界；<code class="docutils literal notranslate"><span class="pre">get_joint_range()</span></code>
+返回同一 source 值。这恢复的是 commanded boundary，不是原生 hard-stop
+仿真，外部动量下动力学仍可能过冲。关节 <code class="docutils literal notranslate"><span class="pre">armature</span></code> 与 <code class="docutils literal notranslate"><span class="pre">frictionloss</span></code>
+（经 MJCF default class 解析）会应用到 PhysX dof。</p></li>
 <li><p><strong>固定模型变体</strong>：<code class="docutils literal notranslate"><span class="pre">env.fixed_model_variants</span></code> 通过 actor 级资产选择实现。
 每个完整 MJCF 源只装载一次，每个环境的 actor 按不可变 assignment 行创建；
 dof/body 数量与名称顺序必须与规范变体一致，内部 PhysX shape 数量可以不同。
@@ -519,7 +523,7 @@ uv<span class="w"> </span>run<span class="w"> </span>--no-project<span class="w"
 uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>isaacgym
 
 <span class="c1"># PPO</span>
-uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>isaacgym
+uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>sac<span class="w"> </span>--task<span class="w"> </span>g1_walk_flat<span class="w"> </span>--sim<span class="w"> </span>isaacgym
 </pre></div>
 </div>
 <p>回放渲染由 IsaacGym 原生提供：交互模式在 worker 进程里打开 gym viewer，

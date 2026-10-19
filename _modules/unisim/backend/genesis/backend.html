@@ -2498,6 +2498,11 @@
             <span class="n">sensor_views</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">stepping</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">selected_reset</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">reset_randomization</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">device_reset_randomization</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">packed_reset</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">packed_reset_fields</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">({</span><span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span> <span class="n">RESET_TERM_KP</span><span class="p">,</span> <span class="n">RESET_TERM_KD</span><span class="p">}),</span>
+            <span class="n">mask_selected_reset</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">process_topology</span><span class="o">=</span><span class="n">TensorProcessTopology</span><span class="o">.</span><span class="n">IN_PROCESS</span><span class="p">,</span>
             <span class="n">data_plane</span><span class="o">=</span><span class="n">TensorDataPlane</span><span class="o">.</span><span class="n">DIRECT</span><span class="p">,</span>
             <span class="n">stream_event_ownership</span><span class="o">=</span><span class="p">(</span>
@@ -2513,6 +2518,69 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_public_state_widths</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PublicStateWidths</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">PublicStateWidths</span><span class="p">(</span><span class="n">nq</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_metadata</span><span class="o">.</span><span class="n">nq</span><span class="p">,</span> <span class="n">nv</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_metadata</span><span class="o">.</span><span class="n">nv</span><span class="p">)</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_tensor_reset_payload</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">row_count</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate a selected-row or full-width device reset payload.&quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="s2">&quot;genesis tensor reset randomization requires a TensorResetRandomizationPayload&quot;</span>
+            <span class="p">)</span>
+        <span class="n">allowed</span> <span class="o">=</span> <span class="p">{</span><span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span> <span class="n">RESET_TERM_KP</span><span class="p">,</span> <span class="n">RESET_TERM_KD</span><span class="p">}</span>
+        <span class="n">unsupported</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">())</span> <span class="o">-</span> <span class="n">allowed</span>
+        <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;genesis tensor reset randomization does not support terms: &quot;</span>
+                <span class="o">+</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">))</span>
+            <span class="p">)</span>
+        <span class="n">widths</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">RESET_TERM_BODY_MASS</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata</span><span class="o">.</span><span class="n">nbody</span><span class="p">,</span>
+            <span class="n">RESET_TERM_KP</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_actuators</span><span class="p">,</span>
+            <span class="n">RESET_TERM_KD</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_actuators</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">for</span> <span class="n">term</span><span class="p">,</span> <span class="n">width</span> <span class="ow">in</span> <span class="n">widths</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">term</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">expected</span> <span class="o">=</span> <span class="p">(</span><span class="n">row_count</span><span class="p">,</span> <span class="n">width</span><span class="p">)</span>
+            <span class="n">operand</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="n">expected</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">operand</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;genesis tensor reset </span><span class="si">{</span><span class="n">term</span><span class="si">}</span><span class="s2"> values must be finite&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">bool</span><span class="p">((</span><span class="n">operand</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;genesis tensor reset </span><span class="si">{</span><span class="n">term</span><span class="si">}</span><span class="s2"> values must be nonnegative&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">randomization</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_tensor_reset_randomization</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">env_indices</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply the declared final-value model fields on the CUDA device.&quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">body_mass</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">set_links_inertial_mass</span><span class="p">(</span>
+                <span class="n">randomization</span><span class="o">.</span><span class="n">body_mass</span><span class="p">,</span>
+                <span class="n">envs_idx</span><span class="o">=</span><span class="n">env_indices</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">kp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">set_dofs_kp</span><span class="p">(</span>
+                <span class="n">randomization</span><span class="o">.</span><span class="n">kp</span><span class="p">,</span>
+                <span class="n">dofs_idx_local</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_actuated_dofs</span><span class="p">,</span>
+                <span class="n">envs_idx</span><span class="o">=</span><span class="n">env_indices</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">kd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">set_dofs_kv</span><span class="p">(</span>
+                <span class="n">randomization</span><span class="o">.</span><span class="n">kd</span><span class="p">,</span>
+                <span class="n">dofs_idx_local</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_actuated_dofs</span><span class="p">,</span>
+                <span class="n">envs_idx</span><span class="o">=</span><span class="n">env_indices</span><span class="p">,</span>
+            <span class="p">)</span>
 
 <div class="viewcode-block" id="GenesisBackend.get_sensor_names">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.genesis.backend.GenesisBackend.html#unisim.backend.genesis.backend.GenesisBackend.get_sensor_names">[docs]</a>
@@ -3045,8 +3113,6 @@
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="s2">&quot;genesis tensor selected reset supports the single-articulation profile only&quot;</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;genesis tensor reset does not support randomization&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_indices</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;genesis tensor env_indices must be a torch.Tensor&quot;</span><span class="p">)</span>
         <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
@@ -3061,6 +3127,9 @@
         <span class="p">)</span>
         <span class="n">qvel_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
             <span class="s2">&quot;qvel&quot;</span><span class="p">,</span> <span class="n">qvel</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata</span><span class="o">.</span><span class="n">nv</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">tensor_randomization</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_tensor_reset_payload</span><span class="p">(</span>
+            <span class="n">randomization</span><span class="p">,</span> <span class="n">row_count</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;tensor_reset_ms&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">}}</span>
@@ -3083,12 +3152,98 @@
                 <span class="n">rows</span><span class="p">,</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_time_zero</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
             <span class="p">)</span>
+            <span class="k">if</span> <span class="n">tensor_randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_apply_tensor_reset_randomization</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">tensor_randomization</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_refresh_state</span><span class="p">(</span><span class="n">force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_entity_faulted</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">raise</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;tensor_reset_ms&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span><span class="p">}}</span></div>
+
+
+<div class="viewcode-block" id="GenesisBackend.set_state_tensor_mask">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.genesis.backend.GenesisBackend.html#unisim.backend.genesis.backend.GenesisBackend.set_state_tensor_mask">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_state_tensor_mask</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">qpos</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">qvel</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">full_refresh</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Commit full-width CUDA state selected by a persistent bool mask.</span>
+
+<span class="sd">        Genesis&#39; public state setters consume a boolean environment mask</span>
+<span class="sd">        directly, so the fixed-width reset boundary does not compact selected</span>
+<span class="sd">        rows on the host or device.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">full_refresh</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;genesis tensor mask reset is a selected-row boundary&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_device</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_state</span><span class="p">(</span><span class="s2">&quot;tensor reset&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_mode</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;genesis tensor mask reset supports the single-articulation profile only&quot;</span>
+            <span class="p">)</span>
+        <span class="n">mask_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
+            <span class="s2">&quot;reset_mask&quot;</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,),</span> <span class="n">dtype_name</span><span class="o">=</span><span class="s2">&quot;torch.bool&quot;</span>
+        <span class="p">)</span>
+        <span class="n">qpos_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
+            <span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata</span><span class="o">.</span><span class="n">nq</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">qvel_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
+            <span class="s2">&quot;qvel&quot;</span><span class="p">,</span> <span class="n">qvel</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata</span><span class="o">.</span><span class="n">nv</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">full_randomization</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_tensor_reset_payload</span><span class="p">(</span>
+            <span class="n">randomization</span><span class="p">,</span> <span class="n">row_count</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">mask_tensor</span><span class="o">.</span><span class="n">any</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()):</span>
+            <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;tensor_reset_ms&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">}}</span>
+
+        <span class="n">tensor_time</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_ensure_time</span><span class="p">()</span>
+        <span class="n">current_qpos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_native_state_tensor</span><span class="p">(</span><span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">get_qpos</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata</span><span class="o">.</span><span class="n">nq</span><span class="p">)</span>
+        <span class="n">current_qvel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_native_state_tensor</span><span class="p">(</span>
+            <span class="s2">&quot;qvel&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">get_dofs_velocity</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata</span><span class="o">.</span><span class="n">nv</span>
+        <span class="p">)</span>
+        <span class="n">torch_module</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch</span>
+        <span class="n">merged_qpos</span> <span class="o">=</span> <span class="n">torch_module</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">mask_tensor</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">qpos_tensor</span><span class="p">,</span> <span class="n">current_qpos</span><span class="p">)</span>
+        <span class="n">merged_qvel</span> <span class="o">=</span> <span class="n">torch_module</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">mask_tensor</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">qvel_tensor</span><span class="p">,</span> <span class="n">current_qvel</span><span class="p">)</span>
+        <span class="n">selected_rows</span> <span class="o">=</span> <span class="n">mask_tensor</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">as_tuple</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+        <span class="n">selected_randomization</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">full_randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">selected_values</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">term</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">full_randomization</span><span class="p">,</span> <span class="n">term</span><span class="p">)</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="p">(</span><span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span> <span class="n">RESET_TERM_KP</span><span class="p">,</span> <span class="n">RESET_TERM_KD</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">full_randomization</span><span class="p">,</span> <span class="n">term</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="p">}</span>
+            <span class="n">selected_randomization</span> <span class="o">=</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">(</span><span class="o">**</span><span class="n">selected_values</span><span class="p">)</span>
+
+        <span class="n">started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">set_qpos</span><span class="p">(</span><span class="n">merged_qpos</span><span class="p">,</span> <span class="n">envs_idx</span><span class="o">=</span><span class="n">mask_tensor</span><span class="p">,</span> <span class="n">zero_velocity</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">set_dofs_velocity</span><span class="p">(</span><span class="n">merged_qvel</span><span class="p">,</span> <span class="n">envs_idx</span><span class="o">=</span><span class="n">mask_tensor</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_time_zero</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">tensor_time</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">mask_tensor</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_time_zero</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">selected_randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_apply_tensor_reset_randomization</span><span class="p">(</span><span class="n">selected_rows</span><span class="p">,</span> <span class="n">selected_randomization</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_refresh_state</span><span class="p">(</span><span class="n">force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_entity_faulted</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">raise</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;tensor_reset_ms&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span><span class="p">}}</span></div>
+
+
+<div class="viewcode-block" id="GenesisBackend.begin_packed_reset">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.genesis.backend.GenesisBackend.html#unisim.backend.genesis.backend.GenesisBackend.begin_packed_reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">begin_packed_reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Begin a device-resident packed reset transaction.&quot;&quot;&quot;</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.packed_reset</span><span class="w"> </span><span class="kn">import</span> <span class="n">TorchPackedResetComposer</span>
+
+        <span class="k">return</span> <span class="n">TorchPackedResetComposer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span></div>
 
 
     <span class="c1"># ------------------------------------------------------------------ #</span>
@@ -3749,9 +3904,6 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Reset public state, including state-only visual mirror roots.&quot;&quot;&quot;</span>
 
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_host_reset</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_mode</span><span class="p">:</span>
-            <span class="k">return</span>
         <span class="n">rows</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span>
@@ -3759,6 +3911,15 @@
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">return</span>
+        <span class="n">qpos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">broadcast_to</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_default_qpos</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata</span><span class="o">.</span><span class="n">nq</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">qvel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">broadcast_to</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_init_qvel</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata</span><span class="o">.</span><span class="n">nv</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_set_state</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">qpos</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">qvel</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">EntityStatePatch</span><span class="p">,</span> <span class="n">SceneResetRequest</span>
 
         <span class="n">patches</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
