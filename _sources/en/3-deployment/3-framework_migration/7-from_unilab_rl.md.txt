@@ -39,9 +39,9 @@ runtime, and the RL logging stack ship in the base install.
 | `uni_rl.ipc.*` (remaining modules) | `unilab.rl.runtime.ipc.*` |
 | `uni_rl.offpolicy.*` | `unilab.rl.runtime.offpolicy.*` |
 | `uni_rl.logging.*` | `unilab.rl.logging.*` |
-| `uni_rl.utils.seed` | `unilab.rl.runtime.seed` (`TrainingSeedInfo` / `resolve_training_seed` remain in `unilab.training.seed`) |
-| `uni_rl.utils.nan_guard` | `unilab.rl.runtime.nan_guard` |
-| `uni_rl.utils.tensor` | `unilab.rl.runtime.tensor` |
+| `uni_rl.utils.seed` | `unilab.rl.runtime.seed` (`apply_worker_seed`, `derive_worker_seed`; `TrainingSeedInfo`, `resolve_training_seed`, and parent-process `apply_training_seed` remain in `unilab.training.seed`) |
+| `uni_rl.utils.nan_guard` | `unilab.training.tensor_diagnostics` (`TensorNanGuard`); runner/collector code now receives an injected factory |
+| `uni_rl.utils.tensor` | no replacement (the tensor-native collector no longer uses host conversion helpers) |
 | `uni_rl.utils.device` | `unilab.rl.runtime.device` |
 | `uni_rl.utils.tensor_runtime` | `unilab.rl.runtime.settings` / `unilab.rl.runtime.placement` (pure settings and placement); the Hydra resolver lives in `unilab.training.tensor_runtime` |
 

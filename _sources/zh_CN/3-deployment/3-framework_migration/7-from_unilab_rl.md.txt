@@ -36,9 +36,9 @@
 | `uni_rl.ipc.*`（其余模块） | `unilab.rl.runtime.ipc.*` |
 | `uni_rl.offpolicy.*` | `unilab.rl.runtime.offpolicy.*` |
 | `uni_rl.logging.*` | `unilab.rl.logging.*` |
-| `uni_rl.utils.seed` | `unilab.rl.runtime.seed`（`TrainingSeedInfo` / `resolve_training_seed` 仍在 `unilab.training.seed`） |
-| `uni_rl.utils.nan_guard` | `unilab.rl.runtime.nan_guard` |
-| `uni_rl.utils.tensor` | `unilab.rl.runtime.tensor` |
+| `uni_rl.utils.seed` | `unilab.rl.runtime.seed`（`apply_worker_seed`、`derive_worker_seed`；`TrainingSeedInfo`、`resolve_training_seed` 与父进程 `apply_training_seed` 仍在 `unilab.training.seed`） |
+| `uni_rl.utils.nan_guard` | `unilab.training.tensor_diagnostics`（`TensorNanGuard`）；runner/collector 现在接收注入的 factory |
+| `uni_rl.utils.tensor` | 无替代（tensor-native collector 不再使用 host 转换辅助函数） |
 | `uni_rl.utils.device` | `unilab.rl.runtime.device` |
 | `uni_rl.utils.tensor_runtime` | `unilab.rl.runtime.settings` / `unilab.rl.runtime.placement`（纯设置与放置）；Hydra resolver 在 `unilab.training.tensor_runtime` |
 
