@@ -546,6 +546,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">RESET_TERM_BODY_INERTIA</span><span class="p">,</span>
     <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">,</span>
+    <span class="n">RESET_TERM_BODY_IQUAT</span><span class="p">,</span>
     <span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span>
     <span class="n">RESET_TERM_DOF_ARMATURE</span><span class="p">,</span>
     <span class="n">RESET_TERM_DOF_DAMPING</span><span class="p">,</span>
@@ -557,6 +558,8 @@
     <span class="n">RESET_TERM_GRAVITY</span><span class="p">,</span>
     <span class="n">RESET_TERM_KD</span><span class="p">,</span>
     <span class="n">RESET_TERM_KP</span><span class="p">,</span>
+    <span class="n">RESET_TERM_SPECS</span><span class="p">,</span>
+    <span class="n">DataPlaneName</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">EntityStatePatch</span><span class="p">,</span> <span class="n">SceneResetRequest</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.scene_layout</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompiledSceneLayout</span>
@@ -566,20 +569,29 @@
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.packed_reset</span><span class="w"> </span><span class="kn">import</span> <span class="n">TorchPackedResetComposer</span>
 
+<span class="c1"># Concrete trailing widths for the two-dimensional canonical model tables.</span>
+<span class="c1"># ``RESET_TERM_SPECS`` is the single source for term names, canonical table</span>
+<span class="c1"># ranks, and delta semantics, but it carries ranks only; these pin the</span>
+<span class="c1"># per-column width each 2-D term&#39;s tail resolves to.</span>
+<span class="n">_RANDOMIZATION_TERM_WIDTHS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">RESET_TERM_BODY_INERTIA</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+    <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+    <span class="n">RESET_TERM_BODY_IQUAT</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+    <span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+    <span class="n">RESET_TERM_GEOM_SIZE</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+    <span class="n">RESET_TERM_GEOM_SOLIMP</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span>
+    <span class="n">RESET_TERM_GEOM_SOLREF</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="c1"># Per-column value tails derived from the authoritative ``RESET_TERM_SPECS``</span>
+<span class="c1"># ranks: a canonical table of rank ``tail_ndim`` keeps ``tail_ndim - 1``</span>
+<span class="c1"># trailing dims once the column axis is selected. Delta terms are excluded:</span>
+<span class="c1"># the packed composer merges them with the baseline, so this transaction never</span>
+<span class="c1"># stages direct writes for them.</span>
 <span class="n">_RANDOMIZATION_TERM_TAILS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="n">RESET_TERM_BODY_INERTIA</span><span class="p">:</span> <span class="p">(</span><span class="mi">3</span><span class="p">,),</span>
-    <span class="n">RESET_TERM_BODY_MASS</span><span class="p">:</span> <span class="p">(),</span>
-    <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">:</span> <span class="p">(</span><span class="mi">3</span><span class="p">,),</span>
-    <span class="n">RESET_TERM_DOF_ARMATURE</span><span class="p">:</span> <span class="p">(),</span>
-    <span class="n">RESET_TERM_DOF_DAMPING</span><span class="p">:</span> <span class="p">(),</span>
-    <span class="n">RESET_TERM_DOF_FRICTIONLOSS</span><span class="p">:</span> <span class="p">(),</span>
-    <span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">:</span> <span class="p">(</span><span class="mi">3</span><span class="p">,),</span>
-    <span class="n">RESET_TERM_GEOM_SIZE</span><span class="p">:</span> <span class="p">(</span><span class="mi">3</span><span class="p">,),</span>
-    <span class="n">RESET_TERM_GEOM_SOLIMP</span><span class="p">:</span> <span class="p">(</span><span class="mi">5</span><span class="p">,),</span>
-    <span class="n">RESET_TERM_GEOM_SOLREF</span><span class="p">:</span> <span class="p">(</span><span class="mi">2</span><span class="p">,),</span>
-    <span class="n">RESET_TERM_GRAVITY</span><span class="p">:</span> <span class="p">(),</span>
-    <span class="n">RESET_TERM_KD</span><span class="p">:</span> <span class="p">(),</span>
-    <span class="n">RESET_TERM_KP</span><span class="p">:</span> <span class="p">(),</span>
+    <span class="n">spec</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="p">()</span> <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">tail_ndim</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="p">(</span><span class="n">_RANDOMIZATION_TERM_WIDTHS</span><span class="p">[</span><span class="n">spec</span><span class="o">.</span><span class="n">name</span><span class="p">],)</span>
+    <span class="k">for</span> <span class="n">spec</span> <span class="ow">in</span> <span class="n">RESET_TERM_SPECS</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">spec</span><span class="o">.</span><span class="n">is_delta</span>
 <span class="p">}</span>
 
 
@@ -645,7 +657,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_owner_subset</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mask_count</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_begin_rows</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_begin_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_begin_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_host_has_writes</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_default_qpos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_default_qvel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
@@ -703,8 +715,8 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">scoped_startup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="n">ResetStateTransaction</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Begin the all-row startup transaction and commit after all terms succeed.&quot;&quot;&quot;</span>
         <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_ids</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;startup&quot;</span><span class="p">)</span>
-        <span class="n">expected_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">array_equal</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">expected_ids</span><span class="p">):</span>
+        <span class="n">expected_ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">ids</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">equal</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">expected_ids</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;startup reset-state transaction must include every environment row&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">begin</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
@@ -791,7 +803,7 @@
         <span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span>
         <span class="k">assert</span> <span class="n">device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_packed_state_default</span><span class="p">(</span><span class="s2">&quot;begin&quot;</span><span class="p">)</span>
-        <span class="n">rows</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
         <span class="n">transaction</span><span class="o">.</span><span class="n">begin_state</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_begin_rows</span> <span class="o">=</span> <span class="n">rows</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_begin_ids</span> <span class="o">=</span> <span class="n">ids</span>
@@ -874,7 +886,7 @@
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;physical entity patches require a compiled scene layout&quot;</span><span class="p">)</span>
         <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_ids</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">capability</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span>
         <span class="n">begin_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_begin_ids</span>
-        <span class="k">if</span> <span class="n">begin_ids</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">begin_ids</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">begin_ids</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">begin_ids</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;entity write is outside the active reset&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">):</span>
             <span class="k">return</span>
@@ -924,12 +936,15 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_active</span><span class="p">()</span>
         <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_ids</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;read_entity_root_pose&quot;</span><span class="p">)</span>
         <span class="n">begin_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_begin_ids</span>
-        <span class="k">if</span> <span class="n">begin_ids</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">begin_ids</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">begin_ids</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">begin_ids</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;entity state read is outside the active reset&quot;</span><span class="p">)</span>
+        <span class="c1"># Host staging path: entity patches and the public snapshot live in</span>
+        <span class="c1"># NumPy, so this boundary materializes host rows once.</span>
+        <span class="n">host_ids</span> <span class="o">=</span> <span class="n">ids</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
         <span class="k">if</span> <span class="s2">&quot;root_pose&quot;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">entity</span><span class="p">,</span> <span class="p">{}):</span>
-            <span class="n">rows</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_entity_row_index</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">]</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_entity_row_index</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">host_ids</span><span class="p">]</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_values</span><span class="p">[</span><span class="n">entity</span><span class="p">][</span><span class="s2">&quot;root_pose&quot;</span><span class="p">][</span><span class="n">rows</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_entity_state</span><span class="p">(</span><span class="n">entity</span><span class="p">)[</span><span class="s2">&quot;root_pose&quot;</span><span class="p">][</span><span class="n">ids</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_entity_state</span><span class="p">(</span><span class="n">entity</span><span class="p">)[</span><span class="s2">&quot;root_pose&quot;</span><span class="p">][</span><span class="n">host_ids</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_commit_entities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -1474,13 +1489,13 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_randomization_default</span><span class="p">(</span><span class="n">RESET_TERM_GRAVITY</span><span class="p">,</span> <span class="n">term_name</span><span class="p">)</span>
         <span class="n">gravity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_values</span><span class="p">(</span>
             <span class="n">values</span><span class="p">,</span>
-            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">(),</span> <span class="mi">3</span><span class="p">),</span>
             <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;gravity&quot;</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_packed_transaction</span><span class="p">()</span><span class="o">.</span><span class="n">write_model_field</span><span class="p">(</span>
             <span class="n">RESET_TERM_GRAVITY</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_host_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_packed_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_packed_values</span><span class="p">(</span><span class="n">gravity</span><span class="p">),</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_host_has_writes</span> <span class="o">=</span> <span class="kc">True</span></div>
@@ -1587,7 +1602,7 @@
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_materialize_default_actuator_gains</span><span class="p">(</span><span class="n">term_name</span><span class="p">)</span>
-        <span class="n">gains_shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">columns</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+        <span class="n">gains_shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">(),</span> <span class="n">columns</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
         <span class="n">kp_values</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_values</span><span class="p">(</span>
             <span class="n">kp</span><span class="p">,</span>
             <span class="n">shape</span><span class="o">=</span><span class="n">gains_shape</span><span class="p">,</span>
@@ -1601,7 +1616,7 @@
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_packed_transaction</span><span class="p">()</span>
-        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
         <span class="n">transaction</span><span class="o">.</span><span class="n">write_model_field</span><span class="p">(</span>
             <span class="n">RESET_TERM_KP</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_values</span><span class="p">(</span><span class="n">kp_values</span><span class="p">),</span> <span class="n">columns</span><span class="o">=</span><span class="n">columns</span>
         <span class="p">)</span>
@@ -1732,8 +1747,8 @@
         <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_ids</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;write_joint_state&quot;</span><span class="p">)</span>
         <span class="n">begin_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_begin_ids</span>
         <span class="k">assert</span> <span class="n">begin_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="n">outside</span> <span class="o">=</span> <span class="n">ids</span><span class="p">[</span><span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">begin_ids</span><span class="p">)]</span>
-        <span class="k">if</span> <span class="n">outside</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+        <span class="n">outside</span> <span class="o">=</span> <span class="n">ids</span><span class="p">[</span><span class="o">~</span><span class="n">torch</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">begin_ids</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="n">outside</span><span class="o">.</span><span class="n">numel</span><span class="p">():</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; attempted joint-state mutation outside &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;the active reset: </span><span class="si">{</span><span class="n">outside</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
@@ -1762,19 +1777,19 @@
             <span class="p">)</span>
         <span class="n">positions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_values</span><span class="p">(</span>
             <span class="n">position</span><span class="p">,</span>
-            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">pos_columns</span><span class="o">.</span><span class="n">size</span><span class="p">),</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">(),</span> <span class="n">pos_columns</span><span class="o">.</span><span class="n">size</span><span class="p">),</span>
             <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;joint position&quot;</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">velocities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_values</span><span class="p">(</span>
             <span class="n">velocity</span><span class="p">,</span>
-            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">vel_columns</span><span class="o">.</span><span class="n">size</span><span class="p">),</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">(),</span> <span class="n">vel_columns</span><span class="o">.</span><span class="n">size</span><span class="p">),</span>
             <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;joint velocity&quot;</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_packed_transaction</span><span class="p">()</span><span class="o">.</span><span class="n">write_state</span><span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_host_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_packed_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span>
             <span class="n">qpos_columns</span><span class="o">=</span><span class="n">pos_columns</span><span class="p">,</span>
             <span class="n">qpos_values</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_packed_values</span><span class="p">(</span><span class="n">positions</span><span class="p">),</span>
             <span class="n">qvel_columns</span><span class="o">=</span><span class="n">vel_columns</span><span class="p">,</span>
@@ -1875,22 +1890,17 @@
         <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_ids</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;write_root_state&quot;</span><span class="p">)</span>
         <span class="n">values</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_values</span><span class="p">(</span>
             <span class="n">root_state</span><span class="p">,</span>
-            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="mi">13</span><span class="p">),</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">(),</span> <span class="mi">13</span><span class="p">),</span>
             <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;root state&quot;</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">write_root_pose</span><span class="p">(</span>
-            <span class="n">env_ids</span><span class="p">,</span>
-            <span class="n">layout</span><span class="p">,</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">values</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">7</span><span class="p">]),</span>
-            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">write_root_velocity</span><span class="p">(</span>
-            <span class="n">env_ids</span><span class="p">,</span>
-            <span class="n">layout</span><span class="p">,</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">values</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">:]),</span>
-            <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
-        <span class="p">)</span></div>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+            <span class="n">pose</span><span class="p">,</span> <span class="n">velocity</span> <span class="o">=</span> <span class="n">values</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">7</span><span class="p">],</span> <span class="n">values</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">:]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">pose</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">values</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">7</span><span class="p">])</span>
+            <span class="n">velocity</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">values</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">:])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">write_root_pose</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">layout</span><span class="p">,</span> <span class="n">pose</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">write_root_velocity</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">layout</span><span class="p">,</span> <span class="n">velocity</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_motion_tensor_payload</span><span class="p">(</span>
@@ -2123,14 +2133,14 @@
         <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_state_write</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;root-pose&quot;</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span>
         <span class="n">positions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_values</span><span class="p">(</span>
             <span class="n">pose</span><span class="p">,</span>
-            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="mi">7</span><span class="p">),</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">(),</span> <span class="mi">7</span><span class="p">),</span>
             <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;root pose&quot;</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_quaternions</span><span class="p">(</span><span class="n">positions</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">],</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span>
         <span class="n">qpos_columns</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_root_layout</span><span class="p">(</span><span class="n">layout</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_packed_transaction</span><span class="p">()</span><span class="o">.</span><span class="n">write_state</span><span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_host_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_packed_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span>
             <span class="n">qpos_columns</span><span class="o">=</span><span class="n">qpos_columns</span><span class="p">,</span>
             <span class="n">qpos_values</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_packed_values</span><span class="p">(</span><span class="n">positions</span><span class="p">),</span>
         <span class="p">)</span>
@@ -2156,16 +2166,16 @@
         <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_state_write</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;root-velocity&quot;</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span>
         <span class="n">velocities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_values</span><span class="p">(</span>
             <span class="n">velocity_w</span><span class="p">,</span>
-            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">(),</span> <span class="mi">6</span><span class="p">),</span>
             <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;root velocity&quot;</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">qpos_columns</span><span class="p">,</span> <span class="n">qvel_columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_root_layout</span><span class="p">(</span><span class="n">layout</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">ids</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">():</span>
             <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_packed_transaction</span><span class="p">()</span>
             <span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span>
             <span class="k">assert</span> <span class="n">device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
             <span class="n">qpos</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">transaction</span><span class="o">.</span><span class="n">state_views</span><span class="p">()</span>
             <span class="n">quaternion_columns</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span>
                 <span class="n">qpos_columns</span><span class="p">[</span><span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span>
@@ -2178,9 +2188,7 @@
                     <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; root quaternion must be unit length; &quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;norms=</span><span class="si">{</span><span class="n">norms</span><span class="p">[</span><span class="n">invalid</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
                 <span class="p">)</span>
-            <span class="n">velocity_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span>
-                <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">velocities</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span>
-            <span class="p">)</span>
+            <span class="n">velocity_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_values</span><span class="p">(</span><span class="n">velocities</span><span class="p">)</span>
             <span class="n">encoded</span> <span class="o">=</span> <span class="n">velocity_tensor</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
             <span class="n">encoded</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">6</span><span class="p">]</span> <span class="o">=</span> <span class="n">quat_apply_inverse</span><span class="p">(</span><span class="n">quaternions</span><span class="p">,</span> <span class="n">velocity_tensor</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">6</span><span class="p">])</span>
             <span class="n">transaction</span><span class="o">.</span><span class="n">write_state</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">qvel_columns</span><span class="o">=</span><span class="n">qvel_columns</span><span class="p">,</span> <span class="n">qvel_values</span><span class="o">=</span><span class="n">encoded</span><span class="p">)</span>
@@ -2208,7 +2216,7 @@
         <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_packed_transaction</span><span class="p">()</span>
         <span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span>
         <span class="k">assert</span> <span class="n">device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
         <span class="n">qpos</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">transaction</span><span class="o">.</span><span class="n">state_views</span><span class="p">()</span>
         <span class="n">columns</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">qpos_columns</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
         <span class="n">staged</span> <span class="o">=</span> <span class="n">qpos</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">columns</span><span class="p">)</span>
@@ -2260,11 +2268,11 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="n">begin_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_begin_ids</span>
             <span class="k">assert</span> <span class="n">begin_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="n">outside</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">begin_ids</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+            <span class="n">outside</span> <span class="o">=</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">begin_ids</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
         <span class="k">if</span> <span class="n">outside</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">: mocap mutation outside the active reset&quot;</span><span class="p">)</span>
         <span class="n">values</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_values</span><span class="p">(</span>
-            <span class="n">poses</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="mi">7</span><span class="p">),</span> <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;mocap pose&quot;</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span>
+            <span class="n">poses</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">(),</span> <span class="mi">7</span><span class="p">),</span> <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;mocap pose&quot;</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_quaternions</span><span class="p">(</span><span class="n">values</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:],</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span>
         <span class="n">capabilities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_tensor_capabilities</span><span class="p">()</span>
@@ -2274,12 +2282,8 @@
                 <span class="s2">&quot;declaring &#39;packed_reset_mocap&#39;&quot;</span>
             <span class="p">)</span>
         <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_packed_transaction</span><span class="p">()</span>
-        <span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span>
-        <span class="k">assert</span> <span class="n">device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="n">rows_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">poses_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span>
-        <span class="p">)</span>
+        <span class="n">rows_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+        <span class="n">poses_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_values</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
         <span class="n">transaction</span><span class="o">.</span><span class="n">write_mocap_pose</span><span class="p">(</span><span class="n">body_name</span><span class="p">,</span> <span class="n">rows_tensor</span><span class="p">,</span> <span class="n">poses_tensor</span><span class="p">)</span>
         <span class="n">previous</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_pending</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">body_name</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">previous</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -2464,16 +2468,31 @@
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_state_default_installed</span> <span class="o">=</span> <span class="kc">True</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_host_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert validated host env IDs to packed-composer device rows.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_packed_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Move validated env IDs onto the packed-composer device without a host detour.&quot;&quot;&quot;</span>
         <span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span>
         <span class="k">assert</span> <span class="n">device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">ids</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_packed_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Move validated host values into the packed composer as float32.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_packed_reset_plane</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DataPlaneName</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Data plane of the packed composer for capability checks.</span>
+
+<span class="sd">        Torch tensors on ``torch.cpu`` form the host plane; any other device</span>
+<span class="sd">        forms the device plane. Before the packed device is declared (cold-path</span>
+<span class="sd">        binds run before ``declare_packed_reset_device``) the check falls back</span>
+<span class="sd">        to the host plane, matching the historical declaration semantics.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span>
+        <span class="k">if</span> <span class="n">device</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cpu&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;host&quot;</span>
+        <span class="k">return</span> <span class="s2">&quot;device&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_packed_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Move validated values into the packed composer as float32, on device.&quot;&quot;&quot;</span>
         <span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span>
         <span class="k">assert</span> <span class="n">device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">values</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_materialize_default_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -2528,7 +2547,9 @@
         <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">NotImplementedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span><span class="n">term_name</span><span class="p">,</span> <span class="s2">&quot;actuator gain randomization&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
         <span class="n">required</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">((</span><span class="n">RESET_TERM_KP</span><span class="p">,</span> <span class="n">RESET_TERM_KD</span><span class="p">))</span>
-        <span class="n">unsupported</span> <span class="o">=</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span><span class="n">required</span><span class="p">)</span>
+        <span class="n">unsupported</span> <span class="o">=</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span>
+            <span class="n">required</span><span class="p">,</span> <span class="n">plane</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_plane</span><span class="p">()</span>
+        <span class="p">)</span>
         <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
             <span class="n">detail</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">))</span>
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
@@ -2571,7 +2592,9 @@
             <span class="n">capabilities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span>
         <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">NotImplementedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span><span class="n">term_name</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2"> randomization&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
-        <span class="n">unsupported</span> <span class="o">=</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span><span class="nb">frozenset</span><span class="p">((</span><span class="n">field</span><span class="p">,)))</span>
+        <span class="n">unsupported</span> <span class="o">=</span> <span class="n">capabilities</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span>
+            <span class="nb">frozenset</span><span class="p">((</span><span class="n">field</span><span class="p">,)),</span> <span class="n">plane</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_plane</span><span class="p">()</span>
+        <span class="p">)</span>
         <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
             <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capability_error</span><span class="p">(</span>
                 <span class="n">term_name</span><span class="p">,</span>
@@ -2711,7 +2734,8 @@
                 <span class="s2">&quot;before recording startup randomization&quot;</span>
             <span class="p">)</span>
         <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_ids</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">capability</span><span class="o">=</span><span class="s2">&quot;startup randomization&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">ids</span><span class="o">.</span><span class="n">size</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">array_equal</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">)):</span>
+        <span class="n">expected</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">ids</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">equal</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; startup randomization field &#39;</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;requires all </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="si">}</span><span class="s2"> environment rows; got </span><span class="si">{</span><span class="n">ids</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
@@ -2759,13 +2783,13 @@
         <span class="p">)</span>
         <span class="n">selected</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_values</span><span class="p">(</span>
             <span class="n">values</span><span class="p">,</span>
-            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">columns</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="o">*</span><span class="n">value_tail</span><span class="p">),</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">(),</span> <span class="n">columns</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="o">*</span><span class="n">value_tail</span><span class="p">),</span>
             <span class="n">capability</span><span class="o">=</span><span class="n">field</span><span class="p">,</span>
             <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_packed_transaction</span><span class="p">()</span><span class="o">.</span><span class="n">write_model_field</span><span class="p">(</span>
             <span class="n">field</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_host_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_packed_rows</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_packed_values</span><span class="p">(</span><span class="n">selected</span><span class="p">),</span>
             <span class="n">columns</span><span class="o">=</span><span class="n">columns</span><span class="p">,</span>
         <span class="p">)</span>
@@ -2777,7 +2801,7 @@
         <span class="o">*</span><span class="p">,</span>
         <span class="n">capability</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
         <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_active</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_tensor_randomization_write</span><span class="p">(</span>
@@ -2786,8 +2810,8 @@
         <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_ids</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">capability</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;write_</span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="n">begin_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_begin_ids</span>
         <span class="k">assert</span> <span class="n">begin_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="n">outside</span> <span class="o">=</span> <span class="n">ids</span><span class="p">[</span><span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">begin_ids</span><span class="p">)]</span>
-        <span class="k">if</span> <span class="n">outside</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+        <span class="n">outside</span> <span class="o">=</span> <span class="n">ids</span><span class="p">[</span><span class="o">~</span><span class="n">torch</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">begin_ids</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="n">outside</span><span class="o">.</span><span class="n">numel</span><span class="p">():</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; attempted </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> mutation outside &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;the active reset: </span><span class="si">{</span><span class="n">outside</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
@@ -2802,7 +2826,7 @@
         <span class="o">*</span><span class="p">,</span>
         <span class="n">capability</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
         <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate a host DR write against the active packed reset rows.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_owner_subset</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
@@ -2898,7 +2922,10 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_joint_columns</span> <span class="o">=</span> <span class="p">(</span><span class="o">*</span><span class="n">key</span><span class="p">,</span> <span class="n">qpos_tensor</span><span class="p">,</span> <span class="n">qvel_tensor</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">qpos_tensor</span><span class="p">,</span> <span class="n">qvel_tensor</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_quaternions</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_quaternions</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_tensor_root_quaternions</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span>
+            <span class="k">return</span>
         <span class="n">norms</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
         <span class="n">invalid</span> <span class="o">=</span> <span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">norms</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">invalid</span><span class="p">):</span>
@@ -2938,7 +2965,14 @@
         <span class="n">result</span><span class="o">.</span><span class="n">setflags</span><span class="p">(</span><span class="n">write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">result</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">capability</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">capability</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate env IDs on their device and return packed-device int64 rows.</span>
+
+<span class="sd">        Torch IDs on any device are validated in place (range and duplicate</span>
+<span class="sd">        checks run as device reductions); the result moves straight to the</span>
+<span class="sd">        packed-composer device, so a device reset performs no D2H→H2D round</span>
+<span class="sd">        trip through this boundary.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;ManagerBased reset-state </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> env_ids must be torch.Tensor, &quot;</span>
@@ -2961,17 +2995,19 @@
                 <span class="sa">f</span><span class="s2">&quot;ManagerBased reset-state </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> env_ids out of range for &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="si">}</span><span class="s2"> environments: </span><span class="si">{</span><span class="n">rows</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="n">rows</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="c1"># Duplicate check via bincount instead of np.unique: identical semantics</span>
-        <span class="c1"># (ids are already range-checked above) but avoids the sort — ~30x faster</span>
-        <span class="c1"># at num_envs=4096 and ~4x at typical partial-reset widths. This runs on</span>
+        <span class="c1"># Duplicate check via bincount instead of a sort-based unique: identical</span>
+        <span class="c1"># semantics (ids are already range-checked above) at a fraction of the</span>
+        <span class="c1"># cost, and it runs on whatever device the IDs live on. This runs on</span>
         <span class="c1"># every reset-state write (~6x per env step), so the sort cost was</span>
         <span class="c1"># measurable in the collector host phase (issue #1352).</span>
-        <span class="k">if</span> <span class="n">ids</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">minlength</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="nb">int</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">minlength</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">())</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;ManagerBased reset-state </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> env_ids contain duplicates: </span><span class="si">{</span><span class="n">ids</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;ManagerBased reset-state </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> env_ids contain duplicates: </span><span class="si">{</span><span class="n">rows</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
-        <span class="k">return</span> <span class="n">ids</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span>
+        <span class="k">if</span> <span class="n">device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">rows</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">device</span><span class="p">:</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="n">rows</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">rows</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_columns</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -3038,19 +3074,33 @@
         <span class="n">shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">capability</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
         <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate one staged write payload, keeping Torch tensors on their device.</span>
+
+<span class="sd">        Torch tensors on any device are accepted (the packed composer and the</span>
+<span class="sd">        backend own the device contract downstream); NumPy arrays remain</span>
+<span class="sd">        accepted as the legacy cold leaf. Either way the result feeds</span>
+<span class="sd">        :meth:`_packed_values`, which moves it to the packed device directly.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
-            <span class="k">if</span> <span class="n">values</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">&quot;cpu&quot;</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> host write requires a &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;CPU Torch tensor; got </span><span class="si">{</span><span class="n">values</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="n">shape</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> has shape &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">; expected </span><span class="si">{</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
                 <span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">values</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">():</span>
-                <span class="n">values</span> <span class="o">=</span> <span class="n">values</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
-            <span class="n">values</span> <span class="o">=</span> <span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">values</span><span class="o">.</span><span class="n">is_floating_point</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> must be floating, &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">values</span><span class="o">.</span><span class="n">dtype</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> contains NaN or Inf&quot;</span>
+                <span class="p">)</span>
+            <span class="k">return</span> <span class="n">values</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> must be np.ndarray or a CPU &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> must be np.ndarray or a &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;torch.Tensor, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">values</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">shape</span><span class="p">:</span>

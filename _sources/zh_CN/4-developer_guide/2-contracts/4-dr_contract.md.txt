@@ -29,23 +29,36 @@ Manager-Based event term 是 UniLab 唯一的 DR lifecycle。任务 provider 协
 
 Backend 差异是显式 capability，不是 task-side 分支：
 
-- `DomainRandomizationCapabilities.supported_reset_terms`
-- `supported_interval_terms`
+- `DomainRandomizationCapabilities.supported_reset_terms`——host 平面
+  （`torch.cpu` payload）
+- `supported_interval_terms`——host 平面
+- `supported_device_reset_terms` / `supported_device_interval_terms`——device
+  平面（CUDA payload）；空集合 fail closed
 - fixed-variant layout
 - per-environment playback 支持
 - `TensorLifecycleCapabilities.packed_reset` 与 `SimBackend.begin_packed_reset()`：
   Manager-Based reset 与 startup DR 生命周期的必需 capability；缺失声明会在 env
   构造时 fail closed。
 
-未声明支持的请求 term 会携带 backend 与 term 名称 fail closed。Manager code 不
-import MuJoCo 或 mjbatch，也不访问 backend model/pool。
+payload tensor 的设备决定平面：`torch.cpu` payload 走 host term 集合协商，CUDA
+payload 走 device term 集合。未在对应平面声明的请求 term 会携带 backend、term
+与平面名称 fail closed。Manager code 不 import MuJoCo 或 mjbatch，也不访问
+backend model/pool。
 
 ## Reset Payload 与默认值
 
-`ResetRandomizationPayload` 是 curated NumPy plan，首维为 selected row count。
-支持项包括 body mass/COM/inertia family、gravity、geometry friction/size/solver
-参数、joint damping/armature/friction 与 actuator gains。geometry bounds 等
-派生字段归 backend 所有，caller 不能独立提交。
+`TensorResetRandomizationPayload` 是唯一公开的 reset payload：curated torch
+plan，首维为 selected row count。其 16 个字段覆盖 body mass/COM/inertia family、
+gravity、geometry friction/size/solver 参数、joint damping/armature/friction、
+actuator gains，以及 `base_mass_delta`/`base_com_offset` delta 项。字段保持
+`Any` 注解与惰性 torch 校验，因此 `unisim-core` 维持仅依赖 NumPy 的打包契约。
+NumPy 仅保留在 adapter 私有的 host 转换（`unisim.dr._host`）、冷元数据与
+serialization/playback leaf 之后；原先的 NumPy `ResetRandomizationPayload` 已
+不存在。geometry bounds 等派生字段归 backend 所有，caller 不能独立提交。
+
+packed composer 在 commit 时把 staged delta 项与权威 baseline 在 torch 中合成为
+最终绝对值表（`final = baseline + delta`），因此 CUDA 环境的 reset DR 不再经
+host 往返。
 
 冷路径 binding 时，`ResetStateTransaction` 向 UniSim 请求
 `SimBackend.get_reset_term_default(term)`。返回表格是权威默认值，只有两种布局：
@@ -62,10 +75,15 @@ closed。该边界移除了 UniLab 侧为 inertia 默认值重新 compile MuJoCo
 ## Interval Terms
 
 Interval plan 基于 term descriptor：`IntervalRandomizationPlan.ops` 携带来自
-`unisim.dr.interval` 的 `IntervalTermOp`。内置 payload contract 由
-`IntervalTermOp.validate` 强制；未知 backend-owned custom term 传给该
-backend handler table。Ops 与 plans 保持 stdlib/NumPy 数据，可跨 spawn collector
-pickle。
+`unisim.dr.interval` 的 `IntervalTermOp`。payload 为 torch-first：
+`IntervalTermOp.payload` 是 torch tensor 或 `TensorIntervalPayload`，其设备决定
+平面；push 在所有后端统一为生产方采样——后端内部的全局 RNG push 采样已不存在。
+内置 payload contract 由 `IntervalTermOp.validate` 强制；未知 backend-owned
+custom term 传给该 backend handler table。跨 spawn collector 的 plan 携带采样
+范围而不是 tensor；device payload 是进程本地的。
+
+该结构性决策记录在 UniSim 的
+[torch-first DR payload ADR](https://github.com/unilabsim/unisim/blob/main/docs/zh/adr-dr-torch-first-payloads.md)。
 
 ## 仓库证据
 

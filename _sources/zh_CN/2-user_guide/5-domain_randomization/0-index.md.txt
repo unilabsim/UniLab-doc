@@ -19,7 +19,7 @@ Manager-Based event term 是唯一 DR 声明路径：
 
 1. reset/interval 随机化由 owner YAML 中的 `events:` manager term 声明，并由 manager 生命周期统一执行。
 2. Manager-Based owner 通过 Hydra command/event term 声明 reset 行为。G1 motion reset 扰动归 device-resident `MotionCommandCfg` 所有，WBT 另加 `EventTermCfg` reset 与 interval term。
-3. `ResetRandomizationPayload` 表达 curated reset terms；backend 必须声明每个请求 term，并拥有其派生量重算义务。
+3. `TensorResetRandomizationPayload`（torch-first 的 reset payload）表达 curated reset terms；backend 必须在对应的 host/device 平面上声明每个请求 term，并拥有其派生量重算义务。
 4. `MotrixBackend` 目前支持 `base_mass_delta`、`base_com_offset`、`kp`、`kd` 和 interval push；并且它要求在初始化期间所有模型 actuator 都是 position actuator。
 5. 固定 mesh/tool identity 由 `env.fixed_model_variants` 声明；reset-time geometry 字段仍位于 backend capability 声明之后，且不会改变该 identity。
 
@@ -53,7 +53,7 @@ command/event term 拥有：
 ## Reset gravity 用法
 
 `gravity` 是 reset 生命周期 DR：每次 reset 按选中环境采样完整的 MuJoCo gravity
-向量 `(gx, gy, gz)`，并通过 `ResetRandomizationPayload.gravity` 提交。请通过调用
+向量 `(gx, gy, gz)`，并通过 `TensorResetRandomizationPayload.gravity` 提交。请通过调用
 `randomize_physics_scene_gravity` 的 reset `EventTermCfg` 配置；不支持的后端
 fail closed。建议从较小倾斜范围开始，避免早期训练任务不可学习。
 

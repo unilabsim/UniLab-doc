@@ -23,7 +23,7 @@ These three paths correspond to three lifecycle classes:
 
 1. Reset/interval randomization consists of `events:` manager terms in the owner YAML, executed uniformly by the manager lifecycle.
 2. Manager-Based owners declare reset behavior through Hydra command/event terms. G1 motion reset perturbations belong to the device-resident `MotionCommandCfg`, while task owners add `EventTermCfg` reset and interval terms.
-3. `ResetRandomizationPayload` expresses curated reset terms; a backend must advertise every requested term and own its derived-quantity obligation.
+3. `TensorResetRandomizationPayload` (the torch-first reset payload) expresses curated reset terms; a backend must advertise every requested term on the matching host/device plane and own its derived-quantity obligation.
 4. `MotrixBackend` currently supports `base_mass_delta`, `base_com_offset`, `kp`, `kd`, and interval push; and it requires all model actuators to be position actuators during initialization.
 5. Fixed mesh/tool identity is declared by `env.fixed_model_variants`; reset-time geometry fields remain behind backend capability declarations and never change that identity.
 
@@ -59,7 +59,7 @@ filtering or silent fallback.
 
 `gravity` is a reset-lifecycle DR: on each reset, a full MuJoCo gravity vector
 `(gx, gy, gz)` is sampled per selected environment and dispatched through
-`ResetRandomizationPayload.gravity`. Configure it with a reset `EventTermCfg`
+`TensorResetRandomizationPayload.gravity`. Configure it with a reset `EventTermCfg`
 that calls `randomize_physics_scene_gravity`; unsupported backends fail closed.
 A small tilt range is recommended because large horizontal gravity can make an
 early task unlearnable.

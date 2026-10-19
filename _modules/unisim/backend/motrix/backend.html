@@ -528,7 +528,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Sequence</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">TypeVar</span><span class="p">,</span> <span class="n">cast</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">TypeVar</span><span class="p">,</span> <span class="n">cast</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
@@ -538,6 +538,7 @@
     <span class="c1"># optional dependency as Any; runtime never executes this import.</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">motrixsim</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneData</span><span class="p">,</span> <span class="n">SceneModel</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr._host</span><span class="w"> </span><span class="kn">import</span> <span class="n">interval_payload_to_host</span><span class="p">,</span> <span class="n">reset_payload_to_host_dict</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span>
     <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">,</span>
@@ -555,9 +556,10 @@
     <span class="n">DomainRandomizationCapabilities</span><span class="p">,</span>
     <span class="n">FixedVariantLayout</span><span class="p">,</span>
     <span class="n">IntervalTermOp</span><span class="p">,</span>
-    <span class="n">ResetRandomizationPayload</span><span class="p">,</span>
+    <span class="n">TensorIntervalPayload</span><span class="p">,</span>
     <span class="n">TensorResetRandomizationPayload</span><span class="p">,</span>
     <span class="n">require_op_body_ids</span><span class="p">,</span>
+    <span class="n">validate_tensor_reset_payload</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.entity_state</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">entity_state_snapshot</span><span class="p">,</span>
@@ -617,6 +619,33 @@
 
 <span class="n">T</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;T&quot;</span><span class="p">)</span>
 <span class="n">DEFAULT_MOTRIX_MAX_ITERATIONS</span> <span class="o">=</span> <span class="mi">3</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_reset_payload_plane_device</span><span class="p">(</span><span class="n">payload</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the shared Torch device backing a non-empty reset payload.</span>
+
+<span class="sd">    The payload&#39;s tensor devices decide its data plane: ``torch.cpu`` is the</span>
+<span class="sd">    host plane, any other device is the device plane. Mixed-device payloads</span>
+<span class="sd">    fail closed naming the offending field.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">validate_tensor_reset_payload</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+    <span class="n">first</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">payload</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">())[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">validate_tensor_reset_payload</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">first</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">first</span><span class="o">.</span><span class="n">device</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_interval_push_force_host</span><span class="p">(</span><span class="n">payload</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert a producer-sampled push payload to a host NumPy force table.</span>
+
+<span class="sd">    The producer owns random generation; the op carries a full-width</span>
+<span class="sd">    ``(num_envs, 3)`` Torch tensor or a :class:`TensorIntervalPayload` whose</span>
+<span class="sd">    ``push_force`` holds that table. A missing payload fails closed.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="n">TensorIntervalPayload</span><span class="p">):</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="n">payload</span><span class="o">.</span><span class="n">push_force</span>
+    <span class="k">if</span> <span class="n">payload</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;interval term &#39;push&#39; requires a producer-sampled payload&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_require_not_none</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">T</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">error_message</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">T</span><span class="p">:</span>
@@ -1752,7 +1781,8 @@
         <span class="c1"># Scratch buffers reused by set_state() to avoid per-reset allocations.</span>
         <span class="c1"># Sized to the full env count and rewritten in place each call.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_set_state_mask_scratch</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_set_state_qpos_motrix_scratch</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_state_qpos_motrix_scratch</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_native_default_qpos_mujoco</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></div>
 
 
     <span class="nd">@staticmethod</span>
@@ -2781,10 +2811,30 @@
 <div class="viewcode-block" id="MotrixBackend.get_default_qpos">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.backend.MotrixBackend.html#unisim.backend.motrix.backend.MotrixBackend.get_default_qpos">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_default_qpos</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the default public qpos row (base block plus selected DoFs).</span>
+
+<span class="sd">        The width matches ``get_public_state_widths().nq`` so the row is</span>
+<span class="sd">        directly compatible with ``set_state_tensor``; portable scenes report</span>
+<span class="sd">        the env-0 canonical row of the composed layout.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_mode</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_default_qpos</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-        <span class="n">qpos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">compute_init_dof_pos</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_motrix_qpos_to_mujoco</span><span class="p">(</span><span class="n">qpos</span><span class="p">)</span></div>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_default_qpos</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">native</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_motrix_qpos_to_mujoco</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">compute_init_dof_pos</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">indices</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_joint_pos_indices</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_joint_pos_indices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_joint_dof_pos_indices</span>
+        <span class="p">)</span>
+        <span class="n">tail</span> <span class="o">=</span> <span class="n">native</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">indices</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_floatingbase</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">native</span><span class="p">[:</span><span class="mi">7</span><span class="p">],</span> <span class="n">tail</span><span class="p">))</span>
+        <span class="c1"># Fixed-base models prepend the static base link pose to the public</span>
+        <span class="c1"># block even though it has no native DoF counterpart.</span>
+        <span class="n">base_pos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_link</span><span class="o">.</span><span class="n">get_pose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">)[</span><span class="mi">0</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span>
+        <span class="n">base_quat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xyzw_to_wxyz</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_link</span><span class="o">.</span><span class="n">get_rotation</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">)))[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">base_pos</span><span class="p">,</span> <span class="n">base_quat</span><span class="p">,</span> <span class="n">tail</span><span class="p">))</span></div>
 
 
 <div class="viewcode-block" id="MotrixBackend.get_default_dof_pos">
@@ -2809,9 +2859,15 @@
 <div class="viewcode-block" id="MotrixBackend.get_init_qvel">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.backend.MotrixBackend.html#unisim.backend.motrix.backend.MotrixBackend.get_init_qvel">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_init_qvel</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return a zero public qvel row matching ``get_public_state_widths().nv``.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_mode</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_default_qvel</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">num_dof_vel</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">)</span></div>
+        <span class="n">indices</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_joint_vel_indices</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_joint_vel_indices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_joint_dof_vel_indices</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">6</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">indices</span><span class="p">),),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="MotrixBackend.get_root_state_layout">
@@ -3583,23 +3639,66 @@
             <span class="p">}</span>
         <span class="p">}</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_host_reset_randomization_dict</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">randomization</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate a torch-first reset payload and convert it to host NumPy.</span>
+
+<span class="sd">        The payload&#39;s tensor devices decide the data plane: ``torch.cpu`` is</span>
+<span class="sd">        checked against the host-plane terms, any other device against the</span>
+<span class="sd">        device-plane terms; undeclared terms fail closed naming the term.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="s2">&quot;Motrix reset randomization must be a TensorResetRandomizationPayload or None&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+            <span class="k">return</span> <span class="p">{}</span>
+        <span class="n">plane</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;host&quot;</span><span class="p">,</span> <span class="s2">&quot;device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s2">&quot;host&quot;</span> <span class="k">if</span> <span class="n">_reset_payload_plane_device</span><span class="p">(</span><span class="n">randomization</span><span class="p">)</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cpu&quot;</span> <span class="k">else</span> <span class="s2">&quot;device&quot;</span>
+        <span class="p">)</span>
+        <span class="n">unsupported</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span>
+            <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">(),</span> <span class="n">plane</span><span class="o">=</span><span class="n">plane</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Motrix reset randomization does not support terms: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">reset_payload_to_host_dict</span><span class="p">(</span><span class="n">randomization</span><span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_host_set_state</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">env_indices</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">qpos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">qvel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Capability preflight remains before state/runtime access, including</span>
+        <span class="c1"># the historical unbound-method diagnostic used by optional adapters.</span>
+        <span class="c1"># The host/device term sets coincide on this host bridge, so the</span>
+        <span class="c1"># preflight checks the host plane; the helper below re-checks against</span>
+        <span class="c1"># the payload&#39;s true plane before conversion.</span>
         <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">unsupported</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span>
-                <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
-            <span class="p">)</span>
-            <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Motrix reset randomization does not support terms: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="s2">&quot;Motrix reset randomization must be a TensorResetRandomizationPayload or None&quot;</span>
                 <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+                <span class="n">unsupported</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span>
+                    <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">(),</span> <span class="n">plane</span><span class="o">=</span><span class="s2">&quot;host&quot;</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Motrix reset randomization does not support terms: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
+        <span class="n">host_randomization</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_reset_randomization_dict</span><span class="p">(</span><span class="n">randomization</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_mode</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_set_state</span><span class="p">(</span><span class="n">env_indices</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span><span class="p">,</span> <span class="n">randomization</span><span class="o">=</span><span class="n">randomization</span><span class="p">)</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_set_state</span><span class="p">(</span>
+                <span class="n">env_indices</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span><span class="p">,</span> <span class="n">randomization</span><span class="o">=</span><span class="n">host_randomization</span>
+            <span class="p">)</span>
+        <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_public_state_rows_to_native</span><span class="p">(</span><span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span><span class="p">)</span>
         <span class="n">timing</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
             <span class="s2">&quot;set_state_mask_ms&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
             <span class="s2">&quot;set_state_data_slice_ms&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
@@ -3665,7 +3764,7 @@
 
         <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_apply_reset_randomization</span><span class="p">(</span>
-            <span class="n">data_slice</span><span class="p">,</span> <span class="n">env_indices</span><span class="p">,</span> <span class="n">randomization</span><span class="p">,</span> <span class="n">env_ids_intp</span><span class="o">=</span><span class="n">env_ids_intp</span>
+            <span class="n">data_slice</span><span class="p">,</span> <span class="n">env_indices</span><span class="p">,</span> <span class="n">host_randomization</span><span class="p">,</span> <span class="n">env_ids_intp</span><span class="o">=</span><span class="n">env_ids_intp</span>
         <span class="p">)</span>
         <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;set_state_reset_rand_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
 
@@ -3815,7 +3914,7 @@
         <span class="n">qpos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">qvel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
-        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_portable_healthy</span><span class="p">(</span><span class="s2">&quot;set_state&quot;</span><span class="p">)</span>
         <span class="n">portable_randomization</span> <span class="o">=</span> <span class="p">(</span>
@@ -3823,7 +3922,7 @@
                 <span class="n">randomization</span><span class="p">,</span>
                 <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">env_indices</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">),</span>
             <span class="p">)</span>
-            <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">randomization</span>
             <span class="k">else</span> <span class="kc">None</span>
         <span class="p">)</span>
         <span class="n">rows</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">env_indices</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
@@ -3960,6 +4059,9 @@
 <div class="viewcode-block" id="MotrixBackend.get_dr_capabilities">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.backend.MotrixBackend.html#unisim.backend.motrix.backend.MotrixBackend.get_dr_capabilities">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_dr_capabilities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DomainRandomizationCapabilities</span><span class="p">:</span>
+        <span class="c1"># Motrix is a host-bridge adapter: device-resident payloads cross to</span>
+        <span class="c1"># host NumPy at the private boundary, so the device plane declares the</span>
+        <span class="c1"># same terms as the host plane.</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_mode</span><span class="p">:</span>
             <span class="n">supported_interval_terms</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">()</span>
             <span class="n">supported_reset_terms</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
@@ -3993,7 +4095,9 @@
                 <span class="p">),</span>
                 <span class="n">supports_per_env_playback</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_portable_uniform_mesh_variants</span><span class="p">,</span>
                 <span class="n">supported_interval_terms</span><span class="o">=</span><span class="n">supported_interval_terms</span><span class="p">,</span>
+                <span class="n">supported_device_interval_terms</span><span class="o">=</span><span class="n">supported_interval_terms</span><span class="p">,</span>
                 <span class="n">supported_reset_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span><span class="n">supported_reset_terms</span><span class="p">),</span>
+                <span class="n">supported_device_reset_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span><span class="n">supported_reset_terms</span><span class="p">),</span>
             <span class="p">)</span>
         <span class="n">supported_reset_terms</span> <span class="o">=</span> <span class="p">{</span>
             <span class="n">RESET_TERM_BASE_MASS</span><span class="p">,</span>
@@ -4007,23 +4111,33 @@
             <span class="n">supported_reset_terms</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">)</span>
         <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_supports_gravity_override&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
             <span class="n">supported_reset_terms</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">RESET_TERM_GRAVITY</span><span class="p">)</span>
+        <span class="n">supported_reset</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">supported_reset_terms</span><span class="p">)</span>
+        <span class="n">supported_interval</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span>
+            <span class="p">{</span><span class="n">INTERVAL_TERM_PUSH</span><span class="p">}</span>
+            <span class="o">|</span> <span class="p">(</span>
+                <span class="p">{</span><span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">}</span>
+                <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_supports_external_force&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+                <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
         <span class="k">return</span> <span class="n">DomainRandomizationCapabilities</span><span class="p">(</span>
-            <span class="n">supported_reset_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span><span class="n">supported_reset_terms</span><span class="p">),</span>
-            <span class="n">supported_interval_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span>
-                <span class="p">{</span><span class="n">INTERVAL_TERM_PUSH</span><span class="p">}</span>
-                <span class="o">|</span> <span class="p">(</span>
-                    <span class="p">{</span><span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">}</span>
-                    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_supports_external_force&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-                    <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
-                <span class="p">)</span>
-            <span class="p">),</span>
+            <span class="n">supported_reset_terms</span><span class="o">=</span><span class="n">supported_reset</span><span class="p">,</span>
+            <span class="n">supported_device_reset_terms</span><span class="o">=</span><span class="n">supported_reset</span><span class="p">,</span>
+            <span class="n">supported_interval_terms</span><span class="o">=</span><span class="n">supported_interval</span><span class="p">,</span>
+            <span class="n">supported_device_interval_terms</span><span class="o">=</span><span class="n">supported_interval</span><span class="p">,</span>
         <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="MotrixBackend.get_reset_term_default">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.backend.MotrixBackend.html#unisim.backend.motrix.backend.MotrixBackend.get_reset_term_default">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_reset_term_default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the Motrix default table for a curated reset term.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the committed per-environment table for a curated reset term.</span>
+
+<span class="sd">        Reset-term defaults serve as packed-reset baselines, so they track</span>
+<span class="sd">        committed randomization: values are read back live from the native</span>
+<span class="sd">        override state (unmapped portable columns keep their construction</span>
+<span class="sd">        defaults).  Delta terms keep zero baselines.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">portable_reset_terms</span> <span class="o">=</span> <span class="p">{</span>
             <span class="n">RESET_TERM_BASE_MASS</span><span class="p">,</span>
             <span class="n">RESET_TERM_BASE_COM</span><span class="p">,</span>
@@ -4040,15 +4154,23 @@
             <span class="k">if</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_BASE_MASS</span><span class="p">:</span>
                 <span class="n">value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
             <span class="k">elif</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_BODY_MASS</span><span class="p">:</span>
-                <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_default_body_mass</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_live_link_table</span><span class="p">(</span>
+                    <span class="s2">&quot;get_mass_override&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_default_body_mass</span>
+                <span class="p">)</span>
             <span class="k">elif</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_BASE_COM</span><span class="p">:</span>
                 <span class="n">value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
             <span class="k">elif</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">:</span>
-                <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_default_body_ipos</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_live_link_table</span><span class="p">(</span>
+                    <span class="s2">&quot;get_center_of_mass_override&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_default_body_ipos</span>
+                <span class="p">)</span>
             <span class="k">elif</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_DOF_ARMATURE</span><span class="p">:</span>
-                <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_default_dof_armature</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_live_joint_table</span><span class="p">(</span>
+                    <span class="s2">&quot;get_armature_override&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_default_dof_armature</span>
+                <span class="p">)</span>
             <span class="k">elif</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_DOF_FRICTIONLOSS</span><span class="p">:</span>
-                <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_default_dof_frictionloss</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_live_joint_table</span><span class="p">(</span>
+                    <span class="s2">&quot;get_frictionloss_override&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_default_dof_frictionloss</span>
+                <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;MotrixBackend does not support reset term </span><span class="si">{</span><span class="n">term</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="n">result</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -4057,23 +4179,74 @@
         <span class="k">if</span> <span class="n">term</span> <span class="ow">in</span> <span class="p">(</span><span class="n">RESET_TERM_BASE_MASS</span><span class="p">,</span> <span class="n">RESET_TERM_BASE_COM</span><span class="p">):</span>
             <span class="n">value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(()</span> <span class="k">if</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_BASE_MASS</span> <span class="k">else</span> <span class="p">(</span><span class="mi">3</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_BODY_MASS</span><span class="p">:</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_body_mass</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_live_link_table</span><span class="p">(</span><span class="s2">&quot;get_mass_override&quot;</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">:</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_body_ipos</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_live_link_table</span><span class="p">(</span><span class="s2">&quot;get_center_of_mass_override&quot;</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_KP</span><span class="p">:</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_actuator_gains</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_live_actuator_gain_table</span><span class="p">(</span><span class="s2">&quot;get_kp_override&quot;</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_KD</span><span class="p">:</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_actuator_gains</span><span class="p">()[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_live_actuator_gain_table</span><span class="p">(</span><span class="s2">&quot;get_kd_override&quot;</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">:</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_geom_friction</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_live_geom_friction_table</span><span class="p">()</span>
         <span class="k">elif</span> <span class="n">term</span> <span class="o">==</span> <span class="n">RESET_TERM_GRAVITY</span><span class="p">:</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_gravity</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">get_gravity_override</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;MotrixBackend does not expose reset term </span><span class="si">{</span><span class="n">term</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="n">result</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="n">result</span><span class="o">.</span><span class="n">setflags</span><span class="p">(</span><span class="n">write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">result</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_live_link_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">getter</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Assemble the committed per-env link override table from native reads.&quot;&quot;&quot;</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_links_by_id</span><span class="p">[</span><span class="n">link_id</span><span class="p">],</span> <span class="n">getter</span><span class="p">)(</span><span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">link_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_links_by_id</span><span class="p">))</span>
+        <span class="p">]</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">columns</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_live_actuator_gain_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">getter</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Assemble the committed per-env actuator gain table from native reads.&quot;&quot;&quot;</span>
+        <span class="n">actuators</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_position_actuators</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">actuator</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">actuator</span><span class="o">.</span><span class="n">index</span><span class="p">))</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">actuator</span><span class="p">,</span> <span class="n">getter</span><span class="p">)(</span><span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">actuator</span> <span class="ow">in</span> <span class="n">actuators</span>
+        <span class="p">]</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">columns</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_live_geom_friction_table</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Assemble the committed per-env geom friction table from native reads.&quot;&quot;&quot;</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_geoms_by_id</span><span class="p">[</span><span class="n">geom_id</span><span class="p">]</span><span class="o">.</span><span class="n">get_friction_override</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">geom_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_geoms_by_id</span><span class="p">))</span>
+        <span class="p">]</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">columns</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_portable_live_link_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">getter</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">defaults</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Read committed link overrides per env; unmapped columns keep defaults.&quot;&quot;&quot;</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">defaults</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">runtime</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_runtimes</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">public_id</span><span class="p">,</span> <span class="n">native_id</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">runtime</span><span class="o">.</span><span class="n">binding</span><span class="o">.</span><span class="n">public_to_native_body</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">native_id</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">link</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">binding</span><span class="o">.</span><span class="n">links_by_id</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">native_id</span><span class="p">)]</span>
+                <span class="n">column</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">link</span><span class="p">,</span> <span class="n">getter</span><span class="p">)(</span><span class="n">runtime</span><span class="o">.</span><span class="n">data</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+                <span class="n">values</span><span class="p">[</span><span class="n">runtime</span><span class="o">.</span><span class="n">rows</span><span class="p">,</span> <span class="n">public_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">column</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span>
+                    <span class="nb">len</span><span class="p">(</span><span class="n">runtime</span><span class="o">.</span><span class="n">rows</span><span class="p">),</span> <span class="o">*</span><span class="n">values</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
+                <span class="p">)</span>
+        <span class="k">return</span> <span class="n">values</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_portable_live_joint_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">getter</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">defaults</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Read committed joint scalar overrides per env; unmapped DoFs keep defaults.&quot;&quot;&quot;</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">defaults</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">runtime</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_runtimes</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">public_dof</span><span class="p">,</span> <span class="n">joint</span> <span class="ow">in</span> <span class="n">runtime</span><span class="o">.</span><span class="n">binding</span><span class="o">.</span><span class="n">joints_by_public_dof</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">values</span><span class="p">[</span><span class="n">runtime</span><span class="o">.</span><span class="n">rows</span><span class="p">,</span> <span class="n">public_dof</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+                    <span class="nb">getattr</span><span class="p">(</span><span class="n">joint</span><span class="p">,</span> <span class="n">getter</span><span class="p">)(</span><span class="n">runtime</span><span class="o">.</span><span class="n">data</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">values</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_portable_base_body_public_id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
         <span class="n">matches</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_portable_public_to_native_body</span> <span class="o">==</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_link</span><span class="o">.</span><span class="n">index</span><span class="p">))</span>
@@ -4086,7 +4259,7 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_portable_reset_randomization</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span>
         <span class="n">rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_MotrixPortableResetRandomization</span><span class="p">:</span>
         <span class="n">body_mass</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
@@ -4094,19 +4267,21 @@
         <span class="n">dof_armature</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="n">dof_frictionloss</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">body_mass</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">randomization</span><span class="o">.</span><span class="n">base_mass_delta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">body_mass</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">body_mass_field</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;body_mass&quot;</span><span class="p">)</span>
+        <span class="n">base_mass_delta_field</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;base_mass_delta&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">body_mass_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">base_mass_delta_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">body_mass_field</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">mass_values</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_default_body_mass</span><span class="p">[</span><span class="n">rows</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">mass_values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">randomization</span><span class="o">.</span><span class="n">body_mass</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+                <span class="n">mass_values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">body_mass_field</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
                 <span class="n">mass_expected</span> <span class="o">=</span> <span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_scene_layout</span><span class="p">()</span><span class="o">.</span><span class="n">nbody</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">mass_values</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">mass_expected</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                         <span class="sa">f</span><span class="s2">&quot;body_mass must have shape </span><span class="si">{</span><span class="n">mass_expected</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">mass_values</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
                     <span class="p">)</span>
                 <span class="n">mass_values</span> <span class="o">=</span> <span class="n">mass_values</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">base_mass_delta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">delta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">randomization</span><span class="o">.</span><span class="n">base_mass_delta</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">base_mass_delta_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">delta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">base_mass_delta_field</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
                 <span class="n">delta_expected</span> <span class="o">=</span> <span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">size</span><span class="p">,)</span>
                 <span class="k">if</span> <span class="n">delta</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">delta_expected</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
@@ -4127,19 +4302,21 @@
                 <span class="p">)</span>
             <span class="n">body_mass</span> <span class="o">=</span> <span class="n">mass_values</span>
 
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">body_ipos</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">randomization</span><span class="o">.</span><span class="n">base_com_offset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">body_ipos</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">body_ipos_field</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;body_ipos&quot;</span><span class="p">)</span>
+        <span class="n">base_com_offset_field</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;base_com_offset&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">body_ipos_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">base_com_offset_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">body_ipos_field</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">ipos_values</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_default_body_ipos</span><span class="p">[</span><span class="n">rows</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">ipos_values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">randomization</span><span class="o">.</span><span class="n">body_ipos</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+                <span class="n">ipos_values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">body_ipos_field</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
                 <span class="n">ipos_expected</span> <span class="o">=</span> <span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_scene_layout</span><span class="p">()</span><span class="o">.</span><span class="n">nbody</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">ipos_values</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">ipos_expected</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                         <span class="sa">f</span><span class="s2">&quot;body_ipos must have shape </span><span class="si">{</span><span class="n">ipos_expected</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">ipos_values</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
                     <span class="p">)</span>
                 <span class="n">ipos_values</span> <span class="o">=</span> <span class="n">ipos_values</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">base_com_offset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">delta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">randomization</span><span class="o">.</span><span class="n">base_com_offset</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">base_com_offset_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">delta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">base_com_offset_field</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
                 <span class="n">com_delta_expected</span> <span class="o">=</span> <span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">delta</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">com_delta_expected</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
@@ -4165,7 +4342,7 @@
             <span class="p">(</span><span class="n">RESET_TERM_DOF_FRICTIONLOSS</span><span class="p">,</span> <span class="s2">&quot;dof_frictionloss&quot;</span><span class="p">),</span>
         <span class="p">)</span>
         <span class="k">for</span> <span class="n">term</span><span class="p">,</span> <span class="n">attribute</span> <span class="ow">in</span> <span class="n">portable_dof_terms</span><span class="p">:</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">term</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">term</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">continue</span>
             <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
@@ -4280,11 +4457,14 @@
         <span class="c1"># Built lazily once.  Angular-velocity and linear-velocity terms have</span>
         <span class="c1"># no handler and fail closed in the base dispatch.  Wrench terms stay</span>
         <span class="c1"># gated inside ``apply_body_force`` on the runtime native API probes.</span>
+        <span class="c1"># Op payloads and body_ids are torch-first; this host bridge converts</span>
+        <span class="c1"># them through the private ``unisim.dr._host`` helpers at the boundary.</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="o">=</span> <span class="p">{</span>
                 <span class="n">INTERVAL_TERM_PUSH</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_robots</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
                 <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span>
-                    <span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">),</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span>
+                    <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">)),</span>
+                    <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
                 <span class="p">),</span>
             <span class="p">}</span>
             <span class="k">if</span> <span class="p">(</span>
@@ -4294,11 +4474,11 @@
             <span class="p">):</span>
 
                 <span class="k">def</span><span class="w"> </span><span class="nf">apply_body_torque</span><span class="p">(</span><span class="n">op</span><span class="p">:</span> <span class="n">IntervalTermOp</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">ids</span> <span class="o">=</span> <span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">)</span>
+                    <span class="n">ids</span> <span class="o">=</span> <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">))</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span>
                         <span class="n">ids</span><span class="p">,</span>
                         <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
-                        <span class="n">torque</span><span class="o">=</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">,</span>
+                        <span class="n">torque</span><span class="o">=</span><span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
                     <span class="p">)</span>
 
                 <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span><span class="p">[</span><span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">]</span> <span class="o">=</span> <span class="n">apply_body_torque</span>
@@ -4828,7 +5008,7 @@
         <span class="n">env_indices</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">qpos</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">qvel</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
-        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Bridge selected accelerator reset state to CPU MotrixSim physics.&quot;&quot;&quot;</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">.tensor</span><span class="w"> </span><span class="kn">import</span> <span class="n">motrix_set_state_tensor</span>
@@ -4843,7 +5023,7 @@
         <span class="n">reset_mask</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">qpos</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">qvel</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
-        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">full_refresh</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
@@ -4950,6 +5130,59 @@
         <span class="k">for</span> <span class="n">quat_indices</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_floating_base_quat_indices</span><span class="p">:</span>
             <span class="n">qpos_mujoco</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">quat_indices</span><span class="p">]</span> <span class="o">=</span> <span class="n">qpos</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">quat_indices</span><span class="p">[[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">]]]</span>
         <span class="k">return</span> <span class="n">qpos_mujoco</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_public_state_rows_to_native</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">qpos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">qvel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Translate public-width state rows into the native DoF layout.</span>
+
+<span class="sd">        The public tensor layout always carries ``[base_pos, base_quat]`` and</span>
+<span class="sd">        ``[base_lin_vel, base_ang_vel]`` blocks plus the selected public DoF</span>
+<span class="sd">        columns, while the native MotrixSim DoF vectors carry a floating root</span>
+<span class="sd">        only when the model has one.  Rows already in native width pass</span>
+<span class="sd">        through unchanged.  Unselected native DoFs keep their model defaults,</span>
+<span class="sd">        matching the ``data_slice.reset(self._model)`` the caller performs</span>
+<span class="sd">        before writing.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">native_nq</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">num_dof_pos</span><span class="p">)</span>
+        <span class="n">native_nv</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">num_dof_vel</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">qpos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">native_nq</span> <span class="ow">and</span> <span class="n">qvel</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">native_nv</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span>
+        <span class="n">pos_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_joint_pos_indices</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_joint_pos_indices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_joint_dof_pos_indices</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">vel_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_joint_vel_indices</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_joint_vel_indices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_joint_dof_vel_indices</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">public_nq</span> <span class="o">=</span> <span class="mi">7</span> <span class="o">+</span> <span class="n">pos_indices</span><span class="o">.</span><span class="n">size</span>
+        <span class="n">public_nv</span> <span class="o">=</span> <span class="mi">6</span> <span class="o">+</span> <span class="n">vel_indices</span><span class="o">.</span><span class="n">size</span>
+        <span class="k">if</span> <span class="n">qpos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">public_nq</span> <span class="ow">or</span> <span class="n">qvel</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">public_nv</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;qpos/qvel must have native widths (</span><span class="si">{</span><span class="n">native_nq</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">native_nv</span><span class="si">}</span><span class="s2">) or public &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;widths (</span><span class="si">{</span><span class="n">public_nq</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">public_nv</span><span class="si">}</span><span class="s2">); got (</span><span class="si">{</span><span class="n">qpos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">qvel</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span>
+            <span class="p">)</span>
+        <span class="n">default</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_native_default_qpos_mujoco</span>
+        <span class="k">if</span> <span class="n">default</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">default</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_motrix_qpos_to_mujoco</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">compute_init_dof_pos</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_native_default_qpos_mujoco</span> <span class="o">=</span> <span class="n">default</span>
+        <span class="n">full_qpos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">broadcast_to</span><span class="p">(</span><span class="n">default</span><span class="p">,</span> <span class="p">(</span><span class="n">qpos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">native_nq</span><span class="p">))</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">full_qvel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">qvel</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">native_nv</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_floatingbase</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">full_qpos</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">7</span><span class="p">]</span> <span class="o">=</span> <span class="n">qpos</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">7</span><span class="p">]</span>
+            <span class="n">full_qvel</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">6</span><span class="p">]</span> <span class="o">=</span> <span class="n">qvel</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">6</span><span class="p">]</span>
+        <span class="c1"># Fixed-base models carry a static base-link pose block with no native</span>
+        <span class="c1"># DoF counterpart; it is shape-validated above and not applied.</span>
+        <span class="n">full_qpos</span><span class="p">[:,</span> <span class="n">pos_indices</span><span class="p">]</span> <span class="o">=</span> <span class="n">qpos</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">:]</span>
+        <span class="n">full_qvel</span><span class="p">[:,</span> <span class="n">vel_indices</span><span class="p">]</span> <span class="o">=</span> <span class="n">qvel</span><span class="p">[:,</span> <span class="mi">6</span><span class="p">:]</span>
+        <span class="k">return</span> <span class="n">full_qpos</span><span class="p">,</span> <span class="n">full_qvel</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_refresh_link_pose_cache</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -5145,14 +5378,25 @@
 
 <div class="viewcode-block" id="MotrixBackend.push_robots">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.backend.MotrixBackend.html#unisim.backend.motrix.backend.MotrixBackend.push_robots">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">push_robots</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force_range</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">push_robots</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">push</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply producer-sampled push forces through the Motrix Link API.</span>
+
+<span class="sd">        The producer owns random generation. ``push`` is a full-width</span>
+<span class="sd">        ``(num_envs, 3)`` Torch tensor or a :class:`TensorIntervalPayload`</span>
+<span class="sd">        whose ``push_force`` carries that table; this host bridge converts it</span>
+<span class="sd">        to NumPy at the boundary and a missing payload fails closed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_portable_mode</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;portable Motrix scenes do not support interval pushes&quot;</span><span class="p">)</span>
-        <span class="n">ex_force</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">-</span> <span class="mi">1</span>  <span class="c1"># [x_force, y_force, z_force]</span>
-        <span class="n">ex_force</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">*=</span> <span class="n">force_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="n">ex_force</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">*=</span> <span class="n">force_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
-        <span class="n">ex_force</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">*=</span> <span class="n">force_range</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_link</span><span class="o">.</span><span class="n">add_external_force</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">,</span> <span class="n">ex_force</span><span class="p">,</span> <span class="n">local</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+        <span class="n">ex_force</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">_interval_push_force_host</span><span class="p">(</span><span class="n">push</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="n">expected_shape</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ex_force</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected_shape</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;push force must have shape </span><span class="si">{</span><span class="n">expected_shape</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">ex_force</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">ex_force</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;push force must contain finite values&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_link</span><span class="o">.</span><span class="n">add_external_force</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">ex_force</span><span class="p">),</span> <span class="n">local</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="MotrixBackend.apply_body_force">
@@ -5486,14 +5730,12 @@
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">data_slice</span><span class="p">,</span>
         <span class="n">env_indices</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">env_ids_intp</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">randomization</span><span class="p">:</span>
             <span class="k">return</span>
-        <span class="n">unsupported</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">supported_reset_terms</span>
-        <span class="p">)</span>
+        <span class="n">unsupported</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">randomization</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">supported_reset_terms</span>
         <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
             <span class="n">terms</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">))</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
@@ -5505,72 +5747,80 @@
         <span class="p">)</span>
         <span class="n">num_reset</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
         <span class="n">body_mass</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">body_mass</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">body_mass_field</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;body_mass&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">body_mass_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">body_mass</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_reset_field</span><span class="p">(</span>
-                <span class="n">randomization</span><span class="o">.</span><span class="n">body_mass</span><span class="p">,</span>
+                <span class="n">body_mass_field</span><span class="p">,</span>
                 <span class="n">name</span><span class="o">=</span><span class="s2">&quot;body_mass&quot;</span><span class="p">,</span>
                 <span class="n">num_reset</span><span class="o">=</span><span class="n">num_reset</span><span class="p">,</span>
                 <span class="n">shaped_tail</span><span class="o">=</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">num_links</span><span class="p">),),</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">base_mass_delta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">base_mass_delta_field</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;base_mass_delta&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">base_mass_delta_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">body_mass</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">body_mass</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">broadcast_to</span><span class="p">(</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">_default_body_mass</span><span class="p">,</span>
                     <span class="p">(</span><span class="n">num_reset</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">num_links</span><span class="p">)),</span>
                 <span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
             <span class="n">body_mass</span><span class="p">[:,</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_link</span><span class="o">.</span><span class="n">index</span><span class="p">)]</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
-                <span class="n">randomization</span><span class="o">.</span><span class="n">base_mass_delta</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span>
+                <span class="n">base_mass_delta_field</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">body_mass</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_set_link_mass_overrides</span><span class="p">(</span><span class="n">data_slice</span><span class="p">,</span> <span class="n">body_mass</span><span class="p">)</span>
 
         <span class="n">body_ipos</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">body_ipos</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">body_ipos_field</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;body_ipos&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">body_ipos_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">body_ipos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_reset_field</span><span class="p">(</span>
-                <span class="n">randomization</span><span class="o">.</span><span class="n">body_ipos</span><span class="p">,</span>
+                <span class="n">body_ipos_field</span><span class="p">,</span>
                 <span class="n">name</span><span class="o">=</span><span class="s2">&quot;body_ipos&quot;</span><span class="p">,</span>
                 <span class="n">num_reset</span><span class="o">=</span><span class="n">num_reset</span><span class="p">,</span>
                 <span class="n">shaped_tail</span><span class="o">=</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">num_links</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">base_com_offset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">base_com_offset_field</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;base_com_offset&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">base_com_offset_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">body_ipos</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">body_ipos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">broadcast_to</span><span class="p">(</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">_default_body_ipos</span><span class="p">,</span>
                     <span class="p">(</span><span class="n">num_reset</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">num_links</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span>
                 <span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
             <span class="n">body_ipos</span><span class="p">[:,</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_body_link</span><span class="o">.</span><span class="n">index</span><span class="p">),</span> <span class="p">:]</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
-                <span class="n">randomization</span><span class="o">.</span><span class="n">base_com_offset</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span>
+                <span class="n">base_com_offset_field</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">body_ipos</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_set_link_ipos_overrides</span><span class="p">(</span><span class="n">data_slice</span><span class="p">,</span> <span class="n">body_ipos</span><span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">geom_friction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">geom_friction_field</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_friction&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">geom_friction_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">geom_friction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_reset_field</span><span class="p">(</span>
-                <span class="n">randomization</span><span class="o">.</span><span class="n">geom_friction</span><span class="p">,</span>
+                <span class="n">geom_friction_field</span><span class="p">,</span>
                 <span class="n">name</span><span class="o">=</span><span class="s2">&quot;geom_friction&quot;</span><span class="p">,</span>
                 <span class="n">num_reset</span><span class="o">=</span><span class="n">num_reset</span><span class="p">,</span>
                 <span class="n">shaped_tail</span><span class="o">=</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">num_geoms</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span>
             <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_set_geom_friction_overrides</span><span class="p">(</span><span class="n">data_slice</span><span class="p">,</span> <span class="n">geom_friction</span><span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">gravity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">gravity_field</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;gravity&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">gravity_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">gravity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_reset_field</span><span class="p">(</span>
-                <span class="n">randomization</span><span class="o">.</span><span class="n">gravity</span><span class="p">,</span>
+                <span class="n">gravity_field</span><span class="p">,</span>
                 <span class="n">name</span><span class="o">=</span><span class="s2">&quot;gravity&quot;</span><span class="p">,</span>
                 <span class="n">num_reset</span><span class="o">=</span><span class="n">num_reset</span><span class="p">,</span>
                 <span class="n">shaped_tail</span><span class="o">=</span><span class="p">(</span><span class="mi">3</span><span class="p">,),</span>
             <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_set_gravity_override</span><span class="p">(</span><span class="n">data_slice</span><span class="p">,</span> <span class="n">gravity</span><span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">kp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">kp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">randomization</span><span class="o">.</span><span class="n">kp</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="n">kp_field</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;kp&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">kp_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">kp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">kp_field</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
             <span class="n">expected_shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">num_reset</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_actuators</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">kp</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected_shape</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;kp must have shape </span><span class="si">{</span><span class="n">expected_shape</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">kp</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_set_position_actuator_kp_override</span><span class="p">(</span><span class="n">data_slice</span><span class="p">,</span> <span class="n">kp</span><span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">kd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">kd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">randomization</span><span class="o">.</span><span class="n">kd</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="n">kd_field</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;kd&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">kd_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">kd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">kd_field</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
             <span class="n">expected_shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">num_reset</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_actuators</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">kd</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">expected_shape</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;kd must have shape </span><span class="si">{</span><span class="n">expected_shape</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">kd</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>

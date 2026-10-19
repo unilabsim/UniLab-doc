@@ -539,7 +539,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">replace</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="kn">import</span> <span class="n">PathLike</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">NoReturn</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">NoReturn</span><span class="p">,</span> <span class="n">cast</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
@@ -566,6 +566,7 @@
     <span class="n">normalize_play_render_mode</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.model_index</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompiledModelIndex</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr._host</span><span class="w"> </span><span class="kn">import</span> <span class="n">interval_payload_to_host</span><span class="p">,</span> <span class="n">reset_payload_to_host_dict</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span>
     <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">,</span>
@@ -592,10 +593,11 @@
     <span class="n">FixedVariantPlan</span><span class="p">,</span>
     <span class="n">IntervalRandomizationPlan</span><span class="p">,</span>
     <span class="n">IntervalTermOp</span><span class="p">,</span>
-    <span class="n">ResetRandomizationPayload</span><span class="p">,</span>
+    <span class="n">TensorIntervalPayload</span><span class="p">,</span>
     <span class="n">TensorResetRandomizationPayload</span><span class="p">,</span>
     <span class="n">_validate_reset_term</span><span class="p">,</span>
     <span class="n">require_op_body_ids</span><span class="p">,</span>
+    <span class="n">validate_tensor_reset_payload</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneResetRequest</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.entity_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">entity_state_snapshot</span><span class="p">,</span> <span class="n">prepare_scene_reset</span><span class="p">,</span> <span class="n">row_columns</span>
@@ -635,6 +637,19 @@
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_expand_reset_mask</span><span class="p">(</span><span class="n">mask</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">ndim</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
     <span class="k">return</span> <span class="n">mask</span> <span class="k">if</span> <span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">mask</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">mask</span><span class="o">.</span><span class="n">shape</span> <span class="o">+</span> <span class="p">(</span><span class="mi">1</span><span class="p">,)</span> <span class="o">*</span> <span class="p">(</span><span class="n">ndim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_reset_payload_plane_device</span><span class="p">(</span><span class="n">payload</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the shared Torch device backing a non-empty reset payload.</span>
+
+<span class="sd">    The payload&#39;s tensor devices decide its data plane: ``torch.cpu`` is the</span>
+<span class="sd">    host plane, any other device is the device plane. Mixed-device payloads</span>
+<span class="sd">    fail closed naming the offending field.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">validate_tensor_reset_payload</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+    <span class="n">first</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">payload</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">())[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">validate_tensor_reset_payload</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">first</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">first</span><span class="o">.</span><span class="n">device</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_reset_scratch_capacity_for_batch</span><span class="p">(</span><span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
@@ -747,6 +762,7 @@
     <span class="n">_reset_scratch_reset_graph</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
     <span class="n">_reset_scratch_forward_graph</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
     <span class="n">_cuda_graph_disable_reason</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">_device_xfrc_pending</span><span class="p">:</span> <span class="nb">bool</span>
 
 <div class="viewcode-block" id="MjwarpBackend.__init__">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.__init__">[docs]</a>
@@ -970,6 +986,10 @@
         <span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nbody</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="c1"># Device-resident interval pushes are staged directly in xfrc_applied.</span>
+        <span class="c1"># This flag is separate from the host mirror so tensor operation never</span>
+        <span class="c1"># has to publish or mutate that mirror merely to stage a push.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_names</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
             <span class="n">deps</span><span class="o">.</span><span class="n">mujoco</span><span class="o">.</span><span class="n">mj_id2name</span><span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="p">,</span>
@@ -1327,6 +1347,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_time_cache</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">time</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">staged_wrenches</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">staged_wrenches</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="n">dirty</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span> <span class="o">=</span> <span class="kc">False</span>
             <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;host_cache_refresh_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
@@ -2040,6 +2061,10 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_state_torch_views</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">view</span>
         <span class="k">return</span> <span class="n">view</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_stable_device_xfrc_view</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the live Torch external-wrench field for device pushes.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="s2">&quot;xfrc_applied&quot;</span><span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_torch_operand</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -2544,9 +2569,10 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_tensor_capabilities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorLifecycleCapabilities</span><span class="p">:</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.packed_reset</span><span class="w"> </span><span class="kn">import</span> <span class="n">PACKED_RESET_MODEL_FIELDS</span>
 
+        <span class="c1"># Packed reset commits device-plane payloads through set_state_tensor,</span>
+        <span class="c1"># so the packable fields are exactly the declared device reset terms.</span>
         <span class="n">packed_fields</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span>
-            <span class="p">(</span><span class="n">PACKED_RESET_MODEL_FIELDS</span> <span class="o">&amp;</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">supported_reset_terms</span><span class="p">)</span>
-            <span class="o">-</span> <span class="p">{</span><span class="n">RESET_TERM_GEOM_SIZE</span><span class="p">}</span>
+            <span class="n">PACKED_RESET_MODEL_FIELDS</span> <span class="o">&amp;</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">supported_device_reset_terms</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="n">TensorLifecycleCapabilities</span><span class="p">(</span>
             <span class="n">execution</span><span class="o">=</span><span class="n">TensorExecution</span><span class="o">.</span><span class="n">DEVICE_RESIDENT</span><span class="p">,</span>
@@ -3113,6 +3139,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">xfrc_applied</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_synchronize</span><span class="p">()</span>
         <span class="n">physics_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
 
@@ -3287,6 +3314,9 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">xfrc_applied</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_stable_device_xfrc_view</span><span class="p">()</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_entity_faulted</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">raise</span>
@@ -3331,7 +3361,7 @@
         <span class="n">env_indices</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">qpos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">qvel</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_sync_host_cache</span><span class="p">()</span>
@@ -3398,25 +3428,33 @@
         <span class="n">env_indices</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">qpos</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">qvel</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
-        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Commit selected generalized state with device-resident scatter kernels.&quot;&quot;&quot;</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
         <span class="n">device_randomization</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">):</span>
-            <span class="n">device_randomization</span> <span class="o">=</span> <span class="n">randomization</span>
-            <span class="n">randomization</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="n">model_randomized</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">updates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_reset_randomization</span><span class="p">(</span>
-                <span class="n">env_indices</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">randomization</span>
-            <span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_model_updates</span><span class="p">(</span><span class="n">updates</span><span class="p">)</span>
-            <span class="n">model_randomized</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">updates</span><span class="o">.</span><span class="n">fields</span> <span class="ow">or</span> <span class="n">updates</span><span class="o">.</span><span class="n">actuator_fields</span><span class="p">)</span>
-            <span class="n">randomization</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="s2">&quot;mjwarp tensor reset randomization must be a &quot;</span>
+                    <span class="s2">&quot;TensorResetRandomizationPayload or None&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+                <span class="c1"># The payload&#39;s tensor devices decide the data plane: torch.cpu</span>
+                <span class="c1"># takes the host mirror model-update path; any other device</span>
+                <span class="c1"># takes the device-resident scatter path.</span>
+                <span class="k">if</span> <span class="n">_reset_payload_plane_device</span><span class="p">(</span><span class="n">randomization</span><span class="p">)</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cpu&quot;</span><span class="p">:</span>
+                    <span class="n">updates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_reset_randomization</span><span class="p">(</span>
+                        <span class="n">env_indices</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">randomization</span>
+                    <span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_apply_model_updates</span><span class="p">(</span><span class="n">updates</span><span class="p">)</span>
+                    <span class="n">model_randomized</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">updates</span><span class="o">.</span><span class="n">fields</span> <span class="ow">or</span> <span class="n">updates</span><span class="o">.</span><span class="n">actuator_fields</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">device_randomization</span> <span class="o">=</span> <span class="n">randomization</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="s2">&quot;mjwarp tensor reset does not support pending interval body wrenches&quot;</span>
             <span class="p">)</span>
@@ -3502,6 +3540,7 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span>
                     <span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">values</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
                 <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
             <span class="c1"># Derived kinematics/sensor state is refreshed lazily by the first</span>
             <span class="c1"># tensor sensor view or host-cache publication.  The task runtime</span>
             <span class="c1"># always reads sensors immediately after selected reset, so an</span>
@@ -3534,7 +3573,7 @@
         <span class="n">reset_mask</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">qpos</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">qvel</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
-        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">full_refresh</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
@@ -3549,8 +3588,17 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="s2">&quot;mjwarp mask reset randomization must be a &quot;</span>
+                    <span class="s2">&quot;TensorResetRandomizationPayload or None&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">()</span> <span class="ow">and</span> <span class="p">(</span>
+                <span class="n">_reset_payload_plane_device</span><span class="p">(</span><span class="n">randomization</span><span class="p">)</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cpu&quot;</span>
+            <span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                    <span class="s2">&quot;MJWarp mask reset requires a device-resident TensorResetRandomizationPayload&quot;</span>
+                    <span class="s2">&quot;mjwarp mask reset requires a device-resident (non-torch.cpu) &quot;</span>
+                    <span class="s2">&quot;randomization payload; the host plane is not supported on &quot;</span>
+                    <span class="s2">&quot;the mask path&quot;</span>
                 <span class="p">)</span>
         <span class="k">if</span> <span class="n">reset_mask</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;mjwarp tensor reset_mask must be a torch.Tensor&quot;</span><span class="p">)</span>
@@ -3617,6 +3665,7 @@
             <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_reset_defaults</span><span class="p">:</span>
                 <span class="n">current</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
                 <span class="n">current</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">mask_tensor</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">*</span><span class="p">([</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">current</span><span class="o">.</span><span class="n">ndim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))),</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
 
             <span class="c1"># The default publication keeps derived tracked-body state lazy while</span>
             <span class="c1"># qpos/qvel/time remain authoritative. It must not materialize rows</span>
@@ -3715,14 +3764,39 @@
                     <span class="n">RESET_TERM_KD</span><span class="p">,</span>
                 <span class="p">}</span>
             <span class="p">),</span>
+            <span class="c1"># The device plane scatters every host term except geom_size,</span>
+            <span class="c1"># whose derived geom_rbound/geom_aabb rows stay host-computed.</span>
+            <span class="n">supported_device_reset_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="n">RESET_TERM_BASE_MASS</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_BASE_COM</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_GRAVITY</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_BODY_IQUAT</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_BODY_INERTIA</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_DOF_ARMATURE</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_DOF_DAMPING</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_DOF_FRICTIONLOSS</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_GEOM_SOLREF</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_GEOM_SOLIMP</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_KP</span><span class="p">,</span>
+                    <span class="n">RESET_TERM_KD</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="p">),</span>
             <span class="n">supported_interval_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span>
                 <span class="p">{</span><span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span> <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">}</span>
-                <span class="o">|</span> <span class="p">({</span><span class="n">INTERVAL_TERM_PUSH</span><span class="p">}</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">set</span><span class="p">())</span>
                 <span class="o">|</span> <span class="p">(</span>
                     <span class="p">{</span><span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">}</span>
                     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_root_velocity_qvel_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                     <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
                 <span class="p">)</span>
+            <span class="p">),</span>
+            <span class="c1"># Device-resident interval handling is the producer-sampled push</span>
+            <span class="c1"># staged straight into the live xfrc_applied field.</span>
+            <span class="n">supported_device_interval_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span>
+                <span class="p">{</span><span class="n">INTERVAL_TERM_PUSH</span><span class="p">}</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
             <span class="p">),</span>
             <span class="n">supports_fixed_variants</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">supported_fixed_variant_layouts</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span>
@@ -3737,12 +3811,12 @@
     <span class="c1"># ------------------------------------------------------------------ #</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_extended_randomization</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">host_values</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate every new field before mutating state or device buffers.&quot;&quot;&quot;</span>
         <span class="n">staged</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;geom_size&quot;</span><span class="p">,</span> <span class="s2">&quot;geom_solref&quot;</span><span class="p">,</span> <span class="s2">&quot;geom_solimp&quot;</span><span class="p">,</span> <span class="s2">&quot;dof_damping&quot;</span><span class="p">,</span> <span class="s2">&quot;dof_frictionloss&quot;</span><span class="p">):</span>
-            <span class="n">values</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="n">host_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">values</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">continue</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">floating</span><span class="p">):</span>
@@ -3842,6 +3916,28 @@
         <span class="n">mirror</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">target</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
         <span class="n">stale</span><span class="o">.</span><span class="n">discard</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_dr_base_default_column_torch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">base_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the cached per-env immutable default base column on ``device``.</span>
+
+<span class="sd">        The column is cold metadata: ``_reset_field_defaults`` rows selected by</span>
+<span class="sd">        the fixed-variant assignment at ``base_id``, uploaded once per device.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">cache</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_dr_base_default_columns&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cache</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">cache</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_dr_base_default_columns</span> <span class="o">=</span> <span class="n">cache</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">device</span><span class="p">))</span>
+        <span class="n">column</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">column</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_reset_field_defaults</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="bp">self</span><span class="o">.</span><span class="n">_reset_default_assignment</span><span class="p">,</span> <span class="n">base_id</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="n">column</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">column</span>
+        <span class="k">return</span> <span class="n">column</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_apply_tensor_reset_randomization</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">rows</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
@@ -3857,27 +3953,32 @@
 <span class="sd">        is ``gravity``, ``body_mass``, ``body_ipos``, ``body_inertia``,</span>
 <span class="sd">        ``body_iquat``, ``geom_friction``, ``geom_solref``, ``geom_solimp``,</span>
 <span class="sd">        ``dof_armature``, ``dof_damping``, ``dof_frictionloss`` and the</span>
-<span class="sd">        actuator ``kp``/``kd`` gains, with value rules ported from the host</span>
-<span class="sd">        ``_validate_extended_randomization`` / ``_prepare_reset_randomization``</span>
-<span class="sd">        checks.  ``geom_size`` fails closed: its derived ``geom_rbound`` /</span>
-<span class="sd">        ``geom_aabb`` rows are computed host-side today, and no device-side</span>
-<span class="sd">        derivation exists in this slice.  Field validation shares one fused</span>
-<span class="sd">        device-side reduction (one D2H sync) with the reset entry operands</span>
-<span class="sd">        passed in ``validation``; a failed aggregate re-checks each operand on</span>
-<span class="sd">        the cold path so the error still names its field.</span>
+<span class="sd">        actuator ``kp``/``kd`` gains, plus the delta terms</span>
+<span class="sd">        ``base_mass_delta``/``base_com_offset`` whose merge with the immutable</span>
+<span class="sd">        per-env default column runs in Torch here, with value rules ported</span>
+<span class="sd">        from the host ``_validate_extended_randomization`` /</span>
+<span class="sd">        ``_prepare_reset_randomization`` checks.  ``geom_size`` fails closed:</span>
+<span class="sd">        its derived ``geom_rbound`` / ``geom_aabb`` rows are computed</span>
+<span class="sd">        host-side today, and no device-side derivation exists in this slice.</span>
+<span class="sd">        Field validation shares one fused device-side reduction (one D2H</span>
+<span class="sd">        sync) with the reset entry operands passed in ``validation``; a failed</span>
+<span class="sd">        aggregate re-checks each operand on the cold path so the error still</span>
+<span class="sd">        names its field.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
         <span class="n">unsupported</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span>
-            <span class="n">payload</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
+            <span class="n">payload</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">(),</span> <span class="n">plane</span><span class="o">=</span><span class="s2">&quot;device&quot;</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp does not support reset terms: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;mjwarp does not support device reset terms: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
         <span class="k">if</span> <span class="n">payload</span><span class="o">.</span><span class="n">geom_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="s2">&quot;mjwarp device reset randomization does not support geom_size: &quot;</span>
                 <span class="s2">&quot;derived geom_rbound/geom_aabb rows are computed host-side &quot;</span>
-                <span class="s2">&quot;today; use the host ResetRandomizationPayload path&quot;</span>
+                <span class="s2">&quot;today; use a host-plane (torch.cpu) payload instead&quot;</span>
             <span class="p">)</span>
         <span class="n">num_rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span> <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
         <span class="n">ngeom</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">ngeom</span><span class="p">)</span>
@@ -3923,6 +4024,57 @@
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">kd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">checks</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;kd&quot;</span><span class="p">,</span> <span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">kd</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_value_flag</span><span class="p">(</span><span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">kd</span><span class="p">)))</span>
+
+        <span class="c1"># Delta terms merge with the immutable per-env default column in Torch</span>
+        <span class="c1"># (``final = baseline + delta``), mirroring the host path&#39;s rule that</span>
+        <span class="c1"># only the base component falls back to defaults while every other</span>
+        <span class="c1"># body keeps its current (possibly already randomized) rows.</span>
+        <span class="k">for</span> <span class="n">delta_term</span><span class="p">,</span> <span class="n">target_name</span><span class="p">,</span> <span class="n">delta_tail</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">RESET_TERM_BASE_MASS</span><span class="p">,</span> <span class="s2">&quot;body_mass&quot;</span><span class="p">,</span> <span class="p">()),</span>
+            <span class="p">(</span><span class="n">RESET_TERM_BASE_COM</span><span class="p">,</span> <span class="s2">&quot;body_ipos&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mi">3</span><span class="p">,)),</span>
+        <span class="p">):</span>
+            <span class="n">delta</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="n">delta_term</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">delta</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">base_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_dr_base_body</span><span class="p">(</span><span class="n">delta_term</span><span class="p">)</span>
+            <span class="n">delta_tensor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
+                <span class="n">delta_term</span><span class="p">,</span> <span class="n">delta</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">num_rows</span><span class="p">,</span> <span class="o">*</span><span class="n">delta_tail</span><span class="p">),</span> <span class="n">check_finite</span><span class="o">=</span><span class="kc">False</span>
+            <span class="p">)</span>
+            <span class="n">checks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="n">delta_term</span><span class="p">,</span>
+                    <span class="s2">&quot;finite&quot;</span><span class="p">,</span>
+                    <span class="n">delta_tensor</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_torch_value_flag</span><span class="p">(</span><span class="s2">&quot;finite&quot;</span><span class="p">,</span> <span class="n">delta_tensor</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">baseline</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dr_base_default_column_torch</span><span class="p">(</span><span class="n">target_name</span><span class="p">,</span> <span class="n">base_id</span><span class="p">,</span> <span class="n">delta_tensor</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">staged_table</span> <span class="o">=</span> <span class="n">staged</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">target_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">staged_table</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">view</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_torch_view</span><span class="p">(</span><span class="n">target_name</span><span class="p">)</span>
+                <span class="n">staged_table</span> <span class="o">=</span> <span class="n">view</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span> <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">view</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+            <span class="n">staged_table</span> <span class="o">=</span> <span class="n">staged_table</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">merged_column</span> <span class="o">=</span> <span class="n">baseline</span> <span class="o">+</span> <span class="n">delta_tensor</span>
+                <span class="k">if</span> <span class="n">reset_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">merged_column</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+                        <span class="n">_expand_reset_mask</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">merged_column</span><span class="o">.</span><span class="n">ndim</span><span class="p">),</span>
+                        <span class="n">merged_column</span><span class="p">,</span>
+                        <span class="n">staged_table</span><span class="p">[:,</span> <span class="n">base_id</span><span class="p">],</span>
+                    <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">merged_column</span> <span class="o">=</span> <span class="n">baseline</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span> <span class="o">+</span> <span class="n">delta_tensor</span>
+            <span class="n">merged_rule</span> <span class="o">=</span> <span class="s2">&quot;non_negative&quot;</span> <span class="k">if</span> <span class="n">target_name</span> <span class="o">==</span> <span class="s2">&quot;body_mass&quot;</span> <span class="k">else</span> <span class="s2">&quot;finite&quot;</span>
+            <span class="n">checks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="n">delta_term</span><span class="p">,</span>
+                    <span class="n">merged_rule</span><span class="p">,</span>
+                    <span class="n">merged_column</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_torch_value_flag</span><span class="p">(</span><span class="n">merged_rule</span><span class="p">,</span> <span class="n">merged_column</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">staged_table</span><span class="p">[:,</span> <span class="n">base_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">merged_column</span>
+            <span class="n">staged</span><span class="p">[</span><span class="n">target_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">staged_table</span>
 
         <span class="c1"># Fail closed on any invalid field before the first device mutation.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_fused</span><span class="p">(</span><span class="n">checks</span><span class="p">)</span>
@@ -3999,22 +4151,32 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_reset_randomization</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-        <span class="n">randomization</span><span class="p">:</span> <span class="n">ResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ModelUpdates</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Own and validate all model writes without touching host/device state.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Own and validate all model writes without touching host/device state.</span>
+
+<span class="sd">        The public payload is torch-first; host-plane (``torch.cpu``) tensors</span>
+<span class="sd">        are materialized to NumPy at this private boundary through</span>
+<span class="sd">        :mod:`unisim.dr._host`. Device-plane payloads fail closed naming the</span>
+<span class="sd">        offending field.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">ModelUpdates</span><span class="p">()</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">ResetRandomizationPayload</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;randomization must be ResetRandomizationPayload or None&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;randomization must be a TensorResetRandomizationPayload or None&quot;</span><span class="p">)</span>
         <span class="c1"># A device-side scatter may have left host mirrors stale; refresh them</span>
         <span class="c1"># before any composition below reads `_dr_*` rows.</span>
         <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_dr_mirror_stale&quot;</span><span class="p">,</span> <span class="p">())):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_require_fresh_dr_mirror</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+            <span class="k">return</span> <span class="n">ModelUpdates</span><span class="p">()</span>
         <span class="n">unsupported</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span>
-            <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
+            <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">(),</span> <span class="n">plane</span><span class="o">=</span><span class="s2">&quot;host&quot;</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp does not support reset terms: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">validate_tensor_reset_payload</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+        <span class="n">host_values</span> <span class="o">=</span> <span class="n">reset_payload_to_host_dict</span><span class="p">(</span><span class="n">randomization</span><span class="p">)</span>
         <span class="n">num_reset</span> <span class="o">=</span> <span class="n">rows</span><span class="o">.</span><span class="n">size</span>
         <span class="n">staged</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">tail</span> <span class="ow">in</span> <span class="p">(</span>
@@ -4026,12 +4188,13 @@
             <span class="p">(</span><span class="s2">&quot;dof_armature&quot;</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nv</span><span class="p">,)),</span>
             <span class="p">(</span><span class="s2">&quot;geom_friction&quot;</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">ngeom</span><span class="p">),</span> <span class="mi">3</span><span class="p">)),</span>
         <span class="p">):</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">host_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">staged</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_dr_field</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">num_reset</span><span class="p">,</span> <span class="n">tail</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">base_mass_delta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">base_mass_delta</span> <span class="o">=</span> <span class="n">host_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;base_mass_delta&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">base_mass_delta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">base_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_dr_base_body</span><span class="p">(</span><span class="s2">&quot;base_mass_delta&quot;</span><span class="p">)</span>
-            <span class="n">delta</span> <span class="o">=</span> <span class="n">float_values</span><span class="p">(</span><span class="s2">&quot;base_mass_delta&quot;</span><span class="p">,</span> <span class="n">randomization</span><span class="o">.</span><span class="n">base_mass_delta</span><span class="p">,</span> <span class="p">(</span><span class="n">num_reset</span><span class="p">,))</span>
+            <span class="n">delta</span> <span class="o">=</span> <span class="n">float_values</span><span class="p">(</span><span class="s2">&quot;base_mass_delta&quot;</span><span class="p">,</span> <span class="n">base_mass_delta</span><span class="p">,</span> <span class="p">(</span><span class="n">num_reset</span><span class="p">,))</span>
             <span class="k">if</span> <span class="s2">&quot;body_mass&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">staged</span><span class="p">:</span>
                 <span class="c1"># Only the base component uses immutable defaults; preserve</span>
                 <span class="c1"># previously randomized values of other bodies in selected rows.</span>
@@ -4041,9 +4204,10 @@
                 <span class="p">]</span>
             <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">over</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">):</span>
                 <span class="n">staged</span><span class="p">[</span><span class="s2">&quot;body_mass&quot;</span><span class="p">][:,</span> <span class="n">base_id</span><span class="p">]</span> <span class="o">+=</span> <span class="n">delta</span>
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">base_com_offset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">base_com_offset</span> <span class="o">=</span> <span class="n">host_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;base_com_offset&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">base_com_offset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">base_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_dr_base_body</span><span class="p">(</span><span class="s2">&quot;base_com_offset&quot;</span><span class="p">)</span>
-            <span class="n">offset</span> <span class="o">=</span> <span class="n">float_values</span><span class="p">(</span><span class="s2">&quot;base_com_offset&quot;</span><span class="p">,</span> <span class="n">randomization</span><span class="o">.</span><span class="n">base_com_offset</span><span class="p">,</span> <span class="p">(</span><span class="n">num_reset</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+            <span class="n">offset</span> <span class="o">=</span> <span class="n">float_values</span><span class="p">(</span><span class="s2">&quot;base_com_offset&quot;</span><span class="p">,</span> <span class="n">base_com_offset</span><span class="p">,</span> <span class="p">(</span><span class="n">num_reset</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
             <span class="k">if</span> <span class="s2">&quot;body_ipos&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">staged</span><span class="p">:</span>
                 <span class="n">staged</span><span class="p">[</span><span class="s2">&quot;body_ipos&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dr_body_ipos</span><span class="p">[</span><span class="n">rows</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
                 <span class="n">staged</span><span class="p">[</span><span class="s2">&quot;body_ipos&quot;</span><span class="p">][:,</span> <span class="n">base_id</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_field_defaults</span><span class="p">[</span><span class="s2">&quot;body_ipos&quot;</span><span class="p">][</span>
@@ -4051,7 +4215,7 @@
                 <span class="p">]</span>
             <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">over</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">):</span>
                 <span class="n">staged</span><span class="p">[</span><span class="s2">&quot;body_ipos&quot;</span><span class="p">][:,</span> <span class="n">base_id</span><span class="p">]</span> <span class="o">+=</span> <span class="n">offset</span>
-        <span class="n">staged</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_validate_extended_randomization</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">randomization</span><span class="p">))</span>
+        <span class="n">staged</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_validate_extended_randomization</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">host_values</span><span class="p">))</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">staged</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;computed </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be finite&quot;</span><span class="p">)</span>
@@ -4079,14 +4243,16 @@
             <span class="k">else</span> <span class="p">(</span><span class="mi">1</span> <span class="k">if</span> <span class="nb">set</span><span class="p">(</span><span class="n">staged</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">{</span><span class="s2">&quot;body_inertia&quot;</span><span class="p">,</span> <span class="s2">&quot;dof_armature&quot;</span><span class="p">}</span> <span class="k">else</span> <span class="mi">0</span><span class="p">)</span>
         <span class="p">)</span>
         <span class="n">actuator_fields</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">kp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">kp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_dr_field</span><span class="p">(</span><span class="s2">&quot;kp&quot;</span><span class="p">,</span> <span class="n">randomization</span><span class="o">.</span><span class="n">kp</span><span class="p">,</span> <span class="n">num_reset</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nu</span><span class="p">,))</span>
+        <span class="n">kp_value</span> <span class="o">=</span> <span class="n">host_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;kp&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">kp_value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">kp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_dr_field</span><span class="p">(</span><span class="s2">&quot;kp&quot;</span><span class="p">,</span> <span class="n">kp_value</span><span class="p">,</span> <span class="n">num_reset</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nu</span><span class="p">,))</span>
             <span class="n">actuator_fields</span><span class="p">[</span><span class="s2">&quot;actuator_gainprm&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dr_actuator_gainprm</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
             <span class="n">actuator_fields</span><span class="p">[</span><span class="s2">&quot;actuator_biasprm&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dr_actuator_biasprm</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
             <span class="n">actuator_fields</span><span class="p">[</span><span class="s2">&quot;actuator_gainprm&quot;</span><span class="p">][</span><span class="n">rows</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">kp</span>
             <span class="n">actuator_fields</span><span class="p">[</span><span class="s2">&quot;actuator_biasprm&quot;</span><span class="p">][</span><span class="n">rows</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="n">kp</span>
-        <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">kd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">kd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_dr_field</span><span class="p">(</span><span class="s2">&quot;kd&quot;</span><span class="p">,</span> <span class="n">randomization</span><span class="o">.</span><span class="n">kd</span><span class="p">,</span> <span class="n">num_reset</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nu</span><span class="p">,))</span>
+        <span class="n">kd_value</span> <span class="o">=</span> <span class="n">host_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;kd&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">kd_value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">kd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_dr_field</span><span class="p">(</span><span class="s2">&quot;kd&quot;</span><span class="p">,</span> <span class="n">kd_value</span><span class="p">,</span> <span class="n">num_reset</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nu</span><span class="p">,))</span>
             <span class="k">if</span> <span class="s2">&quot;actuator_biasprm&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">actuator_fields</span><span class="p">:</span>
                 <span class="n">actuator_fields</span><span class="p">[</span><span class="s2">&quot;actuator_biasprm&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dr_actuator_biasprm</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
             <span class="n">actuator_fields</span><span class="p">[</span><span class="s2">&quot;actuator_biasprm&quot;</span><span class="p">][</span><span class="n">rows</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="n">kd</span>
@@ -4104,11 +4270,26 @@
         <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
             <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reject_wrench_write_inside_pre_step_control</span><span class="p">(</span><span class="s2">&quot;apply_interval_randomization&quot;</span><span class="p">)</span>
+        <span class="n">has_device_payload</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">,</span> <span class="n">TensorIntervalPayload</span><span class="p">)</span> <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">plan</span><span class="o">.</span><span class="n">iter_ops</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">has_device_payload</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">iter_ops</span><span class="p">())</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="s2">&quot;a mjwarp device interval plan must contain exactly one device payload&quot;</span>
+                <span class="p">)</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">apply_interval_randomization</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;mixing device-resident and host interval wrenches is unsupported&quot;</span>
+            <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_sync_host_cache</span><span class="p">()</span>
         <span class="c1"># A non-empty plan starts from cleared external wrenches, matching the</span>
         <span class="c1"># MuJoCo backend: ops within one plan accumulate, while a later plan</span>
         <span class="c1"># replaces anything a previous plan staged before it was consumed.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">apply_interval_randomization</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span></div>
 
 
@@ -4118,16 +4299,21 @@
         <span class="c1"># silently dropped).</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="o">=</span> <span class="p">{</span>
-                <span class="n">INTERVAL_TERM_PUSH</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_robots</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
+                <span class="n">INTERVAL_TERM_PUSH</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_robots</span><span class="p">(</span>
+                    <span class="n">cast</span><span class="p">(</span><span class="n">TensorIntervalPayload</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span>
+                <span class="p">),</span>
                 <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span>
-                    <span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">),</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span>
+                    <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">)),</span>
+                    <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
                 <span class="p">),</span>
                 <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_torque</span><span class="p">(</span>
-                    <span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">),</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span>
+                    <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">)),</span>
+                    <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
                 <span class="p">),</span>
                 <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">:</span> <span class="p">(</span>
                     <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_linear_velocity_delta</span><span class="p">(</span>
-                        <span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">),</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span>
+                        <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">)),</span>
+                        <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
                     <span class="p">)</span>
                 <span class="p">),</span>
             <span class="p">}</span>
@@ -4135,22 +4321,43 @@
 
 <div class="viewcode-block" id="MjwarpBackend.push_robots">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.push_robots">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">push_robots</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force_range</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample one world-frame push force per env and stage it for the next step.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">push_robots</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force_range</span><span class="p">:</span> <span class="n">TensorIntervalPayload</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage caller-owned device push forces for the next tensor step.</span>
+
+<span class="sd">        The producer owns random generation on the backend Torch device. This</span>
+<span class="sd">        boundary receives final full-width forces, validates them on their</span>
+<span class="sd">        device, and scatters directly into the live ``xfrc_applied`` field; it</span>
+<span class="sd">        does not sample on the host, publish the host cache, or mutate the host</span>
+<span class="sd">        wrench mirror.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reject_wrench_write_inside_pre_step_control</span><span class="p">(</span><span class="s2">&quot;push_robots&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_host_cache</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="s2">&quot;mjwarp interval push requires base_name or push_body_name to identify &quot;</span>
                 <span class="s2">&quot;a push target body&quot;</span>
             <span class="p">)</span>
-        <span class="n">limit</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">force_range</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">limit</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">3</span><span class="p">,)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">limit</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;push force_range must be a finite (3,) array, got </span><span class="si">{</span><span class="n">limit</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
-        <span class="n">sampled</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_staging</span><span class="p">[:,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_id</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">sampled</span> <span class="o">*</span> <span class="n">limit</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="o">=</span> <span class="kc">True</span></div>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span><span class="p">:</span>
+            <span class="c1"># A pending async tensor step is a live-input hazard, not merely a</span>
+            <span class="c1"># host-publication concern: xfrc staging would race that step.</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;mjwarp device push requires the previous tensor step receipt to be awaited&quot;</span>
+            <span class="p">)</span>
+        <span class="c1"># Zero before the first mutation; validation failure leaves no partial force.</span>
+        <span class="n">xfrc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_device_xfrc_view</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;mixing host and device-resident interval wrenches is unsupported&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">force_range</span><span class="p">,</span> <span class="n">TensorIntervalPayload</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;mjwarp interval push requires a device-resident TensorIntervalPayload&quot;</span><span class="p">)</span>
+        <span class="n">sampled</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
+            <span class="s2">&quot;push_force&quot;</span><span class="p">,</span>
+            <span class="n">force_range</span><span class="o">.</span><span class="n">push_force</span><span class="p">,</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">xfrc</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+        <span class="n">xfrc</span><span class="p">[:,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_id</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">sampled</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span> <span class="o">=</span> <span class="kc">True</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.apply_body_force">

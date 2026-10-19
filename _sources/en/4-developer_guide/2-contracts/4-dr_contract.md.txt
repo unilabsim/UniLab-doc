@@ -33,8 +33,11 @@ provider protocol and the environment does not carry a DR manager.
 
 Backend differences are explicit capabilities, not task-side branches:
 
-- `DomainRandomizationCapabilities.supported_reset_terms`
-- `supported_interval_terms`
+- `DomainRandomizationCapabilities.supported_reset_terms` — host plane
+  (`torch.cpu` payloads)
+- `supported_interval_terms` — host plane
+- `supported_device_reset_terms` / `supported_device_interval_terms` — device
+  plane (CUDA payloads); an empty set fails closed
 - fixed-variant layouts
 - per-environment playback support
 - `TensorLifecycleCapabilities.packed_reset` with
@@ -42,17 +45,29 @@ Backend differences are explicit capabilities, not task-side branches:
   startup DR lifecycle; a missing declaration fails closed at env
   construction.
 
-An unadvertised requested term fails closed with the backend and term named.
+The payload tensors' device selects the plane: `torch.cpu` payloads negotiate
+the host term sets and CUDA payloads the device term sets. An unadvertised
+requested term fails closed with the backend, term, and plane named.
 Manager code never imports MuJoCo or mjbatch and never accesses a backend model
 or pool.
 
 ## Reset Payload And Defaults
 
-`ResetRandomizationPayload` is a curated NumPy plan whose first dimension is the
-selected row count. Supported terms include the body mass/COM/inertia family,
-gravity, geometry friction/size/solver parameters, joint damping/armature/friction,
-and actuator gains. Derived fields such as geometry bounds are backend-owned and
-are never independently caller-supplied.
+`TensorResetRandomizationPayload` is the sole public reset payload: a curated
+torch plan whose first dimension is the selected row count. Its 16 fields cover
+the body mass/COM/inertia family, gravity, geometry friction/size/solver
+parameters, joint damping/armature/friction, actuator gains, and the
+`base_mass_delta`/`base_com_offset` delta terms. Fields stay `Any`-typed with
+lazy torch validation, so `unisim-core` keeps its NumPy-only dependency
+footprint. NumPy survives only behind adapter-private host conversion
+(`unisim.dr._host`), cold metadata, and serialization/playback leaves; the
+former NumPy `ResetRandomizationPayload` no longer exists. Derived fields such
+as geometry bounds are backend-owned and are never independently
+caller-supplied.
+
+The packed composer merges staged delta terms with the authoritative baseline
+into final absolute tables in torch at commit (`final = baseline + delta`), so
+reset DR on CUDA environments no longer round-trips values through the host.
 
 During cold-path binding, `ResetStateTransaction` asks UniSim for
 `SimBackend.get_reset_term_default(term)`. The returned table is authoritative
@@ -72,10 +87,17 @@ the former UniLab-side MuJoCo recompilation used to obtain inertia defaults.
 ## Interval Terms
 
 Interval plans are term-descriptor based: `IntervalRandomizationPlan.ops`
-carries `IntervalTermOp` entries from `unisim.dr.interval`. Builtin payload
-contracts are enforced by `IntervalTermOp.validate`;
-unknown backend-owned custom terms pass through to that backend's handler table.
-Ops and plans remain pickle-safe stdlib/NumPy data across spawn collectors.
+carries `IntervalTermOp` entries from `unisim.dr.interval`. Payloads are
+torch-first: `IntervalTermOp.payload` is a torch tensor or a
+`TensorIntervalPayload` whose device selects the plane, and push is
+producer-sampled on every backend — backend-internal global-RNG push sampling
+no longer exists. Builtin payload contracts are enforced by
+`IntervalTermOp.validate`; unknown backend-owned custom terms pass through to
+that backend's handler table. Plans that cross spawn collectors carry sampling
+ranges rather than tensors; device payloads are process-local.
+
+The structural decision is recorded in UniSim's
+[torch-first DR payload ADR](https://github.com/unilabsim/unisim/blob/main/docs/en/adr-dr-torch-first-payloads.md).
 
 ## Evidence
 

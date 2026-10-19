@@ -81,8 +81,10 @@ replacement directly and its architecture gate rejects reintroduction.
 
 Outside the concrete CPU backend adapter, NumPy may appear only in:
 
-1. the base-owner adapter/reset-host boundary, where public CPU backend and
-   play APIs still exchange host formats;
+1. the adapter-private host boundary, where CPU-authoritative backend adapters
+   convert the public torch DR payloads into engine host formats (for example
+   UniSim's `unisim.dr._host` helpers) and play APIs still exchange host
+   formats;
 2. cold asset/materialization work, such as NPZ motion ingestion and terrain
    generation;
 3. serialization and external interop, such as ONNX Runtime and diagnostic NPZ;
@@ -92,6 +94,11 @@ Those leaves own their imports and conversions internally. They must not return
 mutable NumPy authoritative carriers to the Manager runtime or training hot
 path. Cold-path NumPy is not authorization for step/reset parsing, asset
 metadata branching, terrain regeneration, or host fallback dispatch.
+
+Public reset and interval DR payloads are not NumPy leaves: since UniSim's
+torch-first DR payload decision (issue #2410) the public payload family
+(`TensorResetRandomizationPayload`, `TensorIntervalPayload`) is torch-only,
+and NumPy conversion exists only inside the adapter-private boundary above.
 
 ## Stable Contracts
 
