@@ -91,6 +91,14 @@ physics engines ROCm-compatible.
 > migration hint. `run_config.json` records the configured-to-resolved device map, and `cuda`
 > never silently maps to `mps`; only the abstract `gpu` alias may select an available
 > accelerator family.
+>
+> **Addendum (2026-10-19, issue #2401):** Carrier routing now follows the public
+> SDK-free `TensorPlatformProfile` inventory rather than a MuJoCo-only backend-name
+> scope. Any in-process packed `HOST_BRIDGE` profile may route the training carrier,
+> subject to its declared `torch_devices`; Motrix, Drake, and SuperDex therefore follow
+> the same `auto`/`cpu`/`cuda` contract as MuJoCo. Missing or unsupported capability
+> declarations fail closed, while final construction remains guarded by the actual
+> `SimBackend.get_tensor_capabilities()` declaration.
 
 ### Manager-owned RNG
 

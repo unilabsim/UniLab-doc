@@ -38,13 +38,17 @@ SAC 与 FlashSAC 会在探测环境或构造 learner 之前解析所有面向进
 | `training.device` | learner 与 rank-local 进程选择 | 具体 Torch device 标签 |
 
 训练键是唯一面向用户的 carrier 请求。`auto` 跟随已解析的 learner 设备：
-CUDA 路由 rank-local 带序号设备；CPU 与 torch.mps（Metal Performance
-Shaders）保持 CPU carrier。显式 `cpu`/`cuda` 优先于 `auto`。`cuda` 是具体
-设备家族，绝不映射到 MPS；无 CUDA 主机上的 CUDA 请求会 fail closed。
+CUDA 路由 rank-local 带序号设备，CPU 路由 CPU，torch.mps（Metal
+Performance Shaders）保留 owner/default CPU 放置。显式 `cpu`/`cuda` 优先于
+`auto`。`cuda` 是具体设备家族，绝不映射到 MPS；无 CUDA 主机上的 CUDA 请求
+会 fail closed。
 
-`cuda` 只支持 MuJoCo HOST_BRIDGE carrier。其他后端忽略 `auto`/`cpu`，但
-`cuda` 请求会 fail closed。`run_config.json` 保留组合后的配置，并在
-`run.resolved_devices` 记录每个“配置值 → 解析值”映射；启动日志打印同一映射。
+carrier 路由由能力声明驱动：MuJoCo、Motrix、Drake 与 SuperDex 声明了
+in-process packed `HOST_BRIDGE` transfer plan，支持 `cpu`/`cuda` carrier。
+其他后端忽略 `auto`/`cpu`，但 `cuda` 请求会 fail closed。请求超出所选后端
+声明的 `torch_devices` 时同样 fail closed。`run_config.json` 保留组合后的
+配置，并在 `run.resolved_devices` 记录每个“配置值 → 解析值”映射；启动日志
+打印同一映射。
 
 已移除键会带迁移错误 fail closed：用 `training.sim_carrier_device` 替代
 `training.collector_tensor_device`，用 `env.sim_carrier_device` 替代

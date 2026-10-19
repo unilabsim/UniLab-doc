@@ -92,6 +92,18 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
 
 ### Fixed / 修复
 
+- Fixed capability-scoped Manager carrier routing for every in-process packed
+  `HOST_BRIDGE` backend, not only MuJoCo. Explicit
+  `training.sim_carrier_device=cuda` and the default `auto` routing now honor
+  the public backend `torch_devices` declaration for Motrix, Drake, and
+  SuperDex, while unsupported or unknown device declarations fail closed.
+  Physics remains CPU-authoritative; this changes only public Manager carrier
+  placement ([#2401](https://github.com/Motphys/UniLab/issues/2401)).
+  修复 Manager carrier 路由仅限 MuJoCo 的问题：显式
+  `training.sim_carrier_device=cuda` 与默认 `auto` 现在按公开的后端
+  `torch_devices` 声明作用于 Motrix、Drake 与 SuperDex 等全部 in-process
+  packed `HOST_BRIDGE` 后端；未声明或不受支持的设备会 fail closed。物理仍
+  以 CPU 为权威，本修复只改变公共 Manager carrier 放置位置。
 - Fixed device-resident Manager sensor staleness and restored SAC
   `g1_walk_flat` policy quality across the newly adapted backends. Every
   compiled derived sensor now crosses its backend boundary on full and

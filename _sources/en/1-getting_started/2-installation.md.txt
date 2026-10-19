@@ -243,15 +243,15 @@ ROCm notes:
 - If you installed ROCm wheels manually while retaining the default project
   profile, use `uv run --no-sync` (or `UV_NO_SYNC=1 make ...`) for validation;
   automatic synchronization would reinstall that profile's CUDA wheels.
-- With ROCm PyTorch and an available GPU, a `HOST_BRIDGE` backend accepting
-  `cuda` buffers uses the current GPU for Manager/TorchEnv tensors whenever the
-  MuJoCo training learner resolves to CUDA: the default
+- With ROCm PyTorch and an available GPU, a `HOST_BRIDGE` backend declaring
+  and accepting `cuda` buffers uses the current GPU for Manager/TorchEnv
+  tensors whenever the training learner resolves to CUDA: the default
   `training.sim_carrier_device=auto` follows the learner device, and an
   explicit `training.sim_carrier_device=cuda` forces the same routing for
-  other learner devices. Direct environment construction remains CPU. MuJoCo
-  physics stays on CPU; packed transfers connect it to the GPU observations,
-  actions, rewards, and resets. CUDA-only physics backends remain unsupported
-  on ROCm. See
+  other learner devices. Direct environment construction remains CPU.
+  Host-bridge physics stays on CPU; packed transfers connect it to the GPU
+  observations, actions, rewards, and resets. CUDA-only physics backends remain
+  unsupported on ROCm. See
   {doc}`/adr/ADR-0012-sole-tensor-manager-and-scoped-backends`.
 - When installing from PyPI instead of a source checkout, `make sync-rocm` does
   not apply. Install the torch build validated by the repository from the

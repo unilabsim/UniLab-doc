@@ -39,15 +39,18 @@ Device-related settings are separated by the layer that consumes them:
 | `training.device` | Learner and rank-local process selection | Concrete Torch device label |
 
 The training key is the only user-facing carrier request. `auto` follows the
-resolved learner device: CUDA routes the rank-local indexed device, while CPU
-and torch.mps (Metal Performance Shaders) keep the CPU carrier. Explicit
-`cpu` or `cuda` wins over `auto`. `cuda` is concrete and never maps to MPS; a
-CUDA request on a host without CUDA fails closed.
+resolved learner device: CUDA routes the rank-local indexed device, CPU routes
+CPU, and torch.mps (Metal Performance Shaders) retains the owner/default CPU
+placement. Explicit `cpu` or `cuda` wins over `auto`. `cuda` is concrete and
+never maps to MPS; a CUDA request on a host without CUDA fails closed.
 
-`cuda` is supported only for the MuJoCo HOST_BRIDGE carrier. Other backends
-ignore `auto`/`cpu`, but a `cuda` request fails closed. `run_config.json`
-retains the composed configuration and records `run.resolved_devices` with
-each configured-to-resolved mapping; startup logs print the same mapping.
+Carrier routing is capability-driven: MuJoCo, Motrix, Drake, and SuperDex
+declare in-process packed `HOST_BRIDGE` transfer plans with `cpu`/`cuda`
+carriers. Other backends ignore `auto`/`cpu`, but a `cuda` request fails
+closed. A request outside the selected backend's declared `torch_devices`
+also fails closed. `run_config.json` retains the composed configuration and
+records `run.resolved_devices` with each configured-to-resolved mapping;
+startup logs print the same mapping.
 
 Removed keys fail closed with a migration error: use `training.sim_carrier_device`
 instead of `training.collector_tensor_device`, `env.sim_carrier_device` instead
