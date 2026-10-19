@@ -34,7 +34,7 @@ runtime, and the RL logging stack ship in the base install.
 | `uni_rl.algos.appo` / `.sac` / `.flash_sac` / `.common` | `unilab.rl.algos.*` (same subpackage names) |
 | `uni_rl.algos.common.collector_timing` | `unilab.rl.runtime.collector_timing` |
 | `uni_rl.ipc.async_runner` | `unilab.rl.runtime.async_runner` |
-| `uni_rl.ipc.dp_launcher` | `unilab.rl.runtime.distributed.context` / `.launcher` / `.affinity`; the Hydra-side helpers `reject_removed_device_config` and `apply_dp_rank_config` moved to `unilab.training.dp_config` |
+| `uni_rl.ipc.dp_launcher` | `unilab.rl.runtime.distributed.context` / `.launcher` / `.affinity`; the Hydra-side helper `apply_dp_rank_config` moved to `unilab.training.dp_config` |
 | `uni_rl.ipc.dp_sync` | `unilab.rl.runtime.distributed.sync` |
 | `uni_rl.ipc.*` (remaining modules) | `unilab.rl.runtime.ipc.*` |
 | `uni_rl.offpolicy.*` | `unilab.rl.runtime.offpolicy.*` |

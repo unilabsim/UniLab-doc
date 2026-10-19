@@ -31,7 +31,7 @@
 | `uni_rl.algos.appo` / `.sac` / `.flash_sac` / `.common` | `unilab.rl.algos.*`（子包名不变） |
 | `uni_rl.algos.common.collector_timing` | `unilab.rl.runtime.collector_timing` |
 | `uni_rl.ipc.async_runner` | `unilab.rl.runtime.async_runner` |
-| `uni_rl.ipc.dp_launcher` | `unilab.rl.runtime.distributed.context` / `.launcher` / `.affinity`；Hydra 侧的 `reject_removed_device_config` 与 `apply_dp_rank_config` 移到 `unilab.training.dp_config` |
+| `uni_rl.ipc.dp_launcher` | `unilab.rl.runtime.distributed.context` / `.launcher` / `.affinity`；Hydra 侧的 `apply_dp_rank_config` 移到 `unilab.training.dp_config` |
 | `uni_rl.ipc.dp_sync` | `unilab.rl.runtime.distributed.sync` |
 | `uni_rl.ipc.*`（其余模块） | `unilab.rl.runtime.ipc.*` |
 | `uni_rl.offpolicy.*` | `unilab.rl.runtime.offpolicy.*` |
