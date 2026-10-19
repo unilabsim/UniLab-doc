@@ -49,14 +49,16 @@ uv run scripts/audit_sim2sim_contracts.py
 
 - **`env.control_config.action_scale`** —— 策略输出到关节目标的线性缩放系数；
   改动等价于动作幅值整体放缩，无法跨值迁移。
-- **`algo.actor.obs_normalization`**（旧 run 快照中的 legacy 键为
-  `algo.empirical_normalization`，经别名解析到同一路径）—— 是否在 actor 前插入
-  running mean/std 归一化层。
+- **`algo.actor.obs_normalization`** —— 是否在 actor 前插入
+  running mean/std 归一化层。旧 run 快照中的 legacy 键
+  `algo.empirical_normalization` 已退役：守卫不再做别名解析，含该键的快照直接
+  fail-closed。
   该层 buffer 烘进 checkpoint，ON / OFF 两类 checkpoint 不可互换；统一必须重训。
 - **`algo.obs_groups`** —— actor / critic 取哪几个 obs group 作为输入。
   在多数 env 上 actor 实际输入由 `env.obs_groups_spec` 决定，YAML 中的差异常只影响 critic
   的训练侧，play 时不影响 actor。
-- **`env.sampling_mode`** —— motion-tracking task 的参考帧采样策略。
+- **`env.commands.motion.params.sampling_mode`** —— motion-tracking task 的参考帧采样策略
+  （旧快照键 `env.sampling_mode` 同样已退役并被拒绝）。
 
 ## 把 BLOCKED task 变为可迁移
 

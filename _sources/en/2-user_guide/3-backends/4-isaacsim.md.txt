@@ -25,8 +25,6 @@ process:
 
 - `UNISIM_ISAACSIM_HOME` selects the runtime root.
 - `UNISIM_ISAACSIM_PYTHON` overrides the worker interpreter path.
-- The former `UNILAB_ISAACSIM_HOME` and `UNILAB_ISAACSIM_PYTHON` names remain
-  accepted as migration fallbacks.
 - `OMNI_KIT_ACCEPT_EULA=1` keeps worker startup non-interactive.
 
 The expected runtime layout is

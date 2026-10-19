@@ -81,7 +81,6 @@ scripts/tools/setup_isaacgym_env.sh
 
 The script installs everything under `$HOME/.cache/unisim/isaacgym` by default;
 override the install root with the `UNISIM_ISAACGYM_HOME` environment variable.
-The former `UNILAB_ISAACGYM_HOME` name remains accepted as a migration fallback.
 The tarball is downloaded automatically to
 `$UNISIM_ISAACGYM_HOME/IsaacGym_Preview_4_Package.tar.gz`; on offline machines,
 pass a pre-downloaded package with `--tarball <path>`. The script is

@@ -31,6 +31,28 @@ off-policy checkpoint 恢复完整的 learner 状态（网络、优化器、调�
 因此 `algo.max_iterations` 仍是总预算而不是增量）。replay buffer 不落盘：续训的 run
 会从空 buffer 重新经过 train-start 阈值热身，且 RNG 状态不恢复。
 
+## 检查点格式支持边界
+
+PPO/APPO 续训加载的是 UniLab patch 过的 rsl-rl checkpoint。受支持的 checkpoint 必须
+携带 `unilab_logger_state`（logger 的 `tot_time` / `tot_timesteps` 计数器，必需），
+并且当任务环境发布版本化 training state 时，还需携带对应的
+`unilab_env_training_state`。自 resume-state patch（issue #441，v1.0.0 起发布）以来
+UniLab 一直写入这两个键，新保存的 checkpoint 保持不变。
+
+从包含 issue #2416 的 1.3.5 之后的第一个 UniLab 版本起，加载改为 fail closed：
+
+- 缺少有效 `unilab_logger_state` 的 checkpoint（pre-patch 或原生 rsl-rl checkpoint）
+  会被拒绝加载，错误信息说明最低支持格式，不再静默地把训练进度从 0 恢复；
+- 当环境发布 training state 时，缺少有效版本化 `unilab_env_training_state` 的
+  checkpoint 同样会被拒绝；
+- 没有可导出 training state 的环境不写入占位键，也不要求该键。
+
+不提供兼容窗口、离线迁移工具或 dual-write 路径，该 fail-closed 行为也不会回 port 到
+1.3.5 patch release。对于不受支持的 pre-patch checkpoint，请用受支持的 UniLab 版本
+重训，或从该版本保存的 checkpoint 续训。
+
+checkpoint 文件是只读加载输入：加载器不会修复、重写或迁移它们。
+
 ## 回放检查点
 
 ```bash
@@ -49,5 +71,7 @@ uv run eval --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
 
 ## 随机种子
 
-训练种子的解析在 `src/unilab/training/seed.py` 中实现。算法配置目前携带
-`algo.seed`，并且在实验跟踪启用时，该辅助逻辑会记录种子元数据。
+训练种子的解析在 `src/unilab/training/seed.py` 中实现。仅认可算法级
+`algo.seed`；旧 `training.seed` fallback 已删除，配置了 `training.seed`
+但缺少 `algo.seed` 时会 fail closed。在实验跟踪启用时，该辅助逻辑会记录
+种子元数据。

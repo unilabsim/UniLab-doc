@@ -57,3 +57,19 @@ bounded host ingress plus one complete replay ring on a CUDA or Apple
 MPS learner device. CPU and XPU training are unsupported.
 
 The log root is `logs/flash_sac/<task>/`.
+
+## Checkpoint compatibility
+
+Every FlashSAC checkpoint records an `actor_semantics` payload
+(`schema_version`/`kind`/`builder`/`kwargs`/`obs_dim`/`action_dim`/
+`action_transform`, written by `unilab.rl.algos.flash_sac.actor_spec`). Both
+load paths — training resume and play — validate it fail-closed before any
+weights are restored, for the built-in actor and for custom actors injected
+through `algo.algo_params.actor_config` alike.
+
+Pre-contract checkpoints (a missing or null `actor_semantics` entry) are no
+longer supported for any actor, including the built-in actor: loading fails
+closed with an error that states the minimum supported format. The only
+recovery path is to retrain the policy with a current release. The supported
+baseline starts with the first release after 1.3.5 that carries this change;
+it is not backported to any 1.3.5 patch release.

@@ -27,7 +27,7 @@ uv run eval  --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
 
 | 档位 | 行为 | 字段 |
 |---|---|---|
-| **DENYLIST** | 差异即 `CrossBackendIncompatibleError`，中断 | `algo.obs_groups`、legacy `env.control_config.action_scale`、Manager-Based `env.observations` / `env.actions` / policy 与 critic group mapping、`algo.actor.hidden_dims` / `algo.critic.hidden_dims`、`algo.actor.obs_normalization` / `algo.critic.obs_normalization` / `algo.obs_normalization`、`env.sampling_mode` |
+| **DENYLIST** | 差异即 `CrossBackendIncompatibleError`，中断 | `algo.obs_groups`、Manager-Based `env.observations` / `env.actions` / policy 与 critic group mapping、`algo.actor.hidden_dims` / `algo.critic.hidden_dims`、`algo.actor.obs_normalization` / `algo.critic.obs_normalization` / `algo.obs_normalization`、`env.commands.motion.params.sampling_mode`，以及历史快照键 `env.control_config.action_scale`（当前 owner 配置已不声明） |
 | **WARNING_LIST** | 仅打印 warning，继续 | `reward.*`、`env.control_config.simulate_action_latency` |
 | **ALLOWLIST** | 自由覆盖，不检查 | `training.sim_backend`、`env.scene`、`training.play_steps`、`env.noise_config` |
 
@@ -36,9 +36,9 @@ uv run eval  --algo ppo --task go2_joystick_flat --sim mujoco --load-run -1
 若目标后端的 DENYLIST 字段与训练时不同（例如某 task 的两端 owner 在 `action_scale` 上取值不同），守卫会在建 env 前中断并列出差异字段。处理方式二选一：
 
 - **对齐契约**（推荐）：让目标后端 owner 的 DENYLIST 字段与训练后端一致，再回放。
-- **强制放行**（自担风险）：`uv run eval ... training.sim2sim_strict=false`，把 DENYLIST 差异降级为 warning。
+- **强制放行**（自担风险）：`uv run eval ... training.sim2sim_strict=false`，把 DENYLIST 差异降级为 warning。它**不会**绕过下面的快照完整性检查。
 
-> 兼容旧 run：若 `run_config.json` 没有 `contract_snapshot`（早期训练），守卫自动跳过并打印 warning，不会中断现有工作流。
+> 最低支持快照格式：当源 run 的 `run_config.json` 缺失、不是合法 JSON、缺少 `contract_snapshot` mapping、或含有当前契约 schema 之外的键（包括已退役的 legacy 键 `env.sampling_mode`、`algo.policy.actor_hidden_dims`、`algo.policy.critic_hidden_dims`、`algo.empirical_normalization`，这些键不再做别名解析）时，守卫一律 fail-closed（抛 `CrossBackendIncompatibleError`）。自合入本变更后的首个发布版本起，仅支持 1.3.5 基线 schema 的训练 run 写出的 canonical `contract_snapshot`；该破坏性变更不会回 port 到 1.3.5 patch release。没有离线迁移工具：要复用旧 run，需用当前版本重新训练（checkpoint 权重本身不变），再从新 run 回放。
 
 Manager-Based snapshot 会保存 Hydra 中完整的 typed observation/action 声明。缺少这些字段的旧
 snapshot 无法证明其 policy I/O 与 Manager-Based 目标等价，因此不对称出现时会 fail-closed。

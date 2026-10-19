@@ -36,6 +36,34 @@ increment). The replay buffer is not checkpointed: a resumed run re-warms
 from an empty buffer through the usual train-start threshold, and RNG state
 is not restored.
 
+## Checkpoint Format Support Boundary
+
+PPO/APPO resume loads UniLab-patched rsl-rl checkpoints. A supported
+checkpoint carries `unilab_logger_state` (the logger `tot_time` /
+`tot_timesteps` counters, required) and, when the task environment publishes
+versioned training state, a matching `unilab_env_training_state`. UniLab has
+written both keys since the resume-state patch (issue #441, shipped since
+v1.0.0), and new checkpoints keep writing them unchanged.
+
+Starting with the first UniLab release after 1.3.5 that includes issue #2416,
+loading fails closed:
+
+- a checkpoint without a valid `unilab_logger_state` (a pre-patch or vanilla
+  rsl-rl checkpoint) is rejected with an error naming the minimum supported
+  format, instead of silently restarting training progress from 0;
+- when the environment publishes training state, a checkpoint without a valid
+  versioned `unilab_env_training_state` is rejected as well;
+- an environment without exportable training state writes no placeholder key
+  and requires none.
+
+There is no compatibility window, offline migration tool, or dual-write path,
+and the fail-closed behavior is not backported to a 1.3.5 patch release. To
+recover an unsupported pre-patch checkpoint, retrain with a supported UniLab
+version or resume from a checkpoint saved by one.
+
+Checkpoint files are immutable load inputs: the loader never repairs,
+rewrites, or migrates them.
+
 ## Replay A Checkpoint
 
 ```bash
@@ -56,5 +84,7 @@ CLI validates `--load-run` as a run id and does not accept path separators.
 ## Seeds
 
 Training seed resolution is implemented in `src/unilab/training/seed.py`.
-Algorithm configs currently carry `algo.seed`, and the helper records seed
-metadata when experiment tracking is active.
+Only the algorithm-level `algo.seed` is honored; the former `training.seed`
+fallback was removed, and a config that sets `training.seed` without
+`algo.seed` fails closed. The helper records seed metadata when experiment
+tracking is active.

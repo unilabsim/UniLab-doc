@@ -22,7 +22,6 @@ Python 3.10--3.13。安装入口是 `scripts/tools/setup_isaacsim_env.sh`，默�
 
 - `UNISIM_ISAACSIM_HOME`：运行时根目录。
 - `UNISIM_ISAACSIM_PYTHON`：覆盖 worker 解释器路径。
-- 旧的 `UNILAB_ISAACSIM_HOME` 和 `UNILAB_ISAACSIM_PYTHON` 仅作为迁移回退接受。
 - `OMNI_KIT_ACCEPT_EULA=1`：保持 worker 启动非交互。
 
 预期目录为 `$UNISIM_ISAACSIM_HOME/venv/bin/python`、该 venv 下的

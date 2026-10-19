@@ -56,8 +56,9 @@ observation/action 语义。
 5. **checkpoint 语义**:learner state dict 新增 `actor_semantics` 条目
    (`schema_version`/`kind`/`builder`/`kwargs`/`obs_dim`/`action_dim`/
    `action_transform`),`load_state_dict`(训练 resume)与 play 加载
-   (`load_play_actor`)在加载权重前逐项校验,不匹配即拒绝。无该条目的旧 checkpoint
-   只允许加载到内置默认 actor。
+   (`load_play_actor`)在加载权重前逐项校验,不匹配即拒绝。无该条目或条目为
+   null 的 pre-contract checkpoint 对所有 actor 一律拒绝加载(含内置 actor;
+   #2416 收紧,无兼容窗口,唯一迁移路径是重新训练)。
 6. **CUDA graph**:自定义 actor 与 whole-cycle CUDA graph 不兼容,请求
    `use_whole_cycle_cuda_graph`(含 NVIDIA 上的默认自动开启)时 fail-closed 报错,
    不静默回退;内置 actor 行为不变。`actor_normalize_parameters=false` 仅对内置 actor
@@ -70,7 +71,8 @@ observation/action 语义。
 2. auxiliary loss 梯度到达 actor 参数、`Loss/aux_<name>` 进入 canonical metric schema;
    aux 名称集合漂移直接报错。
 3. checkpoint `actor_semantics` 在 resume 与 play 两条加载路径上 fail-closed 校验;
-   默认 actor 的 checkpoint 行为与旧格式(无语义条目)保持兼容。
+   缺失/为 null/版本不受支持的语义条目一律拒绝加载(含内置 actor,#2416),不存在
+   built-in 推断回退。
 4. 自定义 action range 下,exploration/training/deterministic/export 四处 action 与
    log-prob 语义一致(变量替换公式有行为测试)。
 5. 自定义 actor + `use_whole_cycle_cuda_graph` 显式报错;默认 actor 的 compile/graph

@@ -450,6 +450,32 @@ increment). The replay buffer is not checkpointed: a resumed run re-warms
 from an empty buffer through the usual train-start threshold, and RNG state
 is not restored.</p>
 </section>
+<section id="checkpoint-format-support-boundary">
+<h2>Checkpoint Format Support Boundary<a class="headerlink" href="#checkpoint-format-support-boundary" title="Link to this heading">¶</a></h2>
+<p>PPO/APPO resume loads UniLab-patched rsl-rl checkpoints. A supported
+checkpoint carries <code class="docutils literal notranslate"><span class="pre">unilab_logger_state</span></code> (the logger <code class="docutils literal notranslate"><span class="pre">tot_time</span></code> /
+<code class="docutils literal notranslate"><span class="pre">tot_timesteps</span></code> counters, required) and, when the task environment publishes
+versioned training state, a matching <code class="docutils literal notranslate"><span class="pre">unilab_env_training_state</span></code>. UniLab has
+written both keys since the resume-state patch (issue #441, shipped since
+v1.0.0), and new checkpoints keep writing them unchanged.</p>
+<p>Starting with the first UniLab release after 1.3.5 that includes issue #2416,
+loading fails closed:</p>
+<ul class="simple">
+<li><p>a checkpoint without a valid <code class="docutils literal notranslate"><span class="pre">unilab_logger_state</span></code> (a pre-patch or vanilla
+rsl-rl checkpoint) is rejected with an error naming the minimum supported
+format, instead of silently restarting training progress from 0;</p></li>
+<li><p>when the environment publishes training state, a checkpoint without a valid
+versioned <code class="docutils literal notranslate"><span class="pre">unilab_env_training_state</span></code> is rejected as well;</p></li>
+<li><p>an environment without exportable training state writes no placeholder key
+and requires none.</p></li>
+</ul>
+<p>There is no compatibility window, offline migration tool, or dual-write path,
+and the fail-closed behavior is not backported to a 1.3.5 patch release. To
+recover an unsupported pre-patch checkpoint, retrain with a supported UniLab
+version or resume from a checkpoint saved by one.</p>
+<p>Checkpoint files are immutable load inputs: the loader never repairs,
+rewrites, or migrates them.</p>
+</section>
 <section id="replay-a-checkpoint">
 <h2>Replay A Checkpoint<a class="headerlink" href="#replay-a-checkpoint" title="Link to this heading">¶</a></h2>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>--algo<span class="w"> </span>ppo<span class="w"> </span>--task<span class="w"> </span>go2_joystick_flat<span class="w"> </span>--sim<span class="w"> </span>mujoco<span class="w"> </span>--load-run<span class="w"> </span>-1
@@ -467,8 +493,10 @@ CLI validates <code class="docutils literal notranslate"><span class="pre">--loa
 <section id="seeds">
 <h2>Seeds<a class="headerlink" href="#seeds" title="Link to this heading">¶</a></h2>
 <p>Training seed resolution is implemented in <code class="docutils literal notranslate"><span class="pre">src/unilab/training/seed.py</span></code>.
-Algorithm configs currently carry <code class="docutils literal notranslate"><span class="pre">algo.seed</span></code>, and the helper records seed
-metadata when experiment tracking is active.</p>
+Only the algorithm-level <code class="docutils literal notranslate"><span class="pre">algo.seed</span></code> is honored; the former <code class="docutils literal notranslate"><span class="pre">training.seed</span></code>
+fallback was removed, and a config that sets <code class="docutils literal notranslate"><span class="pre">training.seed</span></code> without
+<code class="docutils literal notranslate"><span class="pre">algo.seed</span></code> fails closed. The helper records seed metadata when experiment
+tracking is active.</p>
 </section>
 </section>
 
@@ -532,6 +560,7 @@ metadata when experiment tracking is active.</p>
             <ul>
 <li><a class="reference internal" href="#">Resume And Checkpoints</a><ul>
 <li><a class="reference internal" href="#resume-training">Resume Training</a></li>
+<li><a class="reference internal" href="#checkpoint-format-support-boundary">Checkpoint Format Support Boundary</a></li>
 <li><a class="reference internal" href="#replay-a-checkpoint">Replay A Checkpoint</a></li>
 <li><a class="reference internal" href="#seeds">Seeds</a></li>
 </ul>

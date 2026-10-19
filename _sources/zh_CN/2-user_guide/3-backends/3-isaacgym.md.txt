@@ -70,7 +70,6 @@ scripts/tools/setup_isaacgym_env.sh
 `UNISIM_ISAACGYM_HOME` 覆盖安装根目录；安装包默认自动下载到
 `$UNISIM_ISAACGYM_HOME/IsaacGym_Preview_4_Package.tar.gz`，离线机器可用
 `--tarball <path>` 指定已下载的安装包。
-旧的 `UNILAB_ISAACGYM_HOME` 变量仍仅作为迁移回退接受。
 脚本幂等，重跑时跳过已完成的步骤。
 
 安装流程：专用 miniconda → python 3.8 `hsgym` conda 环境（含
