@@ -289,7 +289,10 @@ Apache-2.0 和 UniLab 的修改类别。实现 PR 分别报告：
 
 ## Evidence In Repo
 
-- Env contract: `src/unilab/base/np_env.py`
+- Env contract: the NumPy lifecycle implementation was removed by ADR-0011.
+  Its historical `np_env.py` path no longer exists and is intentionally not
+  cited as current evidence; the current contract is
+  `src/unilab/base/torch_env.py`.
 - Backend contract: `unisim.backend.base`
 - Scene config owner: `src/unilab/base/scene.py`
 - Config schema and registry: `src/unilab/structured_configs.py`,

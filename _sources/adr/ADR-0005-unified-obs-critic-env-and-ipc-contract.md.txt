@@ -82,8 +82,8 @@ UniLab 运行时 observation contract 统一为且仅为两层：
 
 - Env contract: `src/unilab/base/torch_env.py`
 - Final observation lifecycle: `TorchEnvState.final_observation`
-- RSL-RL adapter: `src/unilab/rl/vec_env.py`
-- IPC tests: `tests/ipc/`
+- RSL-RL adapter: `src/unilab/rl/adapters/rsl_rl/vec_env.py`
+- IPC tests: `tests/rl/runtime/ipc/`
 - Observation/lifecycle tests: `tests/base/test_torch_env.py`
 
 ## Related Documents

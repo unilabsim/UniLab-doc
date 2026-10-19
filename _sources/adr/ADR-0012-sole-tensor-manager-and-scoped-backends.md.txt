@@ -140,6 +140,21 @@ present in UniSim but are gated out of this runtime with actionable errors. Re-e
 requires its own capability, parity, and support-matrix evidence. Permanent adapter deletion is a
 separate maintainer decision; this ADR does not delete those adapters.
 
+> **Addendum (2026-10-18, issue #2406):** The four-backend sentence above and
+> the “Backend support claims narrow during migration” consequence below are
+> historical decision context, not the current support scope. They describe the
+> temporary gate at the original 2026-10-02 baseline and were superseded through
+> staged, evidence-backed backend reintroductions; no later ADR replaces this
+> record. The current tensor Manager scope is the nine explicit owner selections
+> `mujoco`, `mjwarp`, `genesis`, `newton`, `motrix`, `superdex`, `drake`,
+> `isaacsim`, and `isaacgym`, matching
+> `src/unilab/base/registry.py::_TENSOR_MANAGER_SUPPORTED_SIM_BACKENDS` and
+> `src/unilab/cli.py::SUPPORTED_SIMS`; `_SHELVED_SIM_BACKENDS` is empty. Drake
+> and the external-worker Isaac backends remain explicit selections and are
+> excluded from implicit fallback ordering. Backend-specific capability support
+> remains defined by the generated support matrix rather than by a global shelve
+> list.
+
 ### Single-GPU default device behavior
 
 A single-GPU MJWarp run does not require `CUDA_VISIBLE_DEVICES`. It uses the current default CUDA
@@ -199,7 +214,14 @@ useful for launcher/debug/MPS isolation.
 - Tensor state store/readiness consumer:
   `src/unilab/tasks/motion_tracking/common/tensor_state_store.py`
 - Public backend contract: `unisim.backend.base.SimBackend`
-- Scoped adapters: `unisim.backend.mujoco`, `unisim.backend.mjwarp`, `unisim.backend.genesis`, `unisim.backend.newton`
+- Current tensor Manager backend scope:
+  `src/unilab/base/registry.py` (`_TENSOR_MANAGER_SUPPORTED_SIM_BACKENDS`,
+  `_SHELVED_SIM_BACKENDS`, `_DEFAULT_SIM_BACKEND_ORDER`) and
+  `src/unilab/cli.py` (`SUPPORTED_SIMS`)
+- Current adapters: `unisim.backend.mujoco`, `unisim.backend.mjwarp`,
+  `unisim.backend.genesis`, `unisim.backend.newton`, `unisim.backend.motrix`,
+  `unisim.backend.superdex`, `unisim.backend.drake`,
+  `unisim.backend.isaacsim`, `unisim.backend.isaacgym`
 - Backend-name readiness issue: #1790
 - Current Manager tensor migration: #1703
 - Delivery roadmap and performance budget: #1811

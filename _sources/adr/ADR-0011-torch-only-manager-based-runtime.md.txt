@@ -196,8 +196,8 @@ superseded ADR-0006 may remain.
 | Manager execution and task semantics | `src/unilab/envs/manager_based_rl_env.py`, `tests/envs/test_manager_based_rl_env.py`, task parity suites |
 | Backend capability and tensor execution | `unisim.backend.base.SimBackend`, backend contract suites, generated support matrix |
 | Host-bridge packed I/O | UniSim `HostBridgeTransferPlan`, transfer-count/byte tests, M6 benchmark successors |
-| Registry and spawn construction | `src/unilab/base/env_factory.py`, `tests/base/test_registry.py`, `tests/ipc/` |
-| Direct PPO / RSL-RL boundary | `src/unilab/rl/vec_env.py`, `tests/algos/test_rsl_rl_runner.py` |
+| Registry and spawn construction | `src/unilab/base/env_factory.py`, `tests/base/test_registry.py`, `tests/rl/runtime/ipc/` |
+| Direct PPO / RSL-RL boundary | `src/unilab/rl/adapters/rsl_rl/vec_env.py`, `tests/algos/test_rsl_rl_runner.py` |
 | Off-policy/APPO/IPC boundary | `unilab_rl` public protocol and process/device tests; no UniLab import |
 | NaN guard, checkpoint, playback | `src/unilab/training/`, `src/unilab/visualization/`, focused lifecycle suites |
 | Benchmark and timing schema | `scripts/benchmark/`, M11 production guide, runtime-manifest tests |
@@ -229,7 +229,10 @@ superseded ADR-0006 may remain.
 - Reusable tensor components: `src/unilab/tasks/motion_tracking/common/tensor_runtime.py`,
   `src/unilab/tasks/motion_tracking/common/tensor_state_store.py`
 - General Manager runtime to migrate: `src/unilab/envs/manager_based_rl_env.py`
-- Legacy runtime to remove: `src/unilab/base/np_env.py`
+- Legacy runtime: removed. The historical path
+  `src/unilab/base/np_env.py` no longer exists and is intentionally not cited
+  as current evidence; the current lifecycle contract is
+  `src/unilab/base/torch_env.py`.
 - Registry/process boundaries: `src/unilab/base/env_factory.py`,
   `src/unilab/base/process_device.py`
 - Public backend boundary: `unisim.backend.base.SimBackend`

@@ -61,11 +61,17 @@ UniLab 同时支持多种算法入口和两种仿真后端。没有统一 runtim
 - Backend 抽象: `unisim.backend.base`
 - Env contract: `src/unilab/base/torch_env.py`
 - Registry 入口: `src/unilab/base/registry.py`
-- Async runner: `src/unilab/ipc/async_runner.py`
-- PPO distributed adapter: `src/unilab/ipc/dp_launcher.py`,
-  `src/unilab/rl/vec_env.py`, `src/unilab/scripts/train_rsl_rl.py`
-- PPO distributed tests: `tests/ipc/test_dp_launcher.py`,
-  `tests/algos/test_rsl_rl_ppo.py`, `tests/scripts/test_train_script_configs.py`
+- Async runner: `src/unilab/rl/runtime/async_runner.py`
+- PPO distributed adapter:
+  `src/unilab/rl/runtime/distributed/launcher.py`,
+  `src/unilab/rl/adapters/rsl_rl/distributed.py`,
+  `src/unilab/rl/adapters/rsl_rl/vec_env.py`,
+  `src/unilab/scripts/train_rsl_rl.py`
+- PPO distributed tests: `tests/rl/runtime/distributed/test_launcher.py`,
+  `tests/rl/runtime/distributed/test_affinity.py`,
+  historical `tests/algos/test_rsl_rl_runner.py` (still the current slow
+  integration test; migration to `tests/rl/` is not part of ADR-0016),
+  `tests/scripts/test_train_script_configs.py`
 
 ## Related Documents
 

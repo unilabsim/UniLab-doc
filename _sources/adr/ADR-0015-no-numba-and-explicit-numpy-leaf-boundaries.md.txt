@@ -133,9 +133,13 @@ metadata branching, terrain regeneration, or host fallback dispatch.
 
 ## Evidence In Repo
 
-- `src/unilab/tasks/motion_tracking/common/kernels.py`
-- `src/unilab/tasks/motion_tracking/common/manager_terms.py`
-- `src/unilab/base/cpu_runtime.py`
+- Historical Numba kernels: removed by this decision; the path
+  `src/unilab/tasks/motion_tracking/common/kernels.py` no longer exists and is
+  intentionally not cited as current evidence.
+- Current NumPy leaf boundaries: `src/unilab/tasks/motion_tracking/common/manager_terms.py`,
+  `src/unilab/tasks/motion_tracking/common/motion_loader.py`,
+  `src/unilab/tasks/motion_tracking/common/tensor_sampler.py`, and
+  `src/unilab/base/cpu_runtime.py`
 - `src/unilab/envs/manager_based_rl_env.py`
 - `src/unilab/managers/`
 - `pyproject.toml`

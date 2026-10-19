@@ -68,12 +68,12 @@ thread count separately.
 - `src/unilab/conf/ppo/task/go2_joystick_flat/superdex.yaml` selects automatic
   native workers for the SuperDex owner.
 - `src/unilab/scripts/train_offpolicy.py` and
-  `src/unilab/scripts/train_rsl_rl.py` obtain rank-owned CPU ids from UniRL
-  before environment construction.
-- `tests/algos/test_offpolicy_double_buffer_runner.py` verifies that each rank
+  `src/unilab/scripts/train_rsl_rl.py` obtain rank-owned CPU ids before
+  environment construction.
+- `tests/rl/runtime/distributed/test_affinity.py` verifies that each rank
   receives complete physical-core groups, including SMT siblings.
-- `tests/ipc/test_dp_launcher.py` verifies the corresponding resolver contract
-  through the UniRL dependency.
+- `src/unilab/rl/runtime/distributed/affinity.py` owns the corresponding
+  resolver contract.
 
 ## Related Documents
 

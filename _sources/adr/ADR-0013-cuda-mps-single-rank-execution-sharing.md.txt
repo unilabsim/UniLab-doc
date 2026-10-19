@@ -73,7 +73,8 @@ fail closed，也没有可审计的 runtime evidence。
 - `src/unilab/conf/sac/config.yaml`
 - `src/unilab/conf/flashsac/config.yaml`
 - `tests/training/test_cuda_process_sharing.py`
-- `tests/algos/test_offpolicy_double_buffer_runner.py`
+- `tests/rl/runtime/offpolicy/test_runner_unit.py`,
+  `tests/rl/runtime/distributed/test_affinity.py`
 - `docs/sphinx/source/en/2-user_guide/1-training/7-tensor_runtime_production.md`
 - `docs/sphinx/source/zh_CN/2-user_guide/1-training/7-tensor_runtime_production.md`
 
