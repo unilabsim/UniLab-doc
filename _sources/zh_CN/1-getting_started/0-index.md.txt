@@ -35,6 +35,12 @@
 安装与首次运行的常见问题：SOCKS 代理支持、可选 native extension 诊断、conda 代理配置、视频导出等。
 :::
 
+:::{grid-item-card} 从 1.4 迁移到 1.5
+:link: 6-migration_1_4_to_1_5
+:link-type: doc
+reset 契约恢复为 `env_ids` 行索引形态、deprecation 时间线，以及 mask-preserving term 的迁移方法。
+:::
+
 ::::
 
 完成第一次运行后，日常训练选项请参阅
@@ -49,4 +55,5 @@
 3-evaluation_and_playback
 4-project_structure
 5-faq
+6-migration_1_4_to_1_5
 ```

@@ -38,6 +38,13 @@ Install and first-run issues: SOCKS proxy support, optional native extension
 diagnostics, conda proxy settings, and video export.
 :::
 
+:::{grid-item-card} Migrating from 1.4 to 1.5
+:link: 6-migration_1_4_to_1_5
+:link-type: doc
+Reset contract back to `env_ids`, deprecation timeline, and porting
+mask-preserving terms.
+:::
+
 ::::
 
 For daily training options after the first run, use
@@ -52,4 +59,5 @@ For daily training options after the first run, use
 3-evaluation_and_playback
 4-project_structure
 5-faq
+6-migration_1_4_to_1_5
 ```

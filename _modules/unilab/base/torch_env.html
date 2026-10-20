@@ -226,6 +226,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../en/1-getting_started/3-evaluation_and_playback.html">Evaluation and Playback</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../en/1-getting_started/4-project_structure.html">Project Structure</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../en/1-getting_started/5-faq.html">FAQ</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../en/1-getting_started/6-migration_1_4_to_1_5.html">Migrating from UniLab 1.4 to 1.5</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../en/2-user_guide/0-index.html">User Guide</a><input aria-label="Toggle navigation of User Guide" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -361,6 +362,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../zh_CN/1-getting_started/3-evaluation_and_playback.html">评估与回放</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../zh_CN/1-getting_started/4-project_structure.html">项目结构</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../zh_CN/1-getting_started/5-faq.html">常见问题</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../zh_CN/1-getting_started/6-migration_1_4_to_1_5.html">从 UniLab 1.4 迁移到 1.5</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../zh_CN/2-user_guide/0-index.html">用户指南</a><input aria-label="Toggle navigation of 用户指南" class="toctree-checkbox" id="toctree-checkbox-22" name="toctree-checkbox-22" role="switch" type="checkbox"/><label for="toctree-checkbox-22"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -609,7 +611,7 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Backend-agnostic Torch environment lifecycle.</span>
 
 <span class="sd">    Concrete owners implement action transformation, tensor state update, and</span>
-<span class="sd">    fixed-width mask reset. The base deliberately rejects NumPy input and never</span>
+<span class="sd">    selected-row (``env_ids``) reset. The base deliberately rejects NumPy input and never</span>
 <span class="sd">    sanitizes non-finite tensors: invalid actions, controls, observations, and</span>
 <span class="sd">    rewards fail closed.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -763,9 +765,14 @@
 <div class="viewcode-block" id="TorchEnv.reset">
 <a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.reset">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Reset the true rows of a full-batch mask; ``None`` resets all rows.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Reset the selected environment rows; ``None`` resets all rows.</span>
+
+<span class="sd">        The public selector follows the IsaacLab/mjlab ``env_ids`` row-index</span>
+<span class="sd">        form. A fixed-width bool mask is the deprecated form: it is accepted</span>
+<span class="sd">        for one release with a ``DeprecationWarning`` (removed in v1.6).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> must define a tensor reset lifecycle&quot;</span><span class="p">)</span></div>
 
 
@@ -1028,10 +1035,12 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_truncated_scratch</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_reset_done_envs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run the fixed-shape mask-driven autoreset lifecycle.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run the selected-row autoreset lifecycle.</span>
 
-<span class="sd">        Eager execution retains the semantic no-done gate; backends and managers</span>
-<span class="sd">        own mask semantics and no reset env-id row carrier is materialized.</span>
+<span class="sd">        Eager execution retains the semantic no-done gate. The public reset</span>
+<span class="sd">        contract speaks ``env_ids``; this boundary materializes the done rows</span>
+<span class="sd">        once, and the concrete env owns the ids→mask conversion at the backend</span>
+<span class="sd">        transaction edge (backend inputs stay fixed-width masks).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="n">reset_total_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
@@ -1057,7 +1066,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_reset_active</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_scattered_reset_obs</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">new_obs</span><span class="p">,</span> <span class="n">reset_info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">done</span><span class="p">)</span>
+            <span class="n">new_obs</span><span class="p">,</span> <span class="n">reset_info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">done</span><span class="p">,</span> <span class="n">as_tuple</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">(),</span>
+            <span class="p">)</span>
         <span class="k">finally</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_reset_active</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_reset_call_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">reset_started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>

@@ -226,6 +226,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../../en/1-getting_started/3-evaluation_and_playback.html">Evaluation and Playback</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../en/1-getting_started/4-project_structure.html">Project Structure</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../en/1-getting_started/5-faq.html">FAQ</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../en/1-getting_started/6-migration_1_4_to_1_5.html">Migrating from UniLab 1.4 to 1.5</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../../en/2-user_guide/0-index.html">User Guide</a><input aria-label="Toggle navigation of User Guide" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -361,6 +362,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../../zh_CN/1-getting_started/3-evaluation_and_playback.html">评估与回放</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../zh_CN/1-getting_started/4-project_structure.html">项目结构</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../../zh_CN/1-getting_started/5-faq.html">常见问题</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../zh_CN/1-getting_started/6-migration_1_4_to_1_5.html">从 UniLab 1.4 迁移到 1.5</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../../zh_CN/2-user_guide/0-index.html">用户指南</a><input aria-label="Toggle navigation of 用户指南" class="toctree-checkbox" id="toctree-checkbox-22" name="toctree-checkbox-22" role="switch" type="checkbox"/><label for="toctree-checkbox-22"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -537,6 +539,7 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.reset_selectors</span><span class="w"> </span><span class="kn">import</span> <span class="n">ResetMaskBuffer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.managers.event_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">EventTermCfg</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.managers.manager_base</span><span class="w"> </span><span class="kn">import</span> <span class="n">ManagerTermBase</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.managers.rng</span><span class="w"> </span><span class="kn">import</span> <span class="n">ManagerRng</span>
@@ -909,24 +912,15 @@
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">_ResetRandomizationTerm</span><span class="p">(</span><span class="n">ManagerTermBase</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Reset DR base delegating the mask reset to the packed transaction.</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Reset DR base whose ``__call__`` stages rows into the packed transaction.</span>
 
 <span class="sd">    The environment owns the packed reset transaction</span>
-<span class="sd">    (``ResetStateTransaction.scoped_device_event_tensor``); ``reset`` resolves</span>
-<span class="sd">    the selected rows from the fixed-width mask and reuses the term&#39;s</span>
-<span class="sd">    ``__call__`` sampling and facade staging, so the whole lifecycle composes</span>
-<span class="sd">    into the same exactly-once commit. Backends missing a field&#39;s reset</span>
-<span class="sd">    capability still fail closed at construction binding.</span>
+<span class="sd">    (``ResetStateTransaction.scoped_device_event_tensor``); the event manager</span>
+<span class="sd">    dispatches reset terms as ``term(env, env_ids, **params)``, so each term&#39;s</span>
+<span class="sd">    ``__call__`` sampling and facade staging compose into the same</span>
+<span class="sd">    exactly-once commit. Backends missing a field&#39;s reset capability still</span>
+<span class="sd">    fail closed at construction binding.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span>
-        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">rows</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">as_tuple</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
-        <span class="bp">self</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">_ModelFieldRandomizer</span><span class="p">(</span><span class="n">_ResetRandomizationTerm</span><span class="p">):</span>
@@ -1316,8 +1310,6 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">PdGains</span><span class="p">(</span><span class="n">_ResetRandomizationTerm</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Pinned-mjlab-compatible PD gain randomization on UniLab reset payloads.&quot;&quot;&quot;</span>
 
-    <span class="n">mask_reset_supported</span> <span class="o">=</span> <span class="kc">True</span>
-
 <div class="viewcode-block" id="PdGains.__init__">
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.PdGains.html#unilab.envs.mdp.events.PdGains.__init__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cfg</span><span class="p">:</span> <span class="n">EventTermCfg</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">):</span>
@@ -1373,50 +1365,6 @@
                 <span class="n">asset_cfg</span><span class="o">.</span><span class="n">actuator_ids</span><span class="p">,</span>
                 <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;pd_gains&quot;</span><span class="p">,</span>
             <span class="p">)</span>
-        <span class="p">)</span></div>
-
-
-<div class="viewcode-block" id="PdGains.reset">
-<a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.PdGains.html#unilab.envs.mdp.events.PdGains.reset">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span>
-        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample full-width final gains and commit only masked rows.&quot;&quot;&quot;</span>
-        <span class="k">del</span> <span class="n">kwargs</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">(),</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span><span class="p">))</span>
-        <span class="n">kp</span> <span class="o">=</span> <span class="n">_sample_gain_range</span><span class="p">(</span>
-            <span class="n">_require_rng</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;pd_gains&quot;</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kp_range</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_distribution</span>
-        <span class="p">)</span>
-        <span class="n">kd</span> <span class="o">=</span> <span class="n">_sample_gain_range</span><span class="p">(</span>
-            <span class="n">_require_rng</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;pd_gains&quot;</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kd_range</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_distribution</span>
-        <span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_operation</span> <span class="o">==</span> <span class="s2">&quot;scale&quot;</span><span class="p">:</span>
-            <span class="n">default_kp</span> <span class="o">=</span> <span class="n">_selected_reset_defaults</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_default_kp</span><span class="p">,</span>
-                <span class="n">ids</span><span class="p">,</span>
-                <span class="n">canonical_ndim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-                <span class="n">device</span><span class="o">=</span><span class="n">kp</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="n">default_kd</span> <span class="o">=</span> <span class="n">_selected_reset_defaults</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_default_kd</span><span class="p">,</span>
-                <span class="n">ids</span><span class="p">,</span>
-                <span class="n">canonical_ndim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-                <span class="n">device</span><span class="o">=</span><span class="n">kd</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="n">kp</span> <span class="o">=</span> <span class="n">kp</span> <span class="o">*</span> <span class="n">default_kp</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">kp</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">kp</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-            <span class="n">kd</span> <span class="o">=</span> <span class="n">kd</span> <span class="o">*</span> <span class="n">default_kd</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">kd</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">kd</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">kp</span> <span class="o">=</span> <span class="n">kp</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
-        <span class="n">kd</span> <span class="o">=</span> <span class="n">kd</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">write_actuator_gains_tensor_mask</span><span class="p">(</span>
-            <span class="n">reset_mask</span><span class="p">,</span>
-            <span class="n">kp</span><span class="p">,</span>
-            <span class="n">kd</span><span class="p">,</span>
-            <span class="n">actuator_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ids</span><span class="p">,</span>
-            <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;pd_gains&quot;</span><span class="p">,</span>
         <span class="p">)</span></div>
 
 
@@ -2363,29 +2311,20 @@
 
 <div class="viewcode-block" id="ApplyBodyImpulse.reset">
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.ApplyBodyImpulse.html#unilab.envs.mdp.events.ApplyBodyImpulse.reset">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">was_active</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="o">.</span><span class="n">any</span><span class="p">()</span>
-        <span class="n">forces</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_forces</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
-        <span class="n">torques</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_torques</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
-        <span class="n">keep_mask</span> <span class="o">=</span> <span class="o">~</span><span class="n">reset_mask</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_active</span> <span class="o">&amp;</span> <span class="n">keep_mask</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_active_forces</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_active_forces</span> <span class="o">*</span> <span class="n">keep_mask</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">])</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_active_torques</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_active_torques</span> <span class="o">*</span> <span class="n">keep_mask</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">])</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_time_remaining</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_time_remaining</span> <span class="o">*</span> <span class="n">keep_mask</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_interval_time_left</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
-                <span class="n">reset_mask</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_sample_cooldown</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">),</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_interval_time_left</span><span class="p">,</span>
-            <span class="p">)</span>
-        <span class="p">)</span>
-        <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">was_active</span><span class="p">):</span>
-            <span class="n">zeros</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_active_forces</span><span class="p">)</span>
-            <span class="n">full_forces</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">zeros</span><span class="p">,</span> <span class="n">forces</span><span class="p">)</span>
-            <span class="n">full_torques</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">zeros</span><span class="p">,</span> <span class="n">torques</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Clear transient impulse state for the selected envs (state-clearing hook).&quot;&quot;&quot;</span>
+        <span class="n">was_active</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="o">.</span><span class="n">any</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_active_forces</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_active_torques</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_time_remaining</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_interval_time_left</span><span class="p">[</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_cooldown</span><span class="p">(</span><span class="n">env_ids</span><span class="o">.</span><span class="n">numel</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">was_active</span><span class="p">:</span>
+            <span class="c1"># Reset rows now stage zeros, which actively clears persistent</span>
+            <span class="c1"># channels; other rows re-stage their unchanged wrench.</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">apply_body_wrench_to_sim</span><span class="p">(</span>
-                <span class="n">full_forces</span><span class="p">,</span>
-                <span class="n">full_torques</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_uses_torque</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_active_forces</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_active_torques</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_uses_torque</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_backend_body_ids</span><span class="p">,</span>
                 <span class="n">env_ids</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                 <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;apply_body_impulse&quot;</span><span class="p">,</span>
@@ -2455,15 +2394,16 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; asset_cfg must select at least one joint&quot;</span>
             <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_joint_ids</span> <span class="o">=</span> <span class="n">joint_ids</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_joint_ids</span> <span class="o">=</span> <span class="n">joint_ids</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_mask_buffer</span> <span class="o">=</span> <span class="n">ResetMaskBuffer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">device</span><span class="p">))</span></div>
 
 
-<div class="viewcode-block" id="RandomizeEncoderBias.reset">
-<a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.RandomizeEncoderBias.html#unilab.envs.mdp.events.RandomizeEncoderBias.reset">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span>
+<div class="viewcode-block" id="RandomizeEncoderBias.__call__">
+<a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.RandomizeEncoderBias.html#unilab.envs.mdp.events.RandomizeEncoderBias.__call__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span>
-        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">bias_range</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span>
         <span class="n">asset_cfg</span><span class="p">:</span> <span class="n">SceneEntityCfg</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -2474,6 +2414,7 @@
             <span class="n">rng_owner</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;rng&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">rng_owner</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Tensor encoder-bias reset requires the Manager RNG&quot;</span><span class="p">)</span>
+            <span class="n">ids</span> <span class="o">=</span> <span class="n">resolve_env_ids</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">)</span>
             <span class="n">lower</span><span class="p">,</span> <span class="n">upper</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_range</span>
             <span class="n">sampled</span> <span class="o">=</span> <span class="n">rng_owner</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span>
                 <span class="n">lower</span><span class="p">,</span>
@@ -2481,6 +2422,7 @@
                 <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">columns</span><span class="o">.</span><span class="n">numel</span><span class="p">()),</span>
                 <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
             <span class="p">)</span>
+            <span class="n">reset_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_mask_buffer</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">update_encoder_bias_tensor_mask</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">columns</span><span class="p">,</span> <span class="n">sampled</span><span class="p">)</span>
             <span class="k">return</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
@@ -2495,22 +2437,20 @@
 
 <div class="viewcode-block" id="reset_scene_to_default">
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.reset_scene_to_default.html#unilab.envs.mdp.events.reset_scene_to_default">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">reset_scene_to_default</span><span class="p">(</span><span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">reset_scene_to_default</span><span class="p">(</span><span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Reset all materialized scene entities to backend default qpos/qvel.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">env</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">entities</span><span class="p">:</span>
         <span class="k">return</span>
+    <span class="n">reset_mask</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">event_term_mask_buffer</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
     <span class="n">env</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">reset_to_default</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;reset_scene_to_default&quot;</span><span class="p">)</span></div>
 
-
-
-<span class="nb">setattr</span><span class="p">(</span><span class="n">reset_scene_to_default</span><span class="p">,</span> <span class="s2">&quot;reset&quot;</span><span class="p">,</span> <span class="n">reset_scene_to_default</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="reset_root_state_uniform">
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.reset_root_state_uniform.html#unilab.envs.mdp.events.reset_root_state_uniform">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">reset_root_state_uniform</span><span class="p">(</span>
     <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span>
-    <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">pose_range</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]],</span>
     <span class="n">velocity_range</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">asset_cfg</span><span class="p">:</span> <span class="n">SceneEntityCfg</span> <span class="o">=</span> <span class="n">_DEFAULT_ASSET_CFG</span><span class="p">,</span>
@@ -2522,8 +2462,7 @@
 <span class="sd">    the entity&#39;s cached floating-root capability instead of falling back.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">asset</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="s2">&quot;Entity&quot;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">scene</span><span class="p">[</span><span class="n">asset_cfg</span><span class="o">.</span><span class="n">name</span><span class="p">])</span>
-    <span class="k">if</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,)</span> <span class="ow">or</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;reset_root_state_uniform requires a full-width bool reset mask&quot;</span><span class="p">)</span>
+    <span class="n">reset_mask</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">event_term_mask_buffer</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">default_root_state</span> <span class="o">=</span> <span class="n">asset</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">default_root_state</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">device</span><span class="p">))</span>
         <span class="n">root_states</span> <span class="o">=</span> <span class="n">default_root_state</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
@@ -2553,9 +2492,6 @@
     <span class="n">root_states</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">:</span><span class="mi">13</span><span class="p">]</span> <span class="o">=</span> <span class="n">root_states</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">:</span><span class="mi">13</span><span class="p">]</span> <span class="o">+</span> <span class="n">velocity_samples</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">root_states</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
     <span class="n">asset</span><span class="o">.</span><span class="n">write_root_state_tensor_to_sim</span><span class="p">(</span><span class="n">root_states</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">)</span></div>
 
-
-
-<span class="nb">setattr</span><span class="p">(</span><span class="n">reset_root_state_uniform</span><span class="p">,</span> <span class="s2">&quot;reset&quot;</span><span class="p">,</span> <span class="n">reset_root_state_uniform</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_se3_bounds</span><span class="p">(</span><span class="n">range_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
@@ -2657,7 +2593,7 @@
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.reset_root_state_uniform_fused.html#unilab.envs.mdp.events.reset_root_state_uniform_fused">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">reset_root_state_uniform_fused</span><span class="p">(</span>
     <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span>
-    <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">pose_range</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]],</span>
     <span class="n">velocity_range</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">asset_cfg</span><span class="p">:</span> <span class="n">SceneEntityCfg</span> <span class="o">=</span> <span class="n">_DEFAULT_ASSET_CFG</span><span class="p">,</span>
@@ -2667,10 +2603,9 @@
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="s2">&quot;reset_root_state_uniform_fused requires env.rng on a CUDA Manager tensor runtime&quot;</span>
         <span class="p">)</span>
-    <span class="k">if</span> <span class="n">reset_mask</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">device</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;reset_root_state_uniform_fused mask must live on env.device&quot;</span><span class="p">)</span>
-    <span class="n">asset</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="s2">&quot;Entity&quot;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">scene</span><span class="p">[</span><span class="n">asset_cfg</span><span class="o">.</span><span class="n">name</span><span class="p">])</span>
     <span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">reset_mask</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">event_term_mask_buffer</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+    <span class="n">asset</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="s2">&quot;Entity&quot;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">scene</span><span class="p">[</span><span class="n">asset_cfg</span><span class="o">.</span><span class="n">name</span><span class="p">])</span>
     <span class="n">asset</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">default_root_state</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
     <span class="n">num_envs</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">num_envs</span>
     <span class="n">bounds_key</span> <span class="o">=</span> <span class="p">(</span>
@@ -2709,21 +2644,15 @@
 
 
 
-<span class="nb">setattr</span><span class="p">(</span><span class="n">reset_root_state_uniform_fused</span><span class="p">,</span> <span class="s2">&quot;reset&quot;</span><span class="p">,</span> <span class="n">reset_root_state_uniform_fused</span><span class="p">)</span>
-
-
 <div class="viewcode-block" id="skip_scene_reset">
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.skip_scene_reset.html#unilab.envs.mdp.events.skip_scene_reset">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">skip_scene_reset</span><span class="p">(</span>
     <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span>
-    <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Mask-preserving no-op hook for the canonical MJWarp reset scene term.&quot;&quot;&quot;</span>
-    <span class="k">del</span> <span class="n">env</span><span class="p">,</span> <span class="n">reset_mask</span></div>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;No-op reset hook for the canonical MJWarp reset scene term.&quot;&quot;&quot;</span>
+    <span class="k">del</span> <span class="n">env</span><span class="p">,</span> <span class="n">env_ids</span></div>
 
-
-
-<span class="nb">setattr</span><span class="p">(</span><span class="n">skip_scene_reset</span><span class="p">,</span> <span class="s2">&quot;reset&quot;</span><span class="p">,</span> <span class="n">skip_scene_reset</span><span class="p">)</span>
 
 
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>

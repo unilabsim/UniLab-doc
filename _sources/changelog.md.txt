@@ -13,6 +13,70 @@ UniLab 遵循[语义化版本](https://semver.org/)。本共享页面以中英�
 PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完整提交历史请参阅
 [UniLab 仓库](https://github.com/unilabsim/UniLab)。
 
+## Unreleased / 未发布
+
+### Breaking changes / 破坏性变更
+
+- The public reset contract speaks IsaacLab/mjlab-style `env_ids` row indices
+  again: `TorchEnv.reset`, `ManagerBase.reset` and all manager/term reset
+  boundaries, `EventManager.apply(mode="reset", env_ids=...)`, reset owners,
+  and the recorder pre/post-reset hooks take a one-dimensional integer tensor
+  (or `None` for every row). The v1.4 fixed-width bool mask form is deprecated:
+  a bool tensor passed **positionally** still works for one release with a
+  `DeprecationWarning` and will be removed in v1.6. The keyword form is **not**
+  covered by the deprecation window — `reset(reset_mask=...)` now raises
+  `TypeError`; rename the argument to `env_ids` and pass row indices
+  ([#2460](https://github.com/Motphys/UniLab/issues/2460)).
+  公共 reset 契约恢复 IsaacLab/mjlab 风格的 `env_ids` 行索引形态：
+  `TorchEnv.reset`、`ManagerBase.reset` 及所有 manager/term reset 边界、
+  `EventManager.apply(mode="reset", env_ids=...)`、reset owner 与 recorder
+  的 pre/post-reset 钩子均接收一维整数张量（`None` 表示全部行）。v1.4 的
+  定宽 bool mask 形态已 deprecated：**位置传参**的 bool 张量仍可使用一个
+  版本并触发 `DeprecationWarning`，将于 v1.6 移除。关键字形式**不在**
+  兼容窗口内——`reset(reset_mask=...)` 现在直接抛 `TypeError`；请将参数名
+  改为 `env_ids` 并传行索引（#2460）。
+  迁移步骤与逐类 term 的 before/after 示例见迁移指南
+  {doc}`/en/1-getting_started/6-migration_1_4_to_1_5` /
+  {doc}`/zh_CN/1-getting_started/6-migration_1_4_to_1_5`。
+
+### Added / 新增
+
+- Manager-owned observation history and delay are restored:
+  `ObservationTermCfg.history_length > 0` and `delay_*` construct and reset
+  again, with the v1.3.4 semantics (oldest-to-newest flattening, first-frame
+  and post-reset backfill, noise/clip/scale before history). Partial resets
+  backfill the reset rows and peek without advancing other rows' history,
+  delay schedule, or lag RNG. `CircularBuffer` and `DelayBuffer` are now
+  exported publicly from `unilab.managers` so downstream temporal owners no
+  longer import the private `unilab.managers._buffers` package
+  ([#2462](https://github.com/Motphys/UniLab/issues/2462)).
+  恢复 Manager 持有的观测 history/delay：`ObservationTermCfg.history_length > 0`
+  与 `delay_*` 重新可构造、可 reset，语义与 v1.3.4 一致（oldest→newest 展开、
+  首帧与 reset 后 backfill、noise/clip/scale 先于 history）。部分 reset 只对
+  reset 行做 backfill 并 peek，不推进其他行的 history、delay 日程或 lag RNG。
+  `CircularBuffer` 与 `DelayBuffer` 现从 `unilab.managers` 公开导出，下游
+  temporal owner 不再需要 import 私有包 `unilab.managers._buffers`（#2462）。
+
+### Changed / 变更
+
+- The internal `env_ids` → bool mask adaptation layer now scatters into
+  owner-held reusable buffers (`unilab.base.reset_selectors.ResetMaskBuffer`)
+  instead of allocating a fresh `num_envs` bool tensor on every reset/event
+  term call: the RL env reset entry, the event/observation/command managers,
+  and per-term reset owners each hold their own scratch buffer, so the hot
+  reset path no longer pays a per-call allocation. Public contracts and
+  deprecated bool-mask semantics (positional-only `DeprecationWarning`
+  passthrough, never touching a buffer) are unchanged; `reset_env_ids_mask`
+  keeps its allocating form for fixtures and external callers
+  ([#2461](https://github.com/Motphys/UniLab/issues/2461)).
+  内部 `env_ids` → bool mask 适配层改为 scatter 进 owner 持有的可复用
+  buffer（`unilab.base.reset_selectors.ResetMaskBuffer`），不再在每次
+  reset/event term 调用时新分配 `num_envs` 大小的 bool 张量：RL env reset
+  入口、event/observation/command manager 及各 term 的 reset owner 分别持有
+  各自的 scratch buffer，热路径上消除了逐次分配。公开契约与 deprecated
+  bool-mask 语义（仅位置传参、`DeprecationWarning` 透传、不经 buffer）不变；
+  `reset_env_ids_mask` 保留逐次分配形态供 fixture 与外部调用方使用（#2461）。
+
 ## 1.4.0 (2026-10-20)
 
 ### Breaking changes / 破坏性变更
