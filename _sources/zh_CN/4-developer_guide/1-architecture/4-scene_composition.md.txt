@@ -54,7 +54,7 @@ materializer。
 ## MuJoCo Materializer 流水线
 
 对于程序化地形，MuJoCo backend 调用 `unisim.backend.mujoco.xml` 中的
-`materialize_mujoco_hfield_attached_scene(...)`。冷路径步骤为：
+`materialize_hfield_attached_scene(...)`。冷路径步骤为：
 
 1. `TerrainGenerator(terrain_cfg).write_png(...)` 生成与 backend 无关的高度场
    PNG。

@@ -105,7 +105,7 @@ uses a post-build offscreen camera. The owner sets
   (`DISPLAY`/`WAYLAND_DISPLAY`), otherwise falls back to offscreen
   **recording**.
 - `interactive`: always opens the viewer; on a headless host
-  `init_renderer` fails with an actionable error. Closing the viewer window
+  `bind_renderer` fails with an actionable error. Closing the viewer window
   ends playback cleanly (the backend raises `RenderClosedError`, which the
   play loop treats as a normal exit).
 - `record`: headless offscreen capture, requires finite

@@ -11,7 +11,7 @@ Manager-Based event term 是 UniLab 唯一的 DR lifecycle。任务 provider 协
 - **Startup：** Manager 构造完成后，backend 先 materialize，event term 再采样
   一个 full-width per-environment 表，并在 read-plan 绑定、第一次 reset 或 step
   之前复用与 reset DR 相同的 backend-owned packed reset 事务
-  （`SimBackend.begin_packed_reset()`）提交。提交成功后，packed composer 将
+  （`SimBackend.bind_packed_reset()`）提交。提交成功后，packed composer 将
   已提交行的 staged 字段提升为其持久 reset baseline，因此后续 selected-row
   reset 会保留未写入的 startup 值。Startup 是显式 opt-in，用连续分布覆盖换取
   steady-state reset 路径中的 full-model derived-constant refresh。
@@ -36,7 +36,7 @@ Backend 差异是显式 capability，不是 task-side 分支：
   平面（CUDA payload）；空集合 fail closed
 - fixed-variant layout
 - per-environment playback 支持
-- `TensorLifecycleCapabilities.packed_reset` 与 `SimBackend.begin_packed_reset()`：
+- `TensorLifecycleCapabilities.packed_reset` 与 `SimBackend.bind_packed_reset()`：
   Manager-Based reset 与 startup DR 生命周期的必需 capability；缺失声明会在 env
   构造时 fail closed。
 

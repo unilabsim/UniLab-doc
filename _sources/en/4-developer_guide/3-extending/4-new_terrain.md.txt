@@ -15,8 +15,8 @@ materialization out of `step()`, `reset()`, and hot domain-randomization loops.
 4. Expose terrain to scenes through `SceneCfg.terrain` and `TerrainSceneCfg` in
    `src/unilab/base/scene.py`.
 5. If an env needs height observations, create the backend scanner on init via
-   `create_hfield_scanner(...)`; read samples through the returned
-   `BackendHeightScanner`.
+   `bind_height_scanner(...)`; read samples through the returned
+   `HeightScanner`.
 6. Keep terrain spawn, curriculum, and observation dimensions reflected in the
    owning env config and `obs_groups_spec`.
 

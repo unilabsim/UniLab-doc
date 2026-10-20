@@ -28,7 +28,7 @@ Newton/Warp follows standard CUDA device semantics, so single-GPU runs do not
 need `CUDA_VISIBLE_DEVICES` pinning. In multi-GPU topology, the rank-local
 device reaches spawn collectors as a `newton_device="cuda:N"` override, and
 collector process binding is injection-based; UniLab injects
-`bind_backend_process_device_for_backend`, which covers MJWarp and Newton.
+`bind_backend_process_device`, which covers MJWarp and Newton.
 
 ## Installation
 

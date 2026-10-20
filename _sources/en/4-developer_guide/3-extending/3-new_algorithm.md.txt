@@ -42,7 +42,7 @@ Contract:
   to the algorithm's default runtime;
 - The returned object must carry `runner_cls`; depending on the algorithm
   family it may optionally carry `play_fn` (APPO style);
-- Resolution happens on the RL runtime side (`unilab.rl.algos.appo.runtime`);
+- Resolution happens on the RL runtime side (`unilab.rl.algos.appo.resolution`);
   the dotted path may point at any importable module. The PPO path no longer
   uses `runtime_resolver` — it drives upstream RSL-RL directly through
   `unilab.rl`, so PPO customization goes through the `class_name`

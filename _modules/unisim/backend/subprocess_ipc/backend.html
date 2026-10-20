@@ -553,14 +553,15 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">_NATIVE_RENDERER_PLAY_CAPABILITIES</span><span class="p">,</span>
-    <span class="n">BackendPlayRenderPlan</span><span class="p">,</span>
-    <span class="n">BackendRootStateLayout</span><span class="p">,</span>
     <span class="n">CameraCfg</span><span class="p">,</span>
+    <span class="n">PlayRenderPlan</span><span class="p">,</span>
     <span class="n">RenderClosedError</span><span class="p">,</span>
+    <span class="n">RootStateLayout</span><span class="p">,</span>
     <span class="n">SimBackend</span><span class="p">,</span>
     <span class="n">normalize_play_render_mode</span><span class="p">,</span>
     <span class="n">unsupported_debug_overlay_error</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.playback</span><span class="w"> </span><span class="kn">import</span> <span class="n">display_available</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.subprocess_ipc.scene_materialization</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">PreparedWorkerScene</span><span class="p">,</span>
     <span class="n">body_sphere_radii_close</span><span class="p">,</span>
@@ -626,12 +627,6 @@
 <span class="c1"># PhysX clamps |force| &lt;= dof effort; MJCF forcerange &quot;0 0&quot; (or absent) means</span>
 <span class="c1"># unlimited, mapped to a finite stand-in (float32-safe) for the dof property.</span>
 <span class="n">_UNLIMITED_DOF_EFFORT</span> <span class="o">=</span> <span class="mf">1e20</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_display_available</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return whether a display is reachable for an interactive worker viewer.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;DISPLAY&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;WAYLAND_DISPLAY&quot;</span><span class="p">))</span>
-
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_single_precision_equal</span><span class="p">(</span><span class="n">reported</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">requested</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Match values that only differ by the engine&#39;s float32 storage rounding.&quot;&quot;&quot;</span>
@@ -994,7 +989,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_closed</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="c1"># Native rendering state (worker-owned viewer/camera; see the play</span>
         <span class="c1"># contract section below).  ``_render_config`` pins the first</span>
-        <span class="c1"># init_renderer(headless, capture) pair like the Motrix backend.</span>
+        <span class="c1"># bind_renderer(headless, capture) pair like the Motrix backend.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_graphics_enabled</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_render_config</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_viewer_open</span> <span class="o">=</span> <span class="kc">False</span>
@@ -2631,13 +2626,13 @@
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">qvel</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">_ROOT_QVEL_DIM</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_dof</span><span class="p">(),),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_root_state_layout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root_body_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BackendRootStateLayout</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_root_state_layout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root_body_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RootStateLayout</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_scene</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">entities</span><span class="p">:</span>
                 <span class="k">if</span> <span class="n">root_body_name</span> <span class="o">==</span> <span class="n">entity</span><span class="o">.</span><span class="n">name</span> <span class="o">+</span> <span class="s2">&quot;/&quot;</span> <span class="o">+</span> <span class="n">entity</span><span class="o">.</span><span class="n">root_body</span><span class="p">:</span>
                     <span class="k">if</span> <span class="n">entity</span><span class="o">.</span><span class="n">root_mode</span> <span class="o">!=</span> <span class="s2">&quot;floating&quot;</span><span class="p">:</span>
                         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;entity root has no generalized coordinates&quot;</span><span class="p">)</span>
-                    <span class="k">return</span> <span class="n">BackendRootStateLayout</span><span class="p">(</span>
+                    <span class="k">return</span> <span class="n">RootStateLayout</span><span class="p">(</span>
                         <span class="n">entity</span><span class="o">.</span><span class="n">root_qpos_indices</span><span class="p">,</span> <span class="n">entity</span><span class="o">.</span><span class="n">root_qvel_indices</span>
                     <span class="p">)</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unknown entity root body </span><span class="si">{</span><span class="n">root_body_name</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -2657,7 +2652,7 @@
                 <span class="sa">f</span><span class="s2">&quot;backend &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="si">}</span><span class="s2">&#39; capability &#39;root-state layout&#39; requires &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">root_body_name</span><span class="si">!r}</span><span class="s2"> to be the actor root body </span><span class="si">{</span><span class="n">root_name</span><span class="si">!r}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
-        <span class="k">return</span> <span class="n">BackendRootStateLayout</span><span class="p">(</span>
+        <span class="k">return</span> <span class="n">RootStateLayout</span><span class="p">(</span>
             <span class="n">qpos_indices</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">_ROOT_QPOS_DIM</span><span class="p">)),</span>
             <span class="n">qvel_indices</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">_ROOT_QVEL_DIM</span><span class="p">)),</span>
         <span class="p">)</span>
@@ -2879,14 +2874,14 @@
         <span class="n">play_render_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">play_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">output_video</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BackendPlayRenderPlan</span><span class="p">:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PlayRenderPlan</span><span class="p">:</span>
         <span class="n">mode</span> <span class="o">=</span> <span class="n">normalize_play_render_mode</span><span class="p">(</span><span class="n">play_render_mode</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span>
             <span class="c1"># The interactive viewer needs a reachable display; headless hosts</span>
             <span class="c1"># fall back to offscreen camera-sensor recording.</span>
-            <span class="n">mode</span> <span class="o">=</span> <span class="s2">&quot;interactive&quot;</span> <span class="k">if</span> <span class="n">_display_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;record&quot;</span>
+            <span class="n">mode</span> <span class="o">=</span> <span class="s2">&quot;interactive&quot;</span> <span class="k">if</span> <span class="n">display_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;record&quot;</span>
         <span class="k">if</span> <span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;none&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">BackendPlayRenderPlan</span><span class="p">(</span>
+            <span class="k">return</span> <span class="n">PlayRenderPlan</span><span class="p">(</span>
                 <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">,</span>
                 <span class="n">headless</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                 <span class="n">record_video</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
@@ -2894,7 +2889,7 @@
                 <span class="n">output_video</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;interactive&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">BackendPlayRenderPlan</span><span class="p">(</span>
+            <span class="k">return</span> <span class="n">PlayRenderPlan</span><span class="p">(</span>
                 <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">,</span>
                 <span class="n">headless</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
                 <span class="n">record_video</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
@@ -2911,7 +2906,7 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_BACKEND_LABEL</span><span class="si">}</span><span class="s2"> record playback requires an output video path.&quot;</span>
             <span class="p">)</span>
-        <span class="k">return</span> <span class="n">BackendPlayRenderPlan</span><span class="p">(</span>
+        <span class="k">return</span> <span class="n">PlayRenderPlan</span><span class="p">(</span>
             <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">,</span>
             <span class="n">headless</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">record_video</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -2919,7 +2914,7 @@
             <span class="n">output_video</span><span class="o">=</span><span class="n">output_video</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">init_renderer</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">bind_renderer</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">spacing</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
@@ -2975,7 +2970,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">render</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Draw one interactive viewer frame through the worker.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_viewer_open</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">init_renderer</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bind_renderer</span><span class="p">(</span>
                 <span class="n">headless</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
                 <span class="n">width</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_render_width</span><span class="p">,</span>
                 <span class="n">height</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_render_height</span><span class="p">,</span>
@@ -2988,7 +2983,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">capture_video_frame</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Capture one RGB frame from the worker&#39;s camera sensor.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capture_ready</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">init_renderer</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bind_renderer</span><span class="p">(</span>
                 <span class="n">headless</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                 <span class="n">capture</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                 <span class="n">width</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_render_width</span><span class="p">,</span>

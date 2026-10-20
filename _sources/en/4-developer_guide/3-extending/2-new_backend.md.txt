@@ -21,7 +21,7 @@ A third backend is therefore an architecture change, not just a new package.
 3. Update registry validation if the new backend should be accepted by
    `@registry.env(..., sim_backend=...)`.
 4. Expose backend-specific optional capabilities through `SimBackend` methods,
-   `BackendPlayCapabilities`, domain-randomization capability methods, or a new
+   `PlayCapabilities`, domain-randomization capability methods, or a new
    explicit abstract method.
 5. Add task owner YAMLs for supported task/backend pairs. Route user-facing
    examples through `--task <task> --sim <backend>` and do not rely on

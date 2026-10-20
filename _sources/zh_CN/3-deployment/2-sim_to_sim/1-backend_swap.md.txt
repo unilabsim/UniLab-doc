@@ -10,7 +10,7 @@ contract 和相同的 env contract。后端特有的行为通过显式方法和�
 |---|---|---|
 | 后端类 | `unisim.backend.mujoco.backend` | `unisim.backend.motrix.backend` |
 | 回放能力 | `get_play_capabilities()` 中的物理状态回放 | `get_play_capabilities()` 中的原生交互式渲染器与原生视频采集 |
-| 高度场扫描 | 实现 `create_hfield_scanner(...)` | 实现 `create_hfield_scanner(...)` |
+| 高度场扫描 | 实现 `bind_height_scanner(...)` | 实现 `bind_height_scanner(...)` |
 | DR 能力上报 | `get_dr_capabilities()` | `get_dr_capabilities()` |
 
 **切换后端的正当理由**是以下之一：

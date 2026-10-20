@@ -18,7 +18,7 @@
 2. 把后端构造逻辑加入 `create_backend(...)`。
 3. 如果新后端应当被 `@registry.env(..., sim_backend=...)` 接受，
    则更新 registry 校验逻辑。
-4. 通过 `SimBackend` 方法、`BackendPlayCapabilities`、域随机化能力方法，
+4. 通过 `SimBackend` 方法、`PlayCapabilities`、域随机化能力方法，
    或新的显式抽象方法，暴露后端特定的可选能力。
 5. 为受支持的 task/backend 组合添加任务 owner YAML。让面向用户的示例
    走 `--task <task> --sim <backend>`，不要依赖

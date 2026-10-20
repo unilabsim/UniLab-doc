@@ -37,7 +37,7 @@
 | `uni_rl.offpolicy.*` | `unilab.rl.runtime.offpolicy.*` |
 | `uni_rl.logging.*` | `unilab.rl.logging.*` |
 | `uni_rl.utils.seed` | `unilab.rl.runtime.seed`（`apply_worker_seed`、`derive_worker_seed`；`TrainingSeedInfo`、`resolve_training_seed` 与父进程 `apply_training_seed` 仍在 `unilab.training.seed`） |
-| `uni_rl.utils.nan_guard` | `unilab.training.tensor_diagnostics`（`TensorNanGuard`）；runner/collector 现在接收注入的 factory |
+| `uni_rl.utils.nan_guard` | `unilab.training.tensor_diagnostics`（`NanGuard`）；runner/collector 现在接收注入的 factory |
 | `uni_rl.utils.tensor` | 无替代（tensor-native collector 不再使用 host 转换辅助函数） |
 | `uni_rl.utils.device` | `unilab.rl.runtime.device` |
 | `uni_rl.utils.tensor_runtime` | `unilab.rl.runtime.settings` / `unilab.rl.runtime.placement`（纯设置与放置）；Hydra resolver 在 `unilab.training.tensor_runtime` |
@@ -50,9 +50,10 @@
 
 ## 行为变化
 
-- SAC / FlashSAC runner builder（`build_sac_double_buffer_runner`、
-  `build_flashsac_double_buffer_runner`）改为注入式：训练装配层传入
-  `tensor_runtime_settings`、`inference_placement`、
+- SAC / FlashSAC runner builder（`unilab.rl.algos.sac.double_buffer` 与
+  `unilab.rl.algos.flash_sac.double_buffer` 中的 `build_double_buffer_runner`）
+  改为注入式：训练装配层传入
+  `runtime_settings`、`inference_placement`、
   `backend_device_resolver`、`backend_device_configurer`；旧
   `backend_device_binder` 参数已移除。缺省时使用 runner 侧默认值。
 - 扩展机制不变：`runtime_resolver`、`class_name`、`actor_adapter_modules`

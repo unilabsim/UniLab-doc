@@ -2,7 +2,7 @@
 
 SAC 与 FlashSAC 会在探测环境或构造 learner 之前解析所有面向进程
 启动的 tensor-runtime 设置。owner YAML 中的值会被收敛为一个有边界的
-`TensorRuntimeSettings` 对象并传给 off-policy runner。因此，非法值、超出
+`RuntimeSettings` 对象并传给 off-policy runner。因此，非法值、超出
 边界的数据以及显存预算不可能满足的组合，都会在 collector 或 learner 进程
 启动前失败。
 
@@ -97,19 +97,19 @@ vector。shutdown 时可能保留一个尚未完整发布 vector 的有效行前
 
 ## 随机数生成
 
-Manager 环境持有 `unilab.managers.TorchManagerRng`，它是训练 runtime 的
+Manager 环境持有 `unilab.managers.ManagerRng`，它是训练 runtime 的
 唯一 RNG。该适配器包装一个显式 CPU/CUDA `torch.Generator`，校验种子和
 未支持的采样语义，并始终在该 generator 的设备上返回 tensor。它不是 NumPy
 bitstream 兼容层。训练入口 seed 契约只 seed 全局 Python 与 Torch RNG，不再
 修改 legacy 全局 NumPy RNG。
 
 当前 scoped G1 Motion Tracking / FlashSAC owner 使用 CUDA
-`TorchManagerRng` 驱动观测噪声、adaptive/mixed motion sampling 与
+`ManagerRng` 驱动观测噪声、adaptive/mixed motion sampling 与
 selected-row reset。因此 A/B 评估比较同一整数种子下的可复现性和分布，而不是
 逐位比较 NumPy 轨迹。确定性运行必须显式设置 `env.seed`；`algo.seed` 只 seed
 训练进程的全局 Python/Torch RNG，不会替换 owner 本地 generator 的种子。
 
-`TorchManagerRng.get_state()` 返回 generator 的 CPU state tensor，
+`ManagerRng.get_state()` 返回 generator 的 CPU state tensor，
 `set_state()` 负责恢复。可复现性的权威载荷就是精确的 generator state；
 恢复或审计 RNG 的 owner 记录该 state tensor 即可。runtime 不再维护逐
 transition 的版本号簿记。

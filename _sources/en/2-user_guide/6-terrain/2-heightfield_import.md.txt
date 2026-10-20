@@ -16,7 +16,7 @@ contract with a generated heightfield scene.
 
 ```bash
 uv run pytest tests/utils/test_xml_utils.py \
-  -k materialize_mujoco_hfield_attached_scene
+  -k mujoco_materialize_hfield_attached_scene
 ```
 
 Height scan IDs and offsets are cached during env initialization; hot paths call

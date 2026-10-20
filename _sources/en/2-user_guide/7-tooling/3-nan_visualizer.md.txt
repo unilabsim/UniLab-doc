@@ -2,7 +2,7 @@
 
 PPO has a NaN guard under `training.nan_guard` in `src/unilab/conf/ppo/config.yaml`,
 enabled by default to match APPO and off-policy. When active,
-`src/unilab/scripts/train_rsl_rl.py` installs `TensorNanGuard`, checks tensor observation groups and
+`src/unilab/scripts/train_rsl_rl.py` installs `NanGuard`, checks tensor observation groups and
 rewards, and writes a `.npz` dump plus model metadata when it detects NaN/Inf
 values.
 

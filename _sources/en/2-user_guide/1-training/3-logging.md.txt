@@ -143,7 +143,7 @@ slices:
 
 The three inference details should approximately compose `Inference`; small gaps come
 from Python work between timers. `Replay H2D Submit` overlaps the learner timeline:
-CUDA submits non-blocking copies from the `replay_gpu_resident_sync` daemon, while MPS
+CUDA submits non-blocking copies from the `replay_device_sync` daemon, while MPS
 advances them from existing learner calls. Use a trace for the real asynchronous GPU
 copy / gather interval instead of treating submit wall time as extra iteration share.
 

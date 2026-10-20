@@ -11,7 +11,7 @@ provider protocol and the environment does not carry a DR manager.
 - **Startup:** after manager construction, the backend materializes and event
   terms sample one full-width per-environment table. They commit through the
   same backend-owned packed reset transaction
-  (`SimBackend.begin_packed_reset()`) as reset DR before read-plan binding,
+  (`SimBackend.bind_packed_reset()`) as reset DR before read-plan binding,
   the first reset, or a step. When that commit succeeds, the packed composer
   promotes the staged fields of the committed rows into its persistent reset
   baseline, so later selected-row resets preserve unwritten startup values.
@@ -41,7 +41,7 @@ Backend differences are explicit capabilities, not task-side branches:
 - fixed-variant layouts
 - per-environment playback support
 - `TensorLifecycleCapabilities.packed_reset` with
-  `SimBackend.begin_packed_reset()`: required for the Manager-Based reset and
+  `SimBackend.bind_packed_reset()`: required for the Manager-Based reset and
   startup DR lifecycle; a missing declaration fails closed at env
   construction.
 

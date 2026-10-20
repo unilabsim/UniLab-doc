@@ -23,7 +23,7 @@
   - 否
   - 是
   - 由 `get_play_capabilities()` 上报。
-* - `create_hfield_scanner(...)`
+* - `bind_height_scanner(...)`
   - 是
   - 是
   - 后端拥有的高度场扫描器，用于崎岖地形观测。

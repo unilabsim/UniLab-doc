@@ -58,7 +58,7 @@ type and applies these rules to the `SceneCfg`:
 ## MuJoCo Materializer Pipeline
 
 For procedural terrain, the MuJoCo backend calls
-`materialize_mujoco_hfield_attached_scene(...)` in
+`materialize_hfield_attached_scene(...)` in
 `unisim.backend.mujoco.xml`. The cold-path steps are:
 
 1. `TerrainGenerator(terrain_cfg).write_png(...)` generates a backend-agnostic

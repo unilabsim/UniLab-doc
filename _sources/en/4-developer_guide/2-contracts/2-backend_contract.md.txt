@@ -13,11 +13,11 @@ stepping, domain-randomization hooks, and optional playback/render methods.
 
 Optional capabilities are explicit:
 
-- `BackendPlayCapabilities` reports native interactive rendering,
+- `PlayCapabilities` reports native interactive rendering,
   physics-state playback, and native video capture support.
-- `BackendHeightScanner` and `create_hfield_scanner(...)` expose terrain scan
+- `HeightScanner` and `bind_height_scanner(...)` expose terrain scan
   support through a reusable backend-owned object.
-- `BackendSensorView` and `bind_sensor_data(...)` validate ordered named sensors
+- `SensorView` and `bind_sensor_data(...)` validate ordered named sensors
   on the cold path and retain a backend-owned reader for finite, shape-stable
   NumPy batches. Manager hot paths do not inspect XML or model metadata.
 - Domain randomization support is surfaced through `get_dr_capabilities()` and
@@ -42,7 +42,7 @@ A mapped logical root must name its physical entity's declared root exactly. Bin
 
 The existing `ResetStateTransaction` stages one public `SceneResetRequest` for mapped scenes. Missing fields and unselected entities/environments remain unchanged. Per-environment defaults come from `get_entity_default_state`, and `restore_default_controls` restores keyframe controls in the same commit; controls need not equal joint positions. No engine-private tensors or asset parsing enter manager terms. Scalar hinge/slide joints and a common selected environment set per transaction are the current consumer boundary; unsupported mixed DR/mocap or row patterns fail explicitly.
 
-For tensor-capable scalar resets, `TensorLifecycleCapabilities.packed_reset` is a required capability for the Manager-Based runtime, not an optional fast path: `ManagerBasedRlEnv` fails closed during initialization when the backend does not declare it, and `ResetStateTransaction.declare_packed_reset_device` raises `NotImplementedError` when the capability or `SimBackend.begin_packed_reset()` is missing. The Manager composes every reset-mode state, model-field, and mocap write in UniSim's public packed reset transaction, which owns full-width device state staging, selected-column merges, committed model-field baselines, selected mocap staging when `packed_reset_mocap` is declared, and the single public commit boundary; the composer is cached per declared device and its baseline persists across resets. The Manager keeps only term-facing validation and row-domain ownership. There is no non-packed fallback: UniLab no longer consumes `SimBackend.set_state_tensor_mask()`, and tensor mocap writes fail closed on backends without the mocap declaration.
+For tensor-capable scalar resets, `TensorLifecycleCapabilities.packed_reset` is a required capability for the Manager-Based runtime, not an optional fast path: `ManagerBasedRlEnv` fails closed during initialization when the backend does not declare it, and `ResetStateTransaction.declare_packed_reset_device` raises `NotImplementedError` when the capability or `SimBackend.bind_packed_reset()` is missing. The Manager composes every reset-mode state, model-field, and mocap write in UniSim's public packed reset transaction, which owns full-width device state staging, selected-column merges, committed model-field baselines, selected mocap staging when `packed_reset_mocap` is declared, and the single public commit boundary; the composer is cached per declared device and its baseline persists across resets. The Manager keeps only term-facing validation and row-domain ownership. There is no non-packed fallback: UniLab no longer consumes `SimBackend.set_state_tensor_mask()`, and tensor mocap writes fail closed on backends without the mocap declaration.
 
 Owner-subset command lifecycles retain the fixed-width bool mask as their input carrier, record the union of masks actually written, and ask the packed composer to commit only those rows; active rows without a write preserve their backend state.
 

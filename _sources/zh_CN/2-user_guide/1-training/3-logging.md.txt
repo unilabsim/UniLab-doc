@@ -129,7 +129,7 @@ APPO 出现。
 
 三项 inference 明细应近似组成 `Inference`；计时调用之间的 Python 开销可能造成小差值。
 `Replay H2D Submit` 则与 learner 主时间线重叠：CUDA 由
-`replay_gpu_resident_sync` daemon 提交 non-blocking copy，MPS 从已有 learner 调用推进。
+`replay_device_sync` daemon 提交 non-blocking copy，MPS 从已有 learner 调用推进。
 要看 GPU copy / gather 的真实异步执行区间，应启用 trace，而不是把 submit wall time 当作
 额外的 iteration 占比。
 

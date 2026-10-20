@@ -39,7 +39,7 @@ runtime, and the RL logging stack ship in the base install.
 | `uni_rl.offpolicy.*` | `unilab.rl.runtime.offpolicy.*` |
 | `uni_rl.logging.*` | `unilab.rl.logging.*` |
 | `uni_rl.utils.seed` | `unilab.rl.runtime.seed` (`apply_worker_seed`, `derive_worker_seed`; `TrainingSeedInfo`, `resolve_training_seed`, and parent-process `apply_training_seed` remain in `unilab.training.seed`) |
-| `uni_rl.utils.nan_guard` | `unilab.training.tensor_diagnostics` (`TensorNanGuard`); runner/collector code now receives an injected factory |
+| `uni_rl.utils.nan_guard` | `unilab.training.tensor_diagnostics` (`NanGuard`); runner/collector code now receives an injected factory |
 | `uni_rl.utils.tensor` | no replacement (the tensor-native collector no longer uses host conversion helpers) |
 | `uni_rl.utils.device` | `unilab.rl.runtime.device` |
 | `uni_rl.utils.tensor_runtime` | `unilab.rl.runtime.settings` / `unilab.rl.runtime.placement` (pure settings and placement); the Hydra resolver lives in `unilab.training.tensor_runtime` |
@@ -53,9 +53,10 @@ Permanent `import uni_rl` support is **not** guaranteed; migrate to the
 
 ## Behavior changes
 
-- The SAC / FlashSAC runner builders (`build_sac_double_buffer_runner`,
-  `build_flashsac_double_buffer_runner`) are injection-based: the training
-  assembly layer passes `tensor_runtime_settings`, `inference_placement`,
+- The SAC / FlashSAC runner builders (`build_double_buffer_runner` in
+  `unilab.rl.algos.sac.double_buffer` and `unilab.rl.algos.flash_sac.double_buffer`)
+  are injection-based: the training
+  assembly layer passes `runtime_settings`, `inference_placement`,
   `backend_device_resolver`, and `backend_device_configurer`; the old
   `backend_device_binder` parameter is removed. When omitted, runner-side
   defaults apply.

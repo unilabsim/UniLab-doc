@@ -94,7 +94,7 @@ Genesis 原生渲染是已声明能力，且在 `scene.build` 之后惰性挂载
 
 - `auto`：有可及显示（`DISPLAY`/`WAYLAND_DISPLAY`）时打开**交互
   viewer**，否则降级为离屏**录制**。
-- `interactive`：总是打开 viewer；无显示宿主上 `init_renderer` 报可
+- `interactive`：总是打开 viewer；无显示宿主上 `bind_renderer` 报可
   操作错误。用户关闭 viewer 窗口即干净结束 playback（backend 抛
   `RenderClosedError`，play 循环视为正常退出）。
 - `record`：无头离屏录制，要求有限的 `training.play_steps` 与输出

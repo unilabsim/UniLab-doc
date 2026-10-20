@@ -12,9 +12,9 @@ Backend 差异是契约边界，而不是脚本层面的特殊处理。play/rend
 
 可选能力是显式声明的：
 
-- `BackendPlayCapabilities` 报告对原生交互式渲染、物理状态 playback 以及原生
+- `PlayCapabilities` 报告对原生交互式渲染、物理状态 playback 以及原生
   视频录制的支持情况。
-- `BackendHeightScanner` 与 `create_hfield_scanner(...)` 通过一个可复用的、由
+- `HeightScanner` 与 `bind_height_scanner(...)` 通过一个可复用的、由
   backend 拥有的对象暴露地形扫描支持。
 - Domain randomization 支持通过 `get_dr_capabilities()` 以及 init、reset、
   interval 随机化方法对外暴露。
@@ -37,7 +37,7 @@ Issue #1599 的 M2 消费层将 UniSim 物理实体声明与 UniLab 逻辑 selec
 
 既有 `ResetStateTransaction` 为 mapped scene 暂存一次公共 `SceneResetRequest`。缺失字段、未选实体和环境保持不变。逐环境默认值来自 `get_entity_default_state`，`restore_default_controls` 在同次提交中恢复 keyframe control，控制值不必等于关节位置。Manager term 不接触引擎私有 tensor 或资产解析。当前消费边界为标量 hinge/slide 和一次事务共用选中环境集合；不支持的 DR/mocap 混写或行模式明确拒绝。
 
-对于 tensor 能力可用的标量 reset，`TensorLifecycleCapabilities.packed_reset` 是 Manager-Based 运行时的必需 capability，而不是可选 fast path：backend 未声明该能力时 `ManagerBasedRlEnv` 在初始化即 fail closed；缺少该声明或缺少 `SimBackend.begin_packed_reset()` 时，`ResetStateTransaction.declare_packed_reset_device` 抛出 `NotImplementedError`。Manager 将全部 reset-mode 状态、模型字段与 mocap 写入组合进 UniSim 公共 packed reset 事务；UniSim 拥有全宽 device 状态 staging、选中列合并、已提交模型字段 baseline、声明 `packed_reset_mocap` 时的选中 mocap staging，以及唯一公共提交边界。composer 按声明 device 缓存复用，其 baseline 跨 reset 持久；Manager 只保留面向 term 的校验与行域所有权。不存在 non-packed fallback：UniLab 不再消费 `SimBackend.set_state_tensor_mask()`，未声明 mocap 能力的 backend 上 tensor mocap 写入快速失败。
+对于 tensor 能力可用的标量 reset，`TensorLifecycleCapabilities.packed_reset` 是 Manager-Based 运行时的必需 capability，而不是可选 fast path：backend 未声明该能力时 `ManagerBasedRlEnv` 在初始化即 fail closed；缺少该声明或缺少 `SimBackend.bind_packed_reset()` 时，`ResetStateTransaction.declare_packed_reset_device` 抛出 `NotImplementedError`。Manager 将全部 reset-mode 状态、模型字段与 mocap 写入组合进 UniSim 公共 packed reset 事务；UniSim 拥有全宽 device 状态 staging、选中列合并、已提交模型字段 baseline、声明 `packed_reset_mocap` 时的选中 mocap staging，以及唯一公共提交边界。composer 按声明 device 缓存复用，其 baseline 跨 reset 持久；Manager 只保留面向 term 的校验与行域所有权。不存在 non-packed fallback：UniLab 不再消费 `SimBackend.set_state_tensor_mask()`，未声明 mocap 能力的 backend 上 tensor mocap 写入快速失败。
 
 Owner-subset command 生命周期仍以 fixed-width bool mask 作为输入 carrier，记录实际写入 mask 的并集，并只请求 packed composer 提交这些行；未写入的 active rows 保留 backend 状态。
 

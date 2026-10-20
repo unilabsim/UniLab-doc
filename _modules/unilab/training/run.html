@@ -524,6 +524,7 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">datetime</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">traceback</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Iterator</span>
@@ -535,12 +536,13 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">omegaconf</span><span class="w"> </span><span class="kn">import</span> <span class="n">DictConfig</span><span class="p">,</span> <span class="n">OmegaConf</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">normalize_play_render_mode</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.rl.runtime.distributed.context</span><span class="w"> </span><span class="kn">import</span> <span class="n">UNILAB_DP_LOG_DIR</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.utils.checkpoint</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">_TEST_LOG_ROOT_ENV</span><span class="p">,</span>
-    <span class="n">_normalize_load_run</span><span class="p">,</span>
+    <span class="n">TEST_LOG_ROOT_ENV</span><span class="p">,</span>
     <span class="n">get_latest_checkpoint</span><span class="p">,</span>
     <span class="n">get_latest_run</span><span class="p">,</span>
-    <span class="n">resolve_task_checkpoint_path</span><span class="p">,</span>
+    <span class="n">normalize_load_run</span><span class="p">,</span>
+    <span class="n">resolve_checkpoint_path</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
@@ -628,14 +630,14 @@
 <div class="viewcode-block" id="apply_env_nan_guard">
 <a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.run.apply_env_nan_guard.html#unilab.training.run.apply_env_nan_guard">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">apply_env_nan_guard</span><span class="p">(</span><span class="n">env</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">training_cfg</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Attach a ``TensorNanGuard`` to ``env`` when diagnostics are enabled.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Attach a ``NanGuard`` to ``env`` when diagnostics are enabled.&quot;&quot;&quot;</span>
     <span class="n">nan_guard_cfg</span> <span class="o">=</span> <span class="n">resolve_nan_guard_cfg</span><span class="p">(</span><span class="n">training_cfg</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">nan_guard_cfg</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.training.tensor_diagnostics</span><span class="w"> </span><span class="kn">import</span> <span class="n">TensorNanGuard</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.training.tensor_diagnostics</span><span class="w"> </span><span class="kn">import</span> <span class="n">NanGuard</span>
 
     <span class="n">env</span><span class="o">.</span><span class="n">set_nan_guard</span><span class="p">(</span>
-        <span class="n">TensorNanGuard</span><span class="p">(</span>
+        <span class="n">NanGuard</span><span class="p">(</span>
             <span class="n">nan_guard_cfg</span><span class="p">,</span>
             <span class="n">num_envs</span><span class="o">=</span><span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span>
             <span class="n">supports_state_playback</span><span class="o">=</span><span class="n">env</span><span class="o">.</span><span class="n">play_capabilities</span><span class="o">.</span><span class="n">supports_physics_state_playback</span><span class="p">,</span>
@@ -686,22 +688,72 @@
 
 <div class="viewcode-block" id="get_log_root">
 <a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.run.get_log_root.html#unilab.training.run.get_log_root">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">get_log_root</span><span class="p">(</span><span class="n">root_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span> <span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve the algorithm log root, honoring optional training.log_root overrides.&quot;&quot;&quot;</span>
-    <span class="n">configured_root</span> <span class="o">=</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;training.log_root&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">configured_root</span><span class="p">:</span>
-        <span class="n">log_root</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">configured_root</span><span class="p">))</span>
-        <span class="k">return</span> <span class="n">log_root</span> <span class="k">if</span> <span class="n">log_root</span><span class="o">.</span><span class="n">is_absolute</span><span class="p">()</span> <span class="k">else</span> <span class="n">Path</span><span class="p">(</span><span class="n">root_dir</span><span class="p">)</span> <span class="o">/</span> <span class="n">log_root</span>
-    <span class="n">test_log_root</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">_TEST_LOG_ROOT_ENV</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_log_root</span><span class="p">(</span>
+    <span class="n">root_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span>
+    <span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">algo_log_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">log_root</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve the algorithm log root.</span>
+
+<span class="sd">    The configured ``training.log_root`` (or the explicit ``log_root``</span>
+<span class="sd">    argument) wins; otherwise the ``UNILAB_TEST_LOG_ROOT`` override applies;</span>
+<span class="sd">    otherwise the default is ``&lt;root_dir&gt;/logs/&lt;algo_log_name&gt;``. Pass either</span>
+<span class="sd">    a composed Hydra ``cfg`` or an explicit ``algo_log_name``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">cfg</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">log_root</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">log_root</span> <span class="o">=</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;training.log_root&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">algo_log_name</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">selected</span> <span class="o">=</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;algo.algo_log_name&quot;</span><span class="p">)</span>
+            <span class="n">algo_log_name</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">selected</span><span class="p">)</span> <span class="k">if</span> <span class="n">selected</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">algo_log_name</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;get_log_root requires a Hydra cfg or an explicit algo_log_name&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">log_root</span><span class="p">:</span>
+        <span class="n">configured_root</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">log_root</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">configured_root</span> <span class="k">if</span> <span class="n">configured_root</span><span class="o">.</span><span class="n">is_absolute</span><span class="p">()</span> <span class="k">else</span> <span class="n">Path</span><span class="p">(</span><span class="n">root_dir</span><span class="p">)</span> <span class="o">/</span> <span class="n">configured_root</span>
+        <span class="p">)</span>
+    <span class="n">test_log_root</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">TEST_LOG_ROOT_ENV</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">test_log_root</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="n">test_log_root</span><span class="p">)</span> <span class="o">/</span> <span class="nb">str</span><span class="p">(</span><span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;algo.algo_log_name&quot;</span><span class="p">))</span>
-    <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="n">root_dir</span><span class="p">)</span> <span class="o">/</span> <span class="s2">&quot;logs&quot;</span> <span class="o">/</span> <span class="nb">str</span><span class="p">(</span><span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;algo.algo_log_name&quot;</span><span class="p">))</span></div>
+        <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="n">test_log_root</span><span class="p">)</span> <span class="o">/</span> <span class="n">algo_log_name</span>
+    <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="n">root_dir</span><span class="p">)</span> <span class="o">/</span> <span class="s2">&quot;logs&quot;</span> <span class="o">/</span> <span class="n">algo_log_name</span></div>
 
 
 
-<div class="viewcode-block" id="parse_checkpoint_path">
-<a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.run.parse_checkpoint_path.html#unilab.training.run.parse_checkpoint_path">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">parse_checkpoint_path</span><span class="p">(</span>
+<div class="viewcode-block" id="resolve_run_log_dir">
+<a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.run.resolve_run_log_dir.html#unilab.training.run.resolve_run_log_dir">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_run_log_dir</span><span class="p">(</span>
+    <span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">world_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">timestamp</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">root_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve one canonical run directory shared by all distributed ranks.&quot;&quot;&quot;</span>
+    <span class="n">distributed_log_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">UNILAB_DP_LOG_DIR</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">distributed_log_dir</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">distributed_log_dir</span>
+    <span class="n">configured_log_dir</span> <span class="o">=</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;training.log_dir&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">configured_log_dir</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">configured_log_dir</span><span class="p">)</span>
+    <span class="n">timestamp</span> <span class="o">=</span> <span class="n">timestamp</span> <span class="ow">or</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2">_%H-%M-%S&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">str</span><span class="p">(</span>
+        <span class="n">get_log_root</span><span class="p">(</span><span class="n">Path</span><span class="o">.</span><span class="n">cwd</span><span class="p">()</span> <span class="k">if</span> <span class="n">root_dir</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">root_dir</span><span class="p">,</span> <span class="n">cfg</span><span class="p">)</span>
+        <span class="o">/</span> <span class="nb">str</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">training</span><span class="o">.</span><span class="n">task_name</span><span class="p">)</span>
+        <span class="o">/</span> <span class="n">build_run_dir_name</span><span class="p">(</span>
+            <span class="n">timestamp</span><span class="p">,</span>
+            <span class="nb">str</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">training</span><span class="o">.</span><span class="n">sim_backend</span><span class="p">),</span>
+            <span class="n">world_size</span><span class="o">=</span><span class="n">world_size</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_configured_checkpoint_path">
+<a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.run.resolve_configured_checkpoint_path.html#unilab.training.run.resolve_configured_checkpoint_path">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_configured_checkpoint_path</span><span class="p">(</span>
     <span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
     <span class="n">root_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span>
@@ -713,7 +765,7 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve a checkpoint path from Hydra config and repository root.&quot;&quot;&quot;</span>
     <span class="n">selected_task</span> <span class="o">=</span> <span class="n">task_name</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span><span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;training.task_name&quot;</span><span class="p">))</span>
     <span class="n">selected_run</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">_normalize_load_run</span><span class="p">(</span><span class="n">load_run</span><span class="p">)</span>
+        <span class="n">normalize_load_run</span><span class="p">(</span><span class="n">load_run</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">load_run</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;algo.load_run&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s2">&quot;-1&quot;</span><span class="p">))</span>
     <span class="p">)</span>
@@ -723,14 +775,12 @@
     <span class="k">if</span> <span class="n">selected_checkpoint</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;-1&quot;</span><span class="p">):</span>
         <span class="n">selected_checkpoint</span> <span class="o">=</span> <span class="kc">None</span>
 
-    <span class="k">return</span> <span class="n">resolve_task_checkpoint_path</span><span class="p">(</span>
-        <span class="n">root_dir</span><span class="p">,</span>
-        <span class="n">task_name</span><span class="o">=</span><span class="n">selected_task</span><span class="p">,</span>
-        <span class="n">load_run</span><span class="o">=</span><span class="n">selected_run</span><span class="p">,</span>
-        <span class="n">algo_log_name</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;algo.algo_log_name&quot;</span><span class="p">)),</span>
+    <span class="n">task_log_root</span> <span class="o">=</span> <span class="n">get_log_root</span><span class="p">(</span><span class="n">root_dir</span><span class="p">,</span> <span class="n">cfg</span><span class="p">)</span> <span class="o">/</span> <span class="n">selected_task</span>
+    <span class="k">return</span> <span class="n">resolve_checkpoint_path</span><span class="p">(</span>
+        <span class="n">task_log_root</span><span class="p">,</span>
+        <span class="n">selected_run</span><span class="p">,</span>
         <span class="n">checkpoint</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">selected_checkpoint</span><span class="p">)</span> <span class="k">if</span> <span class="n">selected_checkpoint</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">suffix</span><span class="o">=</span><span class="n">suffix</span><span class="p">,</span>
-        <span class="n">log_root</span><span class="o">=</span><span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;training.log_root&quot;</span><span class="p">),</span>
     <span class="p">)</span></div>
 
 </pre></div>

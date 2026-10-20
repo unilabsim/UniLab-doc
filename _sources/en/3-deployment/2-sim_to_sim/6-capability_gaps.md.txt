@@ -24,7 +24,7 @@ capability is added to or removed from the backend contract.
   - No
   - Yes
   - Reported by `get_play_capabilities()`.
-* - `create_hfield_scanner(...)`
+* - `bind_height_scanner(...)`
   - Yes
   - Yes
   - Backend-owned height-field scanner for rough-terrain observations.

@@ -102,7 +102,7 @@ physics engines ROCm-compatible.
 
 ### Manager-owned RNG
 
-The Manager runtime owns one Torch RNG seeded from the resolved owner seed. Observation noise,
+The Manager runtime owns one ManagerRng-backed Torch generator seeded from the resolved owner seed. Observation noise,
 commands, events, and tensor selected reset consume that generator or generators explicitly
 derived from it. Seed/reset state and selected-row reproducibility are contract-tested.
 
@@ -148,12 +148,11 @@ separate maintainer decision; this ADR does not delete those adapters.
 > record. The current tensor Manager scope is the nine explicit owner selections
 > `mujoco`, `mjwarp`, `genesis`, `newton`, `motrix`, `superdex`, `drake`,
 > `isaacsim`, and `isaacgym`, matching
-> `src/unilab/base/registry.py::_TENSOR_MANAGER_SUPPORTED_SIM_BACKENDS` and
-> `src/unilab/cli.py::SUPPORTED_SIMS`; `_SHELVED_SIM_BACKENDS` is empty. Drake
-> and the external-worker Isaac backends remain explicit selections and are
-> excluded from implicit fallback ordering. Backend-specific capability support
-> remains defined by the generated support matrix rather than by a global shelve
-> list.
+> `src/unilab/base/registry.py::_SUPPORTED_SIM_BACKENDS` and
+> `src/unilab/cli.py::SUPPORTED_SIMS`. Drake and the external-worker Isaac
+> backends remain explicit selections and are excluded from implicit fallback
+> ordering. Backend-specific capability support remains defined by the generated
+> support matrix rather than by a global shelve list.
 
 ### Single-GPU default device behavior
 
@@ -168,7 +167,7 @@ useful for launcher/debug/MPS isolation.
 | Sole training factory and no direct registration | `src/unilab/tasks/**/__init__.py`, registry tests, direct-entry architecture gate |
 | Tensor-only Manager execution | `src/unilab/envs/manager_based_rl_env.py`, Manager suites, no-NumPy-carrier gate |
 | Removal of `env.tensor_runtime` | `ManagerBasedRlEnvCfg`, owner YAMLs, run-config schema, config tests |
-| Manager-owned Torch RNG | Manager RNG owner, seed/reset and selected-row reproducibility tests |
+| Manager-owned RNG | Manager RNG owner, seed/reset and selected-row reproducibility tests |
 | Selected-reset publication postcondition | UniSim tensor capability + MuJoCo/MJWarp/Genesis/Newton contract tests |
 | Public sensor namespace | UniSim `SimBackend.get_sensor_names()`/inventory contract and adapter tests |
 | Public state widths | UniSim state-width API and reset-plan tests |
@@ -215,8 +214,8 @@ useful for launcher/debug/MPS isolation.
   `src/unilab/tasks/motion_tracking/common/tensor_state_store.py`
 - Public backend contract: `unisim.backend.base.SimBackend`
 - Current tensor Manager backend scope:
-  `src/unilab/base/registry.py` (`_TENSOR_MANAGER_SUPPORTED_SIM_BACKENDS`,
-  `_SHELVED_SIM_BACKENDS`, `_DEFAULT_SIM_BACKEND_ORDER`) and
+  `src/unilab/base/registry.py` (`_SUPPORTED_SIM_BACKENDS`,
+  `_DEFAULT_SIM_BACKEND_ORDER`) and
   `src/unilab/cli.py` (`SUPPORTED_SIMS`)
 - Current adapters: `unisim.backend.mujoco`, `unisim.backend.mjwarp`,
   `unisim.backend.genesis`, `unisim.backend.newton`, `unisim.backend.motrix`,

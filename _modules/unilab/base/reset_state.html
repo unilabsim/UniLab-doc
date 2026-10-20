@@ -523,8 +523,8 @@
 <span></span><span class="sd">&quot;&quot;&quot;Base-owned reset-state transaction for Manager-Based event terms.</span>
 
 <span class="sd">The transaction composes every reset-mode state and model-field write inside</span>
-<span class="sd">the backend-owned packed transaction (``SimBackend.begin_packed_reset`` →</span>
-<span class="sd">``unisim.backend.packed_reset.TorchPackedResetComposer``) and commits through</span>
+<span class="sd">the backend-owned packed transaction (``SimBackend.bind_packed_reset`` →</span>
+<span class="sd">``unisim.backend.packed_reset.PackedResetTransaction``) and commits through</span>
 <span class="sd">that composer exactly once per lifecycle. It deliberately knows nothing about</span>
 <span class="sd">task configuration, IPC, runners, or backend-private state.</span>
 <span class="sd">&quot;&quot;&quot;</span>
@@ -539,8 +539,8 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">BackendMocapPoseBinding</span><span class="p">,</span>
-    <span class="n">BackendRootStateLayout</span><span class="p">,</span>
+    <span class="n">MocapPoseBinding</span><span class="p">,</span>
+    <span class="n">RootStateLayout</span><span class="p">,</span>
     <span class="n">SimBackend</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -567,7 +567,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.rotation</span><span class="w"> </span><span class="kn">import</span> <span class="n">quat_apply_inverse</span>
 
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.packed_reset</span><span class="w"> </span><span class="kn">import</span> <span class="n">TorchPackedResetComposer</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.packed_reset</span><span class="w"> </span><span class="kn">import</span> <span class="n">PackedResetTransaction</span>
 
 <span class="c1"># Concrete trailing widths for the two-dimensional canonical model tables.</span>
 <span class="c1"># ``RESET_TERM_SPECS`` is the single source for term names, canonical table</span>
@@ -668,10 +668,10 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_requesting_terms</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_commit_had_writes</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_set_state_timing_ms</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_bindings</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">BackendMocapPoseBinding</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_bindings</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">MocapPoseBinding</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_pending</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span><span class="p">:</span> <span class="n">TorchPackedResetComposer</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span><span class="p">:</span> <span class="n">PackedResetTransaction</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_state_default_installed</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_owner_tensor_write_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_write_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
@@ -741,19 +741,19 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">capabilities</span><span class="p">,</span> <span class="s2">&quot;packed_reset&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="s2">&quot;backend does not declare the packed_reset capability required by the &quot;</span>
-                <span class="s2">&quot;packed reset contract: SimBackend.begin_packed_reset&quot;</span>
+                <span class="s2">&quot;packed reset contract: SimBackend.bind_packed_reset&quot;</span>
             <span class="p">)</span>
-        <span class="n">begin_packed_reset</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="p">,</span> <span class="s2">&quot;begin_packed_reset&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">callable</span><span class="p">(</span><span class="n">begin_packed_reset</span><span class="p">):</span>
+        <span class="n">bind_packed_reset</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="p">,</span> <span class="s2">&quot;bind_packed_reset&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">callable</span><span class="p">(</span><span class="n">bind_packed_reset</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="s2">&quot;backend declares packed_reset without SimBackend.begin_packed_reset&quot;</span>
+                <span class="s2">&quot;backend declares packed_reset without SimBackend.bind_packed_reset&quot;</span>
             <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span> <span class="o">=</span> <span class="n">resolved</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_owner_tensor_write_mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">resolved</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
-            <span class="s2">&quot;TorchPackedResetComposer&quot;</span><span class="p">,</span> <span class="n">begin_packed_reset</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="n">resolved</span><span class="p">)</span>
+            <span class="s2">&quot;PackedResetTransaction&quot;</span><span class="p">,</span> <span class="n">bind_packed_reset</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="n">resolved</span><span class="p">)</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_state_default_installed</span> <span class="o">=</span> <span class="kc">False</span></div>
 
@@ -772,7 +772,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">abort</span><span class="p">()</span>
             <span class="k">raise</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">commit_device_tensor</span><span class="p">()</span></div>
+            <span class="bp">self</span><span class="o">.</span><span class="n">commit_tensor</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="ResetStateTransaction.scoped_device_owner_tensor">
@@ -789,7 +789,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">abort</span><span class="p">()</span>
             <span class="k">raise</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">commit_device_tensor</span><span class="p">()</span></div>
+            <span class="bp">self</span><span class="o">.</span><span class="n">commit_tensor</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="ResetStateTransaction.begin">
@@ -1338,10 +1338,10 @@
         <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="ResetStateTransaction.bind_gravity_write_torch">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.bind_gravity_write_torch">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">bind_gravity_write_torch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind the immutable backend gravity vector as a Torch table.&quot;&quot;&quot;</span>
+<div class="viewcode-block" id="ResetStateTransaction.bind_gravity_write_tensor">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.bind_gravity_write_tensor">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">bind_gravity_write_tensor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind the immutable backend gravity vector as a tensor table.&quot;&quot;&quot;</span>
         <span class="n">default</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bind_gravity_write</span><span class="p">(</span><span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">default</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span></div>
 
@@ -1880,7 +1880,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">write_root_state</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">layout</span><span class="p">:</span> <span class="n">BackendRootStateLayout</span><span class="p">,</span>
+        <span class="n">layout</span><span class="p">:</span> <span class="n">RootStateLayout</span><span class="p">,</span>
         <span class="n">root_state</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -1949,7 +1949,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">write_root_state_tensor</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">layout</span><span class="p">:</span> <span class="n">BackendRootStateLayout</span><span class="p">,</span>
+        <span class="n">layout</span><span class="p">:</span> <span class="n">RootStateLayout</span><span class="p">,</span>
         <span class="n">root_state</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -2042,7 +2042,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">write_motion_state_tensor</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">layout</span><span class="p">:</span> <span class="n">BackendRootStateLayout</span><span class="p">,</span>
+        <span class="n">layout</span><span class="p">:</span> <span class="n">RootStateLayout</span><span class="p">,</span>
         <span class="n">qpos_indices</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">qvel_indices</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">root_state</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
@@ -2124,7 +2124,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">write_root_pose</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">layout</span><span class="p">:</span> <span class="n">BackendRootStateLayout</span><span class="p">,</span>
+        <span class="n">layout</span><span class="p">:</span> <span class="n">RootStateLayout</span><span class="p">,</span>
         <span class="n">pose</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -2152,7 +2152,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">write_root_velocity</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">layout</span><span class="p">:</span> <span class="n">BackendRootStateLayout</span><span class="p">,</span>
+        <span class="n">layout</span><span class="p">:</span> <span class="n">RootStateLayout</span><span class="p">,</span>
         <span class="n">velocity_w</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -2200,7 +2200,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">read_root_pose</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">layout</span><span class="p">:</span> <span class="n">BackendRootStateLayout</span><span class="p">,</span>
+        <span class="n">layout</span><span class="p">:</span> <span class="n">RootStateLayout</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
@@ -2225,7 +2225,7 @@
 
 <div class="viewcode-block" id="ResetStateTransaction.bind_mocap_pose">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.bind_mocap_pose">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">bind_mocap_pose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BackendMocapPoseBinding</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">bind_mocap_pose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MocapPoseBinding</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve a mocap body once, without exposing a native backend handle.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">body_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_bindings</span><span class="p">:</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="p">:</span>
@@ -2348,16 +2348,16 @@
                 <span class="n">terms</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_requesting_terms</span><span class="p">))</span>
                 <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                     <span class="s2">&quot;EventManager reset-state capability &quot;</span>
-                    <span class="s2">&quot;&#39;SimBackend.begin_packed_reset&#39; is unavailable for term(s) &quot;</span>
+                    <span class="s2">&quot;&#39;SimBackend.bind_packed_reset&#39; is unavailable for term(s) &quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">terms</span><span class="si">}</span><span class="s2">] on backend &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">backend_type</span><span class="si">}</span><span class="s2">&#39;: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span>
                 <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
         <span class="k">finally</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_finish</span><span class="p">()</span></div>
 
 
-<div class="viewcode-block" id="ResetStateTransaction.commit_device_tensor">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.commit_device_tensor">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">commit_device_tensor</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="ResetStateTransaction.commit_tensor">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.commit_tensor">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">commit_tensor</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Commit the fixed-width reset through the packed composer boundary.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_active</span><span class="p">()</span>
         <span class="n">mocap_staged</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_mocap_pending</span><span class="p">)</span>
@@ -2404,7 +2404,7 @@
                 <span class="n">terms</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_requesting_terms</span><span class="p">))</span>
                 <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                     <span class="s2">&quot;EventManager reset-state capability &quot;</span>
-                    <span class="s2">&quot;&#39;SimBackend.begin_packed_reset&#39; is unavailable for term(s) &quot;</span>
+                    <span class="s2">&quot;&#39;SimBackend.bind_packed_reset&#39; is unavailable for term(s) &quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">terms</span><span class="si">}</span><span class="s2">] on backend &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">backend_type</span><span class="si">}</span><span class="s2">&#39;: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span>
                 <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
         <span class="k">finally</span><span class="p">:</span>
@@ -2426,13 +2426,13 @@
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend_timing</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_last_set_state_timing_ms</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">backend_timing</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_require_packed_transaction</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TorchPackedResetComposer</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_require_packed_transaction</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PackedResetTransaction</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the declared packed composer or fail closed.&quot;&quot;&quot;</span>
         <span class="n">transaction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span>
         <span class="k">if</span> <span class="n">transaction</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="s2">&quot;backend does not declare the packed_reset capability required by the &quot;</span>
-                <span class="s2">&quot;packed reset contract: SimBackend.begin_packed_reset&quot;</span>
+                <span class="s2">&quot;packed reset contract: SimBackend.bind_packed_reset&quot;</span>
             <span class="p">)</span>
         <span class="k">return</span> <span class="n">transaction</span>
 
@@ -2848,14 +2848,14 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_root_layout</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-        <span class="n">layout</span><span class="p">:</span> <span class="n">BackendRootStateLayout</span><span class="p">,</span>
+        <span class="n">layout</span><span class="p">:</span> <span class="n">RootStateLayout</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">layout</span><span class="p">,</span> <span class="n">BackendRootStateLayout</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">layout</span><span class="p">,</span> <span class="n">RootStateLayout</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; root-state layout must be &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;BackendRootStateLayout, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">layout</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;RootStateLayout, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">layout</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_default_qpos</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_default_qvel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -2874,7 +2874,7 @@
         <span class="k">return</span> <span class="n">qpos_columns</span><span class="p">,</span> <span class="n">qvel_columns</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_tensor_root_columns_for_layout</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">layout</span><span class="p">:</span> <span class="n">BackendRootStateLayout</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">layout</span><span class="p">:</span> <span class="n">RootStateLayout</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
         <span class="n">qpos_columns</span><span class="p">,</span> <span class="n">qvel_columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_root_layout</span><span class="p">(</span><span class="n">layout</span><span class="p">,</span> <span class="n">term_name</span><span class="o">=</span><span class="n">term_name</span><span class="p">)</span>
         <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">qpos_columns</span><span class="p">),</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">qvel_columns</span><span class="p">))</span>

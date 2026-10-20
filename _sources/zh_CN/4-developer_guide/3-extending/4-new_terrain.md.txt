@@ -15,8 +15,8 @@
 4. 通过 `src/unilab/base/scene.py` 中的 `SceneCfg.terrain` 与
    `TerrainSceneCfg` 把地形暴露给场景。
 5. 如果某个 env 需要高度 observation，在 init 时通过
-   `create_hfield_scanner(...)` 创建后端 scanner；通过返回的
-   `BackendHeightScanner` 读取采样。
+   `bind_height_scanner(...)` 创建后端 scanner；通过返回的
+   `HeightScanner` 读取采样。
 6. 让地形的 spawn、curriculum 与 observation 维度在归属的 env config 与
    `obs_groups_spec` 中得到体现。
 

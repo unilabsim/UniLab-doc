@@ -37,7 +37,7 @@ algo:
 - 签名为 `(rl_cfg: dict) -> Runtime | None`；返回 `None` 表示回落到该算法的
   默认 runtime；
 - 返回对象必须携带 `runner_cls`；按算法族可选携带 `play_fn`（APPO 风格）；
-- 解析发生在 RL runtime 侧（`unilab.rl.algos.appo.runtime`），dotted path 可以指向
+- 解析发生在 RL runtime 侧（`unilab.rl.algos.appo.resolution`），dotted path 可以指向
   任何可 import 的模块。PPO 路径不再使用 `runtime_resolver` —— 它通过
   `unilab.rl` 直接驱动上游 RSL-RL，因此 PPO 的定制化走
   `class_name` 配置键（第一档）。

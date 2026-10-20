@@ -72,7 +72,7 @@ record 管线各自维护了一套互不兼容的绘制代码。
    `get_playback_debug_overlays()`：遍历 command manager 的 terms，聚合实现了
    `playback_debug_overlay_getter()` 的 term，把多 term 的原语按 env 合并成单个
    `DebugOverlayGetter`；无 provider 时返回 `None`。play 入口
-   （`train_rsl_rl.play_rsl_rl`、`play_interactive.py`）通过
+   （`train_rsl_rl.play_ppo`、`play_interactive.py`）通过
    `getattr(env, "get_playback_debug_overlays", None)` 发现任务 overlay，发现不到
    时回退现有特例（`curr_ee_goal_world` EE goal sphere、交互 viewer 的
    motion/reward/velocity 硬编码），既有行为不回归。

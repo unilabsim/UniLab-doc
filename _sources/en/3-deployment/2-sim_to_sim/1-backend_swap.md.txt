@@ -10,7 +10,7 @@ through explicit methods and capability records.
 |---|---|---|
 | Backend class | `unisim.backend.mujoco.backend` | `unisim.backend.motrix.backend` |
 | Playback capabilities | Physics-state playback in `get_play_capabilities()` | Native interactive renderer and native video capture in `get_play_capabilities()` |
-| Height-field scan | Implements `create_hfield_scanner(...)` | Implements `create_hfield_scanner(...)` |
+| Height-field scan | Implements `bind_height_scanner(...)` | Implements `bind_height_scanner(...)` |
 | DR capability reporting | `get_dr_capabilities()` | `get_dr_capabilities()` |
 
 **The right reason to switch** is one of:

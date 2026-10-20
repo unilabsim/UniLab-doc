@@ -64,7 +64,7 @@ Public and internal Manager execution carriers are Torch tensors: state,
 observations, rewards, terminations, commands, events, metrics, recorder state,
 and row selectors. Generic NumPy execution, dual-carrier term branches, hidden
 host fallbacks, and the environment-owned NumPy RNG stream are removed without a
-compatibility layer. `TorchManagerRng`, seeded from the resolved owner seed, is
+compatibility layer. `ManagerRng`, seeded from the resolved owner seed, is
 the sole Manager RNG. Legacy NumPy RNG bitstream equality is not a compatibility
 requirement.
 

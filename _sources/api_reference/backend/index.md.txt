@@ -33,11 +33,11 @@ Pick a backend per task via the top-level `--sim <backend>` CLI flag — see
 ```
 
 ```{eval-rst}
-.. automodule:: unisim.backend.playback_common
+.. automodule:: unisim.backend.playback
    :members:
 ```
 
 ```{eval-rst}
-.. automodule:: unisim.backend.motrix_camera
+.. automodule:: unisim.backend.motrix.camera
    :members:
 ```

@@ -2,7 +2,7 @@
 
 SAC and FlashSAC resolve their spawn-facing tensor-runtime settings
 before probing the environment or constructing a learner. The owner YAML values
-are collected into one bounded `TensorRuntimeSettings` object and passed to the
+are collected into one bounded `RuntimeSettings` object and passed to the
 off-policy runner. Invalid values, unsupported bounds, and impossible memory
 combinations therefore fail before collector or learner processes are launched.
 
@@ -103,21 +103,21 @@ the replay-ingress counters and shutdown schema.
 
 ## Random number generation
 
-The Manager environment owns a `unilab.managers.TorchManagerRng` as its sole
+The Manager environment owns a `unilab.managers.ManagerRng` as its sole
 training-runtime RNG. This adapter wraps one explicit CPU or CUDA
 `torch.Generator`, validates seeds and unsupported sampling semantics, and
 returns tensors on that generator's device. It is not a NumPy
 bitstream-compatibility layer. The training-entry seed contract seeds global
 Python and Torch RNGs only; it no longer mutates the legacy global NumPy RNG.
 
-The scoped G1 Motion Tracking / FlashSAC owner uses a CUDA `TorchManagerRng` for
+The scoped G1 Motion Tracking / FlashSAC owner uses a CUDA `ManagerRng` for
 observation corruption, adaptive/mixed motion sampling, and selected-row reset.
 A/B evaluation therefore compares reproducibility and distributions under the
 same integer seed, not bitwise NumPy trajectories. Use an explicit `env.seed`
 for deterministic runs; `algo.seed` seeds the training run's global Python and
 Torch RNGs but does not replace that owner-local generator seed.
 
-`TorchManagerRng.get_state()` returns the generator's CPU state tensor and
+`ManagerRng.get_state()` returns the generator's CPU state tensor and
 `set_state()` restores it. The exact generator state remains the authoritative
 reproducibility payload; an owner that restores or audits RNG records that
 state tensor. The runtime keeps no per-transition version accounting.
