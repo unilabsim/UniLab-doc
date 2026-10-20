@@ -13,7 +13,7 @@ UniLab 遵循[语义化版本](https://semver.org/)。本共享页面以中英�
 PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完整提交历史请参阅
 [UniLab 仓库](https://github.com/unilabsim/UniLab)。
 
-## Unreleased / 未发布
+## 1.4.0 (2026-10-20)
 
 ### Breaking changes / 破坏性变更
 
@@ -244,6 +244,20 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
   ([#2359](https://github.com/Motphys/UniLab/issues/2359)).
   恢复 v1.3.5 的 `MotionCommand` 空 reset mask 语义：空 mask 不消耗 sampler
   RNG，也不写 backend state 或摄取 packet（#2359）。
+- Fixed IsaacGym/IsaacSim interactive eval, which failed before the native
+  viewer opened: unisim-core 2.0.0 fails closed when an Isaac native
+  interactive viewer receives a non-default `camera_kwargs` profile, while
+  the eval play path forwards `training.cam_*` to every backend.
+  `run_playback_mode` now mirrors the interactive debug-overlay degradation —
+  it warns, drops the camera profile, and retries interactive playback;
+  record mode still forwards the profile and fails closed on rejection
+  ([#2454](https://github.com/Motphys/UniLab/issues/2454)).
+  修复 IsaacGym/IsaacSim 交互 eval 在原生 viewer 打开前失败的问题：
+  unisim-core 2.0.0 对收到非默认 `camera_kwargs` 的 Isaac 原生交互 viewer
+  fail closed，而 eval 播放路径会把 `training.cam_*` 传给所有后端。
+  `run_playback_mode` 现在与 interactive debug-overlay 的降级模式一致——
+  告警、去掉相机配置并重试交互播放；record 模式仍照常下发相机配置，
+  被拒绝时 fail closed（#2454）。
 
 ## 1.3.5 (2026-10-13)
 
