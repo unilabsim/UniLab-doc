@@ -484,55 +484,52 @@ as listed above.</p>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">training.sim_carrier_device</span></code></p></td>
-<td><p>Training assembly routes it to the environment</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device</span></code></p></td>
+<td><p>Training assembly; decides collector-tensor residency (HOST_BRIDGE Manager carriers and the derived off-policy inference ring)</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">auto</span></code>, <code class="docutils literal notranslate"><span class="pre">cpu</span></code>, or unindexed <code class="docutils literal notranslate"><span class="pre">cuda</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">env.sim_carrier_device</span></code></p></td>
-<td><p>Manager public tensors for a MuJoCo HOST_BRIDGE</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">env.collector_tensor_device</span></code></p></td>
+<td><p>Manager public tensors for a HOST_BRIDGE backend</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">cpu</span></code>, <code class="docutils literal notranslate"><span class="pre">cuda</span></code>, or <code class="docutils literal notranslate"><span class="pre">cuda:&lt;index&gt;</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">training.inference_transport</span></code></p></td>
-<td><p>Off-policy IPC placement</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">host</span></code>, <code class="docutils literal notranslate"><span class="pre">cuda</span></code>, or <code class="docutils literal notranslate"><span class="pre">null</span></code> (auto)</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">training.device</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">training.device</span></code></p></td>
 <td><p>Learner and rank-local process selection</p></td>
 <td><p>Concrete Torch device label</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>The training key is the only user-facing carrier request. <code class="docutils literal notranslate"><span class="pre">auto</span></code> follows the
-resolved learner device: CUDA routes the rank-local indexed device, CPU routes
-CPU, and torch.mps (Metal Performance Shaders) retains the owner/default CPU
-placement. Explicit <code class="docutils literal notranslate"><span class="pre">cpu</span></code> or <code class="docutils literal notranslate"><span class="pre">cuda</span></code> wins over <code class="docutils literal notranslate"><span class="pre">auto</span></code>. <code class="docutils literal notranslate"><span class="pre">cuda</span></code> is concrete and
-never maps to MPS; a CUDA request on a host without CUDA fails closed.</p>
+<p>The training key is the only user-facing collector-tensor residency request.
+<code class="docutils literal notranslate"><span class="pre">auto</span></code> follows the resolved learner device: CUDA routes the rank-local indexed
+device, CPU routes CPU, and torch.mps (Metal Performance Shaders) retains the
+owner/default CPU placement. Explicit <code class="docutils literal notranslate"><span class="pre">cpu</span></code> or <code class="docutils literal notranslate"><span class="pre">cuda</span></code> wins over <code class="docutils literal notranslate"><span class="pre">auto</span></code>. <code class="docutils literal notranslate"><span class="pre">cuda</span></code>
+is concrete and never maps to MPS; a CUDA request on a host without CUDA fails
+closed.</p>
 <p>Carrier routing is capability-driven: MuJoCo, Motrix, Drake, and SuperDex
 declare in-process packed <code class="docutils literal notranslate"><span class="pre">HOST_BRIDGE</span></code> transfer plans with <code class="docutils literal notranslate"><span class="pre">cpu</span></code>/<code class="docutils literal notranslate"><span class="pre">cuda</span></code>
 carriers. Other backends ignore <code class="docutils literal notranslate"><span class="pre">auto</span></code>/<code class="docutils literal notranslate"><span class="pre">cpu</span></code>, but a <code class="docutils literal notranslate"><span class="pre">cuda</span></code> request fails
 closed. A request outside the selected backend’s declared <code class="docutils literal notranslate"><span class="pre">torch_devices</span></code>
 also fails closed. <code class="docutils literal notranslate"><span class="pre">run_config.json</span></code> retains the composed configuration and
-records <code class="docutils literal notranslate"><span class="pre">run.resolved_devices</span></code> with each configured-to-resolved mapping;
-startup logs print the same mapping.</p>
-<p>Removed keys fail closed with a migration error: use <code class="docutils literal notranslate"><span class="pre">training.sim_carrier_device</span></code>
-instead of <code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device</span></code>, <code class="docutils literal notranslate"><span class="pre">env.sim_carrier_device</span></code> instead
-of <code class="docutils literal notranslate"><span class="pre">manager_torch_device</span></code>, and the resolved learner device instead of
-<code class="docutils literal notranslate"><span class="pre">env.tensor_runtime_device</span></code>.</p>
-<p>Migration note: a CUDA learner with the default <code class="docutils literal notranslate"><span class="pre">auto</span></code> presents CUDA tensors
-through the packed host bridge and resolves CUDA inference transport. Each
-collector process then holds one additional CUDA context on the learner GPU
-(see <a class="reference internal" href="7-tensor_runtime_production.html"><span class="doc">Tensor Runtime Production Guide</span></a>). Pin
-<code class="docutils literal notranslate"><span class="pre">training.sim_carrier_device=cpu</span></code> to keep the CPU carrier.</p>
-<p>For off-policy inference, <code class="docutils literal notranslate"><span class="pre">host</span></code> names the transport boundary rather than a
-complete learner topology: observations and actions use the CPU inference ring,
-while the learner itself may be CPU or Apple MPS. This spelling serves pure CPU
-tests and the macOS MPS host-boundary cell. <code class="docutils literal notranslate"><span class="pre">cuda</span></code> follows Torch device-type
+records the configured-to-resolved mapping in the <code class="docutils literal notranslate"><span class="pre">collector_tensor</span></code> entry of
+<code class="docutils literal notranslate"><span class="pre">run.resolved_devices</span></code>; startup logs print the same mapping.</p>
+<p>The off-policy inference transport is a pure derived fact, not a configuration
+key: <code class="docutils literal notranslate"><span class="pre">collector_tensor_device=cpu</span></code> derives the host ring (observations and
+actions use the CPU inference ring while the learner itself may be CPU or
+Apple MPS), and <code class="docutils literal notranslate"><span class="pre">cuda</span></code> derives the CUDA ring. <code class="docutils literal notranslate"><span class="pre">cuda</span></code> follows Torch device-type
 semantics and covers both NVIDIA CUDA and AMD ROCm. It does not relax separate
 platform gates: CUDA-only tensor backends still fail closed on ROCm/HIP, and
 <code class="docutils literal notranslate"><span class="pre">training.cuda_process_sharing</span></code> remains available only to the NVIDIA-specific
-CUDA MPS daemon and native H2D implementation. The removed <code class="docutils literal notranslate"><span class="pre">cpu</span></code> spelling fails
-closed; use <code class="docutils literal notranslate"><span class="pre">host</span></code>.</p>
+CUDA MPS daemon and native H2D implementation.</p>
+<p>Removed keys fail closed with a migration error: use
+<code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device</span></code> instead of <code class="docutils literal notranslate"><span class="pre">training.sim_carrier_device</span></code>
+and <code class="docutils literal notranslate"><span class="pre">training.inference_transport</span></code>, <code class="docutils literal notranslate"><span class="pre">env.collector_tensor_device</span></code> instead of
+<code class="docutils literal notranslate"><span class="pre">env.sim_carrier_device</span></code> and <code class="docutils literal notranslate"><span class="pre">manager_torch_device</span></code>, and the resolved learner
+device instead of <code class="docutils literal notranslate"><span class="pre">env.tensor_runtime_device</span></code>.</p>
+<p>Migration note: a CUDA learner with the default <code class="docutils literal notranslate"><span class="pre">auto</span></code> presents CUDA tensors
+through the packed host bridge and derives the CUDA inference ring. Each
+collector process then holds one additional CUDA context on the learner GPU
+(see <a class="reference internal" href="7-tensor_runtime_production.html"><span class="doc">Tensor Runtime Production Guide</span></a>). Pin
+<code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device=cpu</span></code> to keep the CPU carrier and CPU ring.</p>
 <p>The word “worker” is likewise layer-specific:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">

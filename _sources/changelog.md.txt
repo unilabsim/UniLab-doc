@@ -17,6 +17,25 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
 
 ### Breaking changes / 破坏性变更
 
+- `training.sim_carrier_device` and `training.inference_transport` are removed
+  without a compatibility layer; both merge into the single one-dimensional
+  collector-tensor residency knob `training.collector_tensor_device`
+  (`auto`/`cpu`/`cuda`, default `auto`, following the learner device). The
+  off-policy inference transport is now a pure derived fact (`cpu` → host
+  ring, `cuda` → CUDA ring). The env owner field is likewise renamed
+  `env.sim_carrier_device` → `env.collector_tensor_device`. All removed keys
+  fail closed with a migration hint; `run_config.json` records the mapping
+  under `device_resolution.collector_tensor`
+  ([#2481](https://github.com/Motphys/UniLab/issues/2481)).
+  `training.sim_carrier_device` 与 `training.inference_transport` 已删除，
+  无兼容层；两者合并为单一一维 collector tensor 驻留旋钮
+  `training.collector_tensor_device`（`auto`/`cpu`/`cuda`，默认 `auto`，
+  跟随 learner 设备）。off-policy inference transport 变为纯派生事实
+  （`cpu` → host ring，`cuda` → CUDA ring）。env owner 字段同步改名
+  `env.sim_carrier_device` → `env.collector_tensor_device`。全部已移除键
+  带迁移提示 fail closed；`run_config.json` 在
+  `device_resolution.collector_tensor` 记录映射（#2481）。
+
 - The public reset contract speaks IsaacLab/mjlab-style `env_ids` row indices
   again: `TorchEnv.reset`, `ManagerBase.reset` and all manager/term reset
   boundaries, `EventManager.apply(mode="reset", env_ids=...)`, reset owners,

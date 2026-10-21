@@ -32,42 +32,42 @@ SAC 与 FlashSAC 会在探测环境或构造 learner 之前解析所有面向进
 
 | 配置键 | 生效层 | 合法值 |
 | --- | --- | --- |
-| `training.sim_carrier_device` | 训练装配层，路由到环境 | `auto`、`cpu`、不带序号的 `cuda` |
-| `env.sim_carrier_device` | MuJoCo HOST_BRIDGE 的 Manager 公共 tensor | `cpu`、`cuda`、`cuda:<index>` |
-| `training.inference_transport` | off-policy IPC placement | `host`、`cuda` 或 `null`（auto） |
+| `training.collector_tensor_device` | 训练装配层，决定 collector tensor 驻留（HOST_BRIDGE Manager 载体与派生的 off-policy inference ring） | `auto`、`cpu`、不带序号的 `cuda` |
+| `env.collector_tensor_device` | HOST_BRIDGE 后端的 Manager 公共 tensor | `cpu`、`cuda`、`cuda:<index>` |
 | `training.device` | learner 与 rank-local 进程选择 | 具体 Torch device 标签 |
 
-训练键是唯一面向用户的 carrier 请求。`auto` 跟随已解析的 learner 设备：
+训练键是唯一面向用户的 collector tensor 驻留请求。`auto` 跟随已解析的 learner 设备：
 CUDA 路由 rank-local 带序号设备，CPU 路由 CPU，torch.mps（Metal
 Performance Shaders）保留 owner/default CPU 放置。显式 `cpu`/`cuda` 优先于
 `auto`。`cuda` 是具体设备家族，绝不映射到 MPS；无 CUDA 主机上的 CUDA 请求
 会 fail closed。
 
-carrier 路由由能力声明驱动：MuJoCo、Motrix、Drake 与 SuperDex 声明了
-in-process packed `HOST_BRIDGE` transfer plan，支持 `cpu`/`cuda` carrier。
+载体路由由能力声明驱动：MuJoCo、Motrix、Drake 与 SuperDex 声明了
+in-process packed `HOST_BRIDGE` transfer plan，支持 `cpu`/`cuda` 载体。
 其他后端忽略 `auto`/`cpu`，但 `cuda` 请求会 fail closed。请求超出所选后端
 声明的 `torch_devices` 时同样 fail closed。`run_config.json` 保留组合后的
-配置，并在 `run.resolved_devices` 记录每个“配置值 → 解析值”映射；启动日志
-打印同一映射。
+配置，并在 `run.resolved_devices` 的 `collector_tensor` 条目中记录
+"配置值 → 解析值"映射；启动日志打印同一映射。
 
-已移除键会带迁移错误 fail closed：用 `training.sim_carrier_device` 替代
-`training.collector_tensor_device`，用 `env.sim_carrier_device` 替代
+off-policy inference transport 是纯派生事实，不再是配置键：
+`collector_tensor_device=cpu` 推导 host ring（观测与动作走 CPU inference
+ring，learner 本身可以是 CPU 或 Apple MPS），`cuda` 推导 CUDA ring。`cuda`
+遵循 Torch device type 语义，覆盖 NVIDIA CUDA 与 AMD ROCm。它不会放宽独立
+平台 gate：CUDA-only tensor backend 在 ROCm/HIP 上仍 fail closed，
+`training.cuda_process_sharing` 仍只开放给 NVIDIA 专属的 CUDA MPS daemon 与
+native H2D 实现。
+
+已移除键会带迁移错误 fail closed：用 `training.collector_tensor_device` 替代
+`training.sim_carrier_device` 与 `training.inference_transport`，用
+`env.collector_tensor_device` 替代 `env.sim_carrier_device` 与
 `manager_torch_device`，并用已解析的 learner 设备替代
 `env.tensor_runtime_device`。
 
 迁移说明：默认 `auto` 下的 CUDA learner 会通过 packed host bridge 呈现 CUDA
-tensor，并解析为 CUDA inference transport。此时每个 collector 进程会在
+tensor，并派生 CUDA inference ring。此时每个 collector 进程会在
 learner GPU 上额外持有一个 CUDA context（拓扑见
-{doc}`7-tensor_runtime_production`）。如需保留 CPU carrier，请固定
-`training.sim_carrier_device=cpu`。
-
-对 off-policy inference，`host` 命名的是传输边界，而不是完整 learner 拓扑：
-观测与动作使用 CPU inference ring，learner 本身可以是 CPU 或 Apple MPS。该
-取值同时服务纯 CPU 测试与 macOS MPS 的 host 边界场景。`cuda` 遵循 Torch
-device type 语义，覆盖 NVIDIA CUDA 与 AMD ROCm。它不会放宽独立平台 gate：
-CUDA-only tensor backend 在 ROCm/HIP 上仍 fail closed，`training.cuda_process_sharing`
-仍只开放给 NVIDIA 专属的 CUDA MPS daemon 与 native H2D 实现。已移除的
-`cpu` 拼写会 fail closed；请使用 `host`。
+{doc}`7-tensor_runtime_production`）。如需保留 CPU 载体与 CPU ring，请固定
+`training.collector_tensor_device=cpu`。
 
 “worker”一词同样按层区分：
 

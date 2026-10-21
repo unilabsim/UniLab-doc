@@ -10,7 +10,7 @@ orphan: true
 - Date: 2026-10-02
 - Owners: Env / Manager / Training / Backend maintainers
 - Supersedes: [ADR-0011](ADR-0011-torch-only-manager-based-runtime.md)
-- Superseded by: None
+- Superseded by: [ADR-0018](ADR-0018-collector-tensor-device-sole-placement-knob.md)（仅 2026-10-17 的 #2382 改名增补；其余决策仍有效）
 - Roadmap: [Issue #1811](https://github.com/Motphys/UniLab/issues/1811)
 
 ## Context
@@ -91,6 +91,14 @@ physics engines ROCm-compatible.
 > migration hint. `run_config.json` records the configured-to-resolved device map, and `cuda`
 > never silently maps to `mps`; only the abstract `gpu` alias may select an available
 > accelerator family.
+>
+> **Superseded (2026-10-21, issue #2481, ADR-0018):** the rename above is reversed.
+> The carrier knob and the off-policy inference transport merged into the single
+> one-dimensional `training.collector_tensor_device` (auto/cpu/cuda); the "name exceeds
+> semantics" objection behind the #2382 rename no longer applies once carrier and ring
+> placement are derived from the same knob. `training.sim_carrier_device`,
+> `training.inference_transport`, and `env.sim_carrier_device` are removed and fail
+> closed with migration hints.
 >
 > **Addendum (2026-10-19, issue #2401):** Carrier routing now follows the public
 > SDK-free `TensorPlatformProfile` inventory rather than a MuJoCo-only backend-name

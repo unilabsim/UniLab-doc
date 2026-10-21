@@ -129,10 +129,10 @@ remapped namespace, not host-global physical indices.
 
 On macOS and ROCm, use a CPU-authoritative host-bridge backend. On ROCm,
 Manager/TorchEnv uses the current GPU whenever the learner device is CUDA —
-the default `training.sim_carrier_device=auto` follows the learner device —
-or when training explicitly sets `training.sim_carrier_device=cuda`, provided
+the default `training.collector_tensor_device=auto` follows the learner device —
+or when training explicitly sets `training.collector_tensor_device=cuda`, provided
 the selected HOST_BRIDGE backend declares and accepts the routed `cuda`
-`env.sim_carrier_device`; CPU learners keep CPU, torch.mps learners retain the
+`env.collector_tensor_device`; CPU learners keep CPU, torch.mps learners retain the
 owner/default CPU placement, and direct environment construction remains CPU.
 GPU Torch buffers on a host bridge do not imply GPU physics or a
 device-resident backend lifecycle.

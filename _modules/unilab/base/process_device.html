@@ -547,7 +547,7 @@
 <span class="c1"># These backends consume an explicit integer device id while materializing</span>
 <span class="c1"># their simulator.  MuJoCo/Motrix/Drake run CPU-authoritative physics; their</span>
 <span class="c1"># optional accelerator Manager buffers are selected separately through</span>
-<span class="c1"># ``env.sim_carrier_device``.</span>
+<span class="c1"># ``env.collector_tensor_device``.</span>
 <span class="n">BACKEND_ENV_DEVICE_FIELDS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">&quot;isaacgym&quot;</span><span class="p">:</span> <span class="s2">&quot;isaacgym_device_id&quot;</span><span class="p">,</span>
     <span class="s2">&quot;isaacsim&quot;</span><span class="p">:</span> <span class="s2">&quot;isaacsim_device_id&quot;</span><span class="p">,</span>
@@ -599,9 +599,9 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">is_host_bridge_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Return whether the backend executes through the packed HOST_BRIDGE plane.</span>
 
-<span class="sd">    Only HOST_BRIDGE backends route ``training.sim_carrier_device``; callers</span>
-<span class="sd">    that record or display the resolved carrier use this predicate instead of</span>
-<span class="sd">    naming individual backends.</span>
+<span class="sd">    Only HOST_BRIDGE backends route ``training.collector_tensor_device``;</span>
+<span class="sd">    callers that record or display the resolved device use this predicate</span>
+<span class="sd">    instead of naming individual backends.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">return</span> <span class="n">_host_bridge_profile</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span></div>
@@ -710,20 +710,20 @@
 
 
 
-<div class="viewcode-block" id="apply_sim_carrier_device_override">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.apply_sim_carrier_device_override.html#unilab.base.process_device.apply_sim_carrier_device_override">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">apply_sim_carrier_device_override</span><span class="p">(</span>
+<div class="viewcode-block" id="apply_collector_tensor_device_override">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.apply_collector_tensor_device_override.html#unilab.base.process_device.apply_collector_tensor_device_override">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">apply_collector_tensor_device_override</span><span class="p">(</span>
     <span class="n">env_cfg_override</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
-    <span class="n">sim_carrier_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">collector_tensor_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Return an env override selecting optional HOST_BRIDGE Torch carriers.</span>
 
-<span class="sd">    The input mapping is never mutated. ``training.sim_carrier_device`` is the</span>
-<span class="sd">    explicit training contract: ``cpu`` remains on CPU and unindexed ``cuda`` is</span>
-<span class="sd">    resolved to the current device by the environment. ``auto`` follows the learner</span>
+<span class="sd">    The input mapping is never mutated. ``training.collector_tensor_device`` is</span>
+<span class="sd">    the explicit training contract: ``cpu`` remains on CPU and unindexed ``cuda``</span>
+<span class="sd">    is resolved to the current device by the environment. ``auto`` follows the learner</span>
 <span class="sd">    device: a CUDA learner routes the rank-local (indexed) learner device string,</span>
 <span class="sd">    while a CPU learner routes CPU and a torch.mps learner retains the owner/default</span>
 <span class="sd">    CPU placement. Eligibility comes from the public SDK-free backend capability</span>
@@ -737,52 +737,57 @@
     <span class="n">result</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">env_cfg_override</span><span class="p">)</span> <span class="k">if</span> <span class="n">env_cfg_override</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{}</span>
     <span class="k">if</span> <span class="s2">&quot;manager_torch_device&quot;</span> <span class="ow">in</span> <span class="n">result</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="s2">&quot;env.manager_torch_device was removed; use env.sim_carrier_device &quot;</span>
+            <span class="s2">&quot;env.manager_torch_device was removed; use env.collector_tensor_device &quot;</span>
+            <span class="s2">&quot;(accepted values: cpu, cuda, or cuda:&lt;index&gt;)&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="s2">&quot;sim_carrier_device&quot;</span> <span class="ow">in</span> <span class="n">result</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;env.sim_carrier_device was removed; use env.collector_tensor_device &quot;</span>
             <span class="s2">&quot;(accepted values: cpu, cuda, or cuda:&lt;index&gt;)&quot;</span>
         <span class="p">)</span>
     <span class="n">profile</span> <span class="o">=</span> <span class="n">_host_bridge_profile</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">sim_carrier_device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">device</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">sim_carrier_device</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">collector_tensor_device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">collector_tensor_device</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">device</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="s2">&quot;cuda&quot;</span><span class="p">}:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;training.sim_carrier_device must be &#39;auto&#39;, &#39;cpu&#39;, or &#39;cuda&#39;; &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">sim_carrier_device</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="s2">&quot;training.collector_tensor_device must be &#39;auto&#39;, &#39;cpu&#39;, or &#39;cuda&#39;; &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">collector_tensor_device</span><span class="si">!r}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">profile</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="s2">&quot;training.sim_carrier_device=cuda requires a HOST_BRIDGE &quot;</span>
+                    <span class="s2">&quot;training.collector_tensor_device=cuda requires a HOST_BRIDGE &quot;</span>
                     <span class="s2">&quot;backend that declares CUDA Torch carriers; got &quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">backend_type</span><span class="si">!r}</span><span class="s2">&quot;</span>
                 <span class="p">)</span>
             <span class="k">return</span> <span class="n">result</span>
         <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">_apply_sim_carrier_device_auto</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">learner_device</span><span class="p">,</span> <span class="n">profile</span><span class="o">=</span><span class="n">profile</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">_apply_collector_tensor_device_auto</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">learner_device</span><span class="p">,</span> <span class="n">profile</span><span class="o">=</span><span class="n">profile</span><span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">validate_torch_device</span><span class="p">(</span>
-                <span class="n">profile</span><span class="o">.</span><span class="n">torch_devices</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;training.sim_carrier_device&quot;</span>
+                <span class="n">profile</span><span class="o">.</span><span class="n">torch_devices</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;training.collector_tensor_device&quot;</span>
             <span class="p">)</span>
         <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;training.sim_carrier_device=</span><span class="si">{</span><span class="n">device</span><span class="si">!r}</span><span class="s2"> is not supported by &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;training.collector_tensor_device=</span><span class="si">{</span><span class="n">device</span><span class="si">!r}</span><span class="s2"> is not supported by &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;backend </span><span class="si">{</span><span class="n">backend_type</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
-        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;sim_carrier_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">device</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;collector_tensor_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">device</span>
         <span class="k">return</span> <span class="n">result</span>
 
     <span class="k">if</span> <span class="n">profile</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">result</span>
-    <span class="k">return</span> <span class="n">_apply_sim_carrier_device_auto</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">learner_device</span><span class="p">,</span> <span class="n">profile</span><span class="o">=</span><span class="n">profile</span><span class="p">)</span></div>
+    <span class="k">return</span> <span class="n">_apply_collector_tensor_device_auto</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">learner_device</span><span class="p">,</span> <span class="n">profile</span><span class="o">=</span><span class="n">profile</span><span class="p">)</span></div>
 
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_apply_sim_carrier_device_auto</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_apply_collector_tensor_device_auto</span><span class="p">(</span>
     <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
     <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
     <span class="n">profile</span><span class="p">:</span> <span class="n">TensorPlatformProfile</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve the ``auto`` carrier request from the learner device.</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve the ``auto`` collector-tensor request from the learner device.</span>
 
 <span class="sd">    A CUDA learner routes its rank-local (indexed) device string verbatim, a CPU</span>
 <span class="sd">    learner routes CPU, and a torch.mps learner retains the existing CPU mapping.</span>
@@ -796,27 +801,29 @@
     <span class="k">if</span> <span class="n">device</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;mps&quot;</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">result</span>
     <span class="k">if</span> <span class="n">device</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;cpu&quot;</span><span class="p">:</span>
-        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;sim_carrier_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;collector_tensor_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span>
         <span class="k">return</span> <span class="n">result</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">device</span> <span class="ow">or</span> <span class="n">device</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">!=</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
-        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;sim_carrier_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;collector_tensor_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span>
         <span class="k">return</span> <span class="n">result</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="n">validate_torch_device</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">torch_devices</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;training.sim_carrier_device&quot;</span><span class="p">)</span>
+        <span class="n">validate_torch_device</span><span class="p">(</span>
+            <span class="n">profile</span><span class="o">.</span><span class="n">torch_devices</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;training.collector_tensor_device&quot;</span>
+        <span class="p">)</span>
     <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="s2">&quot;training.sim_carrier_device=auto resolved to &quot;</span>
+            <span class="s2">&quot;training.collector_tensor_device=auto resolved to &quot;</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">device</span><span class="si">!r}</span><span class="s2">, which is not supported by the backend capability &quot;</span>
             <span class="sa">f</span><span class="s2">&quot;declaration </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">torch_devices</span><span class="p">)</span><span class="si">!r}</span><span class="s2">&quot;</span>
         <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
-    <span class="n">result</span><span class="p">[</span><span class="s2">&quot;sim_carrier_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">device</span>
+    <span class="n">result</span><span class="p">[</span><span class="s2">&quot;collector_tensor_device&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">device</span>
     <span class="k">return</span> <span class="n">result</span>
 
 
-<div class="viewcode-block" id="canonicalize_sim_carrier_device">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.canonicalize_sim_carrier_device.html#unilab.base.process_device.canonicalize_sim_carrier_device">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">canonicalize_sim_carrier_device</span><span class="p">(</span><span class="n">requested_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the concrete public-manager carrier device for a request.&quot;&quot;&quot;</span>
+<div class="viewcode-block" id="canonicalize_collector_tensor_device">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.canonicalize_collector_tensor_device.html#unilab.base.process_device.canonicalize_collector_tensor_device">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">canonicalize_collector_tensor_device</span><span class="p">(</span><span class="n">requested_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the concrete public-manager collector tensor device for a request.&quot;&quot;&quot;</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
     <span class="k">if</span> <span class="n">requested_device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -825,20 +832,22 @@
         <span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">requested_device</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
     <span class="k">except</span> <span class="p">(</span><span class="ne">RuntimeError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;sim_carrier_device is not a valid Torch device: </span><span class="si">{</span><span class="n">requested_device</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;collector_tensor_device is not a valid Torch device: </span><span class="si">{</span><span class="n">requested_device</span><span class="si">!r}</span><span class="s2">&quot;</span>
         <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
     <span class="k">if</span> <span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">&quot;cpu&quot;</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;sim_carrier_device must be cpu or cuda; got </span><span class="si">{</span><span class="n">requested_device</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;collector_tensor_device must be cpu or cuda; got </span><span class="si">{</span><span class="n">requested_device</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
         <span class="k">return</span> <span class="s2">&quot;cpu&quot;</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;sim_carrier_device </span><span class="si">{</span><span class="n">requested_device</span><span class="si">!r}</span><span class="s2"> requires CUDA, but CUDA is unavailable&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;collector_tensor_device </span><span class="si">{</span><span class="n">requested_device</span><span class="si">!r}</span><span class="s2"> requires CUDA, but CUDA is unavailable&quot;</span>
         <span class="p">)</span>
     <span class="n">index</span> <span class="o">=</span> <span class="n">device</span><span class="o">.</span><span class="n">index</span> <span class="k">if</span> <span class="n">device</span><span class="o">.</span><span class="n">index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_device</span><span class="p">())</span>
     <span class="k">if</span> <span class="n">index</span> <span class="o">&gt;=</span> <span class="nb">int</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">()):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;sim_carrier_device index </span><span class="si">{</span><span class="n">index</span><span class="si">}</span><span class="s2"> is out of range; &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;collector_tensor_device index </span><span class="si">{</span><span class="n">index</span><span class="si">}</span><span class="s2"> is out of range; &quot;</span>
             <span class="sa">f</span><span class="s2">&quot;torch.cuda.device_count()=</span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
     <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">index</span><span class="si">}</span><span class="s2">&quot;</span></div>
@@ -1078,9 +1087,9 @@
 
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">&quot;BACKEND_ENV_DEVICE_FIELDS&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;canonicalize_sim_carrier_device&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;canonicalize_collector_tensor_device&quot;</span><span class="p">,</span>
     <span class="s2">&quot;apply_backend_env_device_override&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;apply_sim_carrier_device_override&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;apply_collector_tensor_device_override&quot;</span><span class="p">,</span>
     <span class="s2">&quot;bind_backend_process_device&quot;</span><span class="p">,</span>
     <span class="s2">&quot;bind_genesis_process_device&quot;</span><span class="p">,</span>
     <span class="s2">&quot;configure_backend_process_device&quot;</span><span class="p">,</span>

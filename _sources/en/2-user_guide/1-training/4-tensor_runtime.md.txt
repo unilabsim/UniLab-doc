@@ -33,45 +33,45 @@ Device-related settings are separated by the layer that consumes them:
 
 | Configuration key | Effective layer | Valid values |
 | --- | --- | --- |
-| `training.sim_carrier_device` | Training assembly routes it to the environment | `auto`, `cpu`, or unindexed `cuda` |
-| `env.sim_carrier_device` | Manager public tensors for a MuJoCo HOST_BRIDGE | `cpu`, `cuda`, or `cuda:<index>` |
-| `training.inference_transport` | Off-policy IPC placement | `host`, `cuda`, or `null` (auto) |
+| `training.collector_tensor_device` | Training assembly; decides collector-tensor residency (HOST_BRIDGE Manager carriers and the derived off-policy inference ring) | `auto`, `cpu`, or unindexed `cuda` |
+| `env.collector_tensor_device` | Manager public tensors for a HOST_BRIDGE backend | `cpu`, `cuda`, or `cuda:<index>` |
 | `training.device` | Learner and rank-local process selection | Concrete Torch device label |
 
-The training key is the only user-facing carrier request. `auto` follows the
-resolved learner device: CUDA routes the rank-local indexed device, CPU routes
-CPU, and torch.mps (Metal Performance Shaders) retains the owner/default CPU
-placement. Explicit `cpu` or `cuda` wins over `auto`. `cuda` is concrete and
-never maps to MPS; a CUDA request on a host without CUDA fails closed.
+The training key is the only user-facing collector-tensor residency request.
+`auto` follows the resolved learner device: CUDA routes the rank-local indexed
+device, CPU routes CPU, and torch.mps (Metal Performance Shaders) retains the
+owner/default CPU placement. Explicit `cpu` or `cuda` wins over `auto`. `cuda`
+is concrete and never maps to MPS; a CUDA request on a host without CUDA fails
+closed.
 
 Carrier routing is capability-driven: MuJoCo, Motrix, Drake, and SuperDex
 declare in-process packed `HOST_BRIDGE` transfer plans with `cpu`/`cuda`
 carriers. Other backends ignore `auto`/`cpu`, but a `cuda` request fails
 closed. A request outside the selected backend's declared `torch_devices`
 also fails closed. `run_config.json` retains the composed configuration and
-records `run.resolved_devices` with each configured-to-resolved mapping;
-startup logs print the same mapping.
+records the configured-to-resolved mapping in the `collector_tensor` entry of
+`run.resolved_devices`; startup logs print the same mapping.
 
-Removed keys fail closed with a migration error: use `training.sim_carrier_device`
-instead of `training.collector_tensor_device`, `env.sim_carrier_device` instead
-of `manager_torch_device`, and the resolved learner device instead of
-`env.tensor_runtime_device`.
-
-Migration note: a CUDA learner with the default `auto` presents CUDA tensors
-through the packed host bridge and resolves CUDA inference transport. Each
-collector process then holds one additional CUDA context on the learner GPU
-(see {doc}`7-tensor_runtime_production`). Pin
-`training.sim_carrier_device=cpu` to keep the CPU carrier.
-
-For off-policy inference, `host` names the transport boundary rather than a
-complete learner topology: observations and actions use the CPU inference ring,
-while the learner itself may be CPU or Apple MPS. This spelling serves pure CPU
-tests and the macOS MPS host-boundary cell. `cuda` follows Torch device-type
+The off-policy inference transport is a pure derived fact, not a configuration
+key: `collector_tensor_device=cpu` derives the host ring (observations and
+actions use the CPU inference ring while the learner itself may be CPU or
+Apple MPS), and `cuda` derives the CUDA ring. `cuda` follows Torch device-type
 semantics and covers both NVIDIA CUDA and AMD ROCm. It does not relax separate
 platform gates: CUDA-only tensor backends still fail closed on ROCm/HIP, and
 `training.cuda_process_sharing` remains available only to the NVIDIA-specific
-CUDA MPS daemon and native H2D implementation. The removed `cpu` spelling fails
-closed; use `host`.
+CUDA MPS daemon and native H2D implementation.
+
+Removed keys fail closed with a migration error: use
+`training.collector_tensor_device` instead of `training.sim_carrier_device`
+and `training.inference_transport`, `env.collector_tensor_device` instead of
+`env.sim_carrier_device` and `manager_torch_device`, and the resolved learner
+device instead of `env.tensor_runtime_device`.
+
+Migration note: a CUDA learner with the default `auto` presents CUDA tensors
+through the packed host bridge and derives the CUDA inference ring. Each
+collector process then holds one additional CUDA context on the learner GPU
+(see {doc}`7-tensor_runtime_production`). Pin
+`training.collector_tensor_device=cpu` to keep the CPU carrier and CPU ring.
 
 The word “worker” is likewise layer-specific:
 
