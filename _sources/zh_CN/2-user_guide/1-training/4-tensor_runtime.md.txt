@@ -51,7 +51,8 @@ in-process packed `HOST_BRIDGE` transfer plan，支持 `cpu`/`cuda` 载体。
 
 off-policy inference transport 是纯派生事实，不再是配置键：
 `collector_tensor_device=cpu` 推导 host ring（观测与动作走 CPU inference
-ring，learner 本身可以是 CPU 或 Apple MPS），`cuda` 推导 CUDA ring。`cuda`
+ring；默认合法配对中 learner 是 CPU 或 Apple MPS，CUDA learner 的配对约束
+见下文的配对契约），`cuda` 推导 CUDA ring。`cuda`
 遵循 Torch device type 语义，覆盖 NVIDIA CUDA 与 AMD ROCm。它不会放宽独立
 平台 gate：CUDA-only tensor backend 在 ROCm/HIP 上仍 fail closed，
 `training.cuda_process_sharing` 仍只开放给 NVIDIA 专属的 CUDA MPS daemon 与
@@ -66,8 +67,15 @@ native H2D 实现。
 迁移说明：默认 `auto` 下的 CUDA learner 会通过 packed host bridge 呈现 CUDA
 tensor，并派生 CUDA inference ring。此时每个 collector 进程会在
 learner GPU 上额外持有一个 CUDA context（拓扑见
-{doc}`7-tensor_runtime_production`）。如需保留 CPU 载体与 CPU ring，请固定
-`training.collector_tensor_device=cpu`。
+{doc}`7-tensor_runtime_production`）。
+
+配对契约（issue #2483，ADR-0019）：在非 ROCm 的 Torch 构建上，显式
+`training.collector_tensor_device=cpu` 与 CUDA learner 的组合会 fail
+closed——CPU 载体不再是 CUDA learner 的性能路径（#2479 重测确认其与 CUDA
+载体 + CUDA MPS 吞吐持平）。CPU 载体仍然合法的配对是：CPU learner、
+torch.mps learner（Apple Silicon 上唯一的 host bridge 拓扑）与 ROCm/HIP
+构建（无 CUDA MPS 等价物，CPU 载体是唯一进程共享缓解）。归因基线与调试
+run 通过 `UNILAB_ALLOW_CUDA_LEARNER_CPU_CARRIER=1` 显式 opt-in 保留旧拓扑。
 
 “worker”一词同样按层区分：
 

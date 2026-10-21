@@ -542,7 +542,11 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">TensorExecution</span><span class="p">,</span> <span class="n">validate_torch_device</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.support</span><span class="w"> </span><span class="kn">import</span> <span class="n">TensorPlatformProfile</span><span class="p">,</span> <span class="n">get_tensor_platform_profiles</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.process_context</span><span class="w"> </span><span class="kn">import</span> <span class="n">visible_cuda_entries</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.process_context</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">CUDA_LEARNER_CPU_CARRIER_OPT_IN</span><span class="p">,</span>
+    <span class="n">cuda_learner_cpu_carrier_opted_in</span><span class="p">,</span>
+    <span class="n">visible_cuda_entries</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="c1"># These backends consume an explicit integer device id while materializing</span>
 <span class="c1"># their simulator.  MuJoCo/Motrix/Drake run CPU-authoritative physics; their</span>
@@ -710,6 +714,27 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_cuda_learner_cpu_carrier_forbidden</span><span class="p">(</span><span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether the CUDA-learner CPU-carrier prohibition (issue #2483) applies.</span>
+
+<span class="sd">    The rule fires only for the ``cuda`` device family on a non-ROCm Torch</span>
+<span class="sd">    build: CPU/torch.mps learners never match the family check, and ROCm/HIP</span>
+<span class="sd">    builds keep the CPU carrier as their only process-sharing mitigation.</span>
+<span class="sd">    Callers that do not know the learner device yet (``None``) cannot prove a</span>
+<span class="sd">    violation and are left to the placement-layer guard.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">learner_device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">learner_device</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">!=</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">version</span><span class="p">,</span> <span class="s2">&quot;hip&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="ow">not</span> <span class="n">cuda_learner_cpu_carrier_opted_in</span><span class="p">()</span>
+
+
 <div class="viewcode-block" id="apply_collector_tensor_device_override">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.apply_collector_tensor_device_override.html#unilab.base.process_device.apply_collector_tensor_device_override">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">apply_collector_tensor_device_override</span><span class="p">(</span>
@@ -732,6 +757,10 @@
 <span class="sd">    no-op for backends outside that scope and when no learner device is known. The</span>
 <span class="sd">    ``learner_device`` argument is the fallback for callers that do not compose a</span>
 <span class="sd">    training configuration.</span>
+
+<span class="sd">    An explicit ``cpu`` request with a known CUDA learner fails closed (issue</span>
+<span class="sd">    #2483) unless the build is ROCm/HIP or the run carries the</span>
+<span class="sd">    ``UNILAB_ALLOW_CUDA_LEARNER_CPU_CARRIER`` attribution-baseline/debug opt-in.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">result</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">env_cfg_override</span><span class="p">)</span> <span class="k">if</span> <span class="n">env_cfg_override</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{}</span>
@@ -763,6 +792,16 @@
             <span class="k">return</span> <span class="n">result</span>
         <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">_apply_collector_tensor_device_auto</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">learner_device</span><span class="p">,</span> <span class="n">profile</span><span class="o">=</span><span class="n">profile</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s2">&quot;cpu&quot;</span> <span class="ow">and</span> <span class="n">_cuda_learner_cpu_carrier_forbidden</span><span class="p">(</span><span class="n">learner_device</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;training.collector_tensor_device=cpu with CUDA learner &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">learner_device</span><span class="si">!r}</span><span class="s2"> is not supported: with a CUDA learner the CPU &quot;</span>
+                <span class="s2">&quot;carrier is retained only for ROCm/HIP builds and non-CUDA &quot;</span>
+                <span class="s2">&quot;accelerator learners (issue #2483). Use &quot;</span>
+                <span class="s2">&quot;training.collector_tensor_device=auto/cuda, or export &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">CUDA_LEARNER_CPU_CARRIER_OPT_IN</span><span class="si">}</span><span class="s2">=1 for attribution-baseline/debug &quot;</span>
+                <span class="s2">&quot;runs.&quot;</span>
+            <span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">validate_torch_device</span><span class="p">(</span>
                 <span class="n">profile</span><span class="o">.</span><span class="n">torch_devices</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;training.collector_tensor_device&quot;</span>

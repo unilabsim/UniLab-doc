@@ -17,6 +17,19 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
 
 ### Breaking changes / 破坏性变更
 
+- An explicit `training.collector_tensor_device=cpu` paired with a CUDA
+  learner now fails closed on non-ROCm Torch builds: the CPU carrier is no
+  longer a CUDA-learner performance path (issue #2479 retest showed throughput
+  parity with CUDA carriers plus CUDA MPS). CPU carriers remain legal for CPU
+  and torch.mps learners and for ROCm/HIP builds; attribution baselines and
+  debug runs opt in via `UNILAB_ALLOW_CUDA_LEARNER_CPU_CARRIER=1`
+  ([#2483](https://github.com/Motphys/UniLab/issues/2483), ADR-0019).
+  显式 `training.collector_tensor_device=cpu` 与 CUDA learner 的组合在非 ROCm
+  Torch 构建上现在 fail closed：CPU 载体不再是 CUDA learner 的性能路径
+  （#2479 重测确认其与 CUDA 载体 + CUDA MPS 吞吐持平）。CPU 载体对 CPU /
+  torch.mps learner 与 ROCm/HIP 构建仍然合法；归因基线与调试 run 通过
+  `UNILAB_ALLOW_CUDA_LEARNER_CPU_CARRIER=1` 显式 opt-in（#2483，ADR-0019）。
+
 - `training.sim_carrier_device` and `training.inference_transport` are removed
   without a compatibility layer; both merge into the single one-dimensional
   collector-tensor residency knob `training.collector_tensor_device`

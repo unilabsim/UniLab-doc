@@ -77,6 +77,8 @@ uv run scripts/generate_support_matrix.py --write
 | `isaacgym` | Device-resident / external worker / cuda ipc | CUDA | Required for the entire tensor lifecycle | Supported: Linux CUDA only | Unsupported; no CPU, MPS, or ROCm fallback | Unsupported; no CPU, MPS, or ROCm fallback | Dedicated external Python 3.8 worker; host Python paths are not inherited | 支持 | 不支持 | 不支持 | 不支持 |
 | `isaacsim` | Device-resident / external worker / cuda ipc | CUDA | Required for the entire tensor lifecycle | Supported: Linux CUDA only | Unsupported; no CPU, MPS, or ROCm fallback | Unsupported; no CPU, MPS, or ROCm fallback | Dedicated external Python 3.11 worker; host Python paths are not inherited | 支持 | 不支持 | 不支持 | 不支持 |
 
+配对契约（issue #2483，ADR-0019）：在非 ROCm 的 Torch 构建上，CUDA learner 下 `training.collector_tensor_device=cpu` 会 fail closed——上表 HOST_BRIDGE 的 `CPU` Torch 设备能力不等于 CUDA learner 可用该配对。CPU 载体对 CPU / torch.mps learner 与 ROCm/HIP 构建仍然合法；归因基线通过 `UNILAB_ALLOW_CUDA_LEARNER_CPU_CARRIER=1` 显式 opt-in。
+
 ### Entrypoint x Task Owner
 
 | Entrypoint | Task owner | MuJoCo | Motrix | Drake | mjwarp | Newton | SuperDex | Genesis | IsaacGym | IsaacSim |

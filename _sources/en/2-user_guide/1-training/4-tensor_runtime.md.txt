@@ -54,8 +54,9 @@ records the configured-to-resolved mapping in the `collector_tensor` entry of
 
 The off-policy inference transport is a pure derived fact, not a configuration
 key: `collector_tensor_device=cpu` derives the host ring (observations and
-actions use the CPU inference ring while the learner itself may be CPU or
-Apple MPS), and `cuda` derives the CUDA ring. `cuda` follows Torch device-type
+actions use the CPU inference ring; in the default-legal pairings the learner
+itself is CPU or Apple MPS — see the pairing contract below for CUDA
+learners), and `cuda` derives the CUDA ring. `cuda` follows Torch device-type
 semantics and covers both NVIDIA CUDA and AMD ROCm. It does not relax separate
 platform gates: CUDA-only tensor backends still fail closed on ROCm/HIP, and
 `training.cuda_process_sharing` remains available only to the NVIDIA-specific
@@ -70,8 +71,17 @@ device instead of `env.tensor_runtime_device`.
 Migration note: a CUDA learner with the default `auto` presents CUDA tensors
 through the packed host bridge and derives the CUDA inference ring. Each
 collector process then holds one additional CUDA context on the learner GPU
-(see {doc}`7-tensor_runtime_production`). Pin
-`training.collector_tensor_device=cpu` to keep the CPU carrier and CPU ring.
+(see {doc}`7-tensor_runtime_production`).
+
+Pairing contract (issue #2483, ADR-0019): on a non-ROCm Torch build, an
+explicit `training.collector_tensor_device=cpu` paired with a CUDA learner
+fails closed — the CPU carrier is no longer a CUDA-learner performance path
+(the #2479 retest showed throughput parity with CUDA carriers plus CUDA MPS).
+CPU carriers remain legal for CPU learners, torch.mps learners (the only host
+bridge topology on Apple Silicon), and ROCm/HIP builds (no CUDA MPS
+equivalent; the CPU carrier is the only process-sharing mitigation).
+Attribution baselines and debug runs retain the old topology by opting in
+with `UNILAB_ALLOW_CUDA_LEARNER_CPU_CARRIER=1`.
 
 The word “worker” is likewise layer-specific:
 
