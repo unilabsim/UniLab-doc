@@ -189,8 +189,15 @@ first unmet prerequisite and points to the CLI lifecycle commands.
 `run_config.json` records the configured owner value. A valid run's
 `run_summary.json` embeds `runtime_manifest.cuda_process_sharing` with the
 configured/effective mode, learner and collector devices, physical UUID
-evidence, control pipe, server PID, and validation state. The section is a
-runtime-manifest v1 producer diagnostic, not a stable scalar contract.
+evidence, control pipe, server PID, and validation state. An unconfigured
+(`null`) run still records ambient host state on CUDA ranks — the raw
+`CUDA_MPS_PIPE_DIRECTORY` value, the effective pipe directory and control-pipe
+kind, the answering server PID, and best-effort learner/collector GPU UUIDs —
+with `ambient_server=true` when an environment-level daemon answered at the
+effective control pipe, so a transparent-MPS run is identifiable from its own
+manifest. Ambient observation never fails closed; unresolvable facts record
+`null`. The section is a runtime-manifest v1 producer diagnostic, not a
+stable scalar contract.
 
 MPS changes only GPU execution sharing. It does not change
 `env_steps_per_sync`, learner/collector placement, or training semantics.

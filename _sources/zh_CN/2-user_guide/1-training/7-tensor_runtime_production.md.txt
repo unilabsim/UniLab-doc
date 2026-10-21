@@ -179,6 +179,11 @@ selector 会解析成 canonical 物理 GPU UUID。MIG UUID 显式拒绝。逗号
 `run_config.json` 记录配置值。有效 run 的 `run_summary.json` 内嵌
 `runtime_manifest.cuda_process_sharing`，包含 configured/effective 模式、learner
 与 collector device、物理 UUID 证据、control pipe、server PID 与 validation 状态。
+未配置（`null`）的 run 在 CUDA rank 上仍会记录环境级 host 状态——
+`CUDA_MPS_PIPE_DIRECTORY` 原始值、生效的 pipe 目录与 control pipe 类型、应答的
+server PID，以及 best-effort 的 learner/collector GPU UUID——当环境级 daemon 在
+生效 control pipe 上应答时 `ambient_server=true`，使透明走 MPS 的 run 可以从自身
+manifest 自证。ambient 观测永不 fail closed；无法解析的事实记录为 `null`。
 该 section 是 runtime-manifest v1 的 producer diagnostic，不是稳定标量契约。
 
 MPS 只改变 GPU execution sharing，不改变 `env_steps_per_sync`、

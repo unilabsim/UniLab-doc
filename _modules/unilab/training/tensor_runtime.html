@@ -533,8 +533,15 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
 <span class="kn">from</span><span class="w"> </span><span class="nn">omegaconf</span><span class="w"> </span><span class="kn">import</span> <span class="n">DictConfig</span><span class="p">,</span> <span class="n">OmegaConf</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.process_device</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">canonicalize_sim_carrier_device</span><span class="p">,</span>
+    <span class="n">is_host_bridge_backend</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.rl.runtime.placement</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">InferencePlacement</span><span class="p">,</span>
     <span class="n">resolve_inference_placement</span><span class="p">,</span>
@@ -554,7 +561,7 @@
 <div class="viewcode-block" id="select_sim_carrier_device">
 <a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.tensor_runtime.select_sim_carrier_device.html#unilab.training.tensor_runtime.select_sim_carrier_device">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">select_sim_carrier_device</span><span class="p">(</span><span class="n">cfg</span><span class="p">:</span> <span class="n">DictConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Select the MuJoCo Manager carrier request and reject the removed key.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Select the HOST_BRIDGE Manager carrier request and reject the removed key.&quot;&quot;&quot;</span>
     <span class="n">training</span> <span class="o">=</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;training&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">training</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="s2">&quot;collector_tensor_device&quot;</span> <span class="ow">in</span> <span class="n">training</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
@@ -567,6 +574,25 @@
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;training.sim_carrier_device must be a string or omitted, got </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">value</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_recorded_sim_carrier">
+<a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.tensor_runtime.resolve_recorded_sim_carrier.html#unilab.training.tensor_runtime.resolve_recorded_sim_carrier">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_recorded_sim_carrier</span><span class="p">(</span>
+    <span class="n">sim_backend</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">env_cfg_override</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve the sim carrier recorded in ``run_config.json``.</span>
+
+<span class="sd">    Every HOST_BRIDGE backend routes ``training.sim_carrier_device``; gating</span>
+<span class="sd">    the record on one backend name drops the resolved carrier from the other</span>
+<span class="sd">    HOST_BRIDGE backends&#39; run configs.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_host_bridge_backend</span><span class="p">(</span><span class="n">sim_backend</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">canonicalize_sim_carrier_device</span><span class="p">((</span><span class="n">env_cfg_override</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;sim_carrier_device&quot;</span><span class="p">))</span></div>
 
 
 
