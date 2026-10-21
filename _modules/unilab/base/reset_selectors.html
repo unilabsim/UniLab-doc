@@ -533,20 +533,12 @@
 <span class="sd">(roadmap #2461): each conversion site owns a ``ResetMaskBuffer`` whose storage</span>
 <span class="sd">is allocated once on the env/manager/term and rewritten in place per call. The</span>
 <span class="sd">module-level helpers keep allocating and remain the owned-copy form for</span>
-<span class="sd">callers without a stable owner (tests, fixtures, deprecated shims).</span>
+<span class="sd">callers without a stable owner (tests, fixtures).</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
-
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-
-<span class="n">_MASK_DEPRECATION</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="s2">&quot;</span><span class="si">{owner}</span><span class="s2"> received a fixed-width bool reset mask; the public reset contract &quot;</span>
-    <span class="s2">&quot;takes env_ids (row indices) again. Mask selectors are deprecated since &quot;</span>
-    <span class="s2">&quot;v1.5 and will be removed in v1.6.&quot;</span>
-<span class="p">)</span>
 
 
 <div class="viewcode-block" id="ResetMaskBuffer">
@@ -592,18 +584,9 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">resolve</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">selector</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">owner</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve a public reset selector like ``resolve_reset_mask``.</span>
 
-<span class="sd">        The deprecated fixed-width bool form passes the caller&#39;s tensor through</span>
-<span class="sd">        with a ``DeprecationWarning`` (it never aliases this buffer, preserving</span>
-<span class="sd">        the identity semantics of the shim path). Every other selector is</span>
-<span class="sd">        normalized to ``env_ids`` and scattered into this buffer.</span>
+<span class="sd">        Every selector is normalized to ``env_ids`` and scattered into this</span>
+<span class="sd">        buffer.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="p">(</span>
-            <span class="nb">isinstance</span><span class="p">(</span><span class="n">selector</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
-            <span class="ow">and</span> <span class="n">selector</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">bool</span>
-            <span class="ow">and</span> <span class="n">selector</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,)</span>
-        <span class="p">):</span>
-            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="n">_MASK_DEPRECATION</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">owner</span><span class="o">=</span><span class="n">owner</span><span class="p">),</span> <span class="ne">DeprecationWarning</span><span class="p">,</span> <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">selector</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="n">env_ids</span> <span class="o">=</span> <span class="n">resolve_reset_env_ids</span><span class="p">(</span>
             <span class="n">selector</span><span class="p">,</span> <span class="n">num_envs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">owner</span><span class="o">=</span><span class="n">owner</span>
         <span class="p">)</span>
@@ -624,9 +607,8 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Normalize a public reset selector to an int64 row-index tensor.</span>
 
 <span class="sd">    ``None`` selects every row; a slice selects ``arange(num_envs)[slice]``; an</span>
-<span class="sd">    integer tensor is validated and moved onto ``device``. A fixed-width bool</span>
-<span class="sd">    mask is the deprecated form: it is accepted for one release with a</span>
-<span class="sd">    ``DeprecationWarning`` and converted to row indices.</span>
+<span class="sd">    integer tensor is validated and moved onto ``device``. Fixed-width bool</span>
+<span class="sd">    masks are rejected: the v1.4 mask form was removed in v1.5.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">selector</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
@@ -637,12 +619,10 @@
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">owner</span><span class="si">}</span><span class="s2"> env_ids must be a torch.Tensor, slice, or None; got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">selector</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
     <span class="k">if</span> <span class="n">selector</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">selector</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">owner</span><span class="si">}</span><span class="s2"> reset mask must have shape </span><span class="si">{</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,)</span><span class="si">}</span><span class="s2">; got </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">selector</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="p">)</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="n">_MASK_DEPRECATION</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">owner</span><span class="o">=</span><span class="n">owner</span><span class="p">),</span> <span class="ne">DeprecationWarning</span><span class="p">,</span> <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">selector</span><span class="p">,</span> <span class="n">as_tuple</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">owner</span><span class="si">}</span><span class="s2"> env_ids must be a 1-D integer row-index tensor; got a bool &quot;</span>
+            <span class="s2">&quot;mask (the v1.4 fixed-width mask form was removed in v1.5)&quot;</span>
+        <span class="p">)</span>
     <span class="k">if</span> <span class="n">selector</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">owner</span><span class="si">}</span><span class="s2"> env_ids must be a 1-D row-index tensor; got shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">selector</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
@@ -679,17 +659,9 @@
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve a public reset selector to the internal fixed-width bool mask.</span>
 
-<span class="sd">    A bool mask is the deprecated form: it passes through for one release with</span>
-<span class="sd">    a ``DeprecationWarning``. Everything else is normalized to ``env_ids`` and</span>
-<span class="sd">    scattered into the mask.</span>
+<span class="sd">    The selector is normalized to ``env_ids`` and scattered into a freshly</span>
+<span class="sd">    allocated mask.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="p">(</span>
-        <span class="nb">isinstance</span><span class="p">(</span><span class="n">selector</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
-        <span class="ow">and</span> <span class="n">selector</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">bool</span>
-        <span class="ow">and</span> <span class="n">selector</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,)</span>
-    <span class="p">):</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="n">_MASK_DEPRECATION</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">owner</span><span class="o">=</span><span class="n">owner</span><span class="p">),</span> <span class="ne">DeprecationWarning</span><span class="p">,</span> <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">selector</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
     <span class="n">env_ids</span> <span class="o">=</span> <span class="n">resolve_reset_env_ids</span><span class="p">(</span><span class="n">selector</span><span class="p">,</span> <span class="n">num_envs</span><span class="o">=</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">owner</span><span class="o">=</span><span class="n">owner</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">reset_env_ids_mask</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">num_envs</span><span class="o">=</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span></div>
 

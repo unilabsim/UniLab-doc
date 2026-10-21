@@ -3,10 +3,11 @@
 UniLab 1.5 将公共 reset 契约恢复为 IsaacLab/mjlab 风格的 `env_ids` 行索引形态（
 [issue #2460](https://github.com/Motphys/UniLab/issues/2460)，隶属 roadmap
 [#2459](https://github.com/Motphys/UniLab/issues/2459)）。v1.4 的定宽 bool mask
-形态已 deprecated：**位置传参**仍可继续使用一个版本并触发 `DeprecationWarning`，
-将于 v1.6 移除。
+形态已直接移除、无兼容层
+（[issue #2474](https://github.com/Motphys/UniLab/issues/2474)）：向公共 reset
+边界传 bool mask 会抛 `TypeError`。
 
-本页说明签名变更、deprecation 时间线、mask-preserving term 如何回退为 `env_ids`
+本页说明签名变更、已移除的 mask 形态、mask-preserving term 如何回退为 `env_ids`
 实现，以及下游任务如何删除 v1.4 时期的 temporal workaround。1.4 之前的实现即为恢复后
 形态的参考——例如 `git show v1.3.4:src/unilab/managers/event_manager.py`。
 
@@ -20,7 +21,7 @@ UniLab 1.5 将公共 reset 契约恢复为 IsaacLab/mjlab 风格的 `env_ids` �
 | action term | `reset(reset_mask: Tensor)` | `reset(env_ids: Tensor \| None = None)` |
 | `mode="reset"` 的 event term | 必须实现 class 边界 `reset(env, reset_mask, **params)` | `func(env, env_ids, **params)`；普通函数重新可用 |
 | `EventManager.apply` | `apply(mode="reset")` 抛 `ValueError` | `apply(mode="reset", env_ids=..., global_env_step_count=...)` 负责派发 reset 事件 |
-| `EventManager.dispatch_reset` | 唯一的 reset 事件入口 | 废弃包装；`DeprecationWarning`，v1.6 移除 |
+| `EventManager.dispatch_reset` | 唯一的 reset 事件入口 | 已移除；使用 `apply(mode="reset", env_ids=...)` |
 | `EventTermCfg.min_step_count_between_reset` | reset 事件不生效 | 恢复逐行触发过滤（1.3.x 语义） |
 | reset owner | `reset_transaction(reset_mask)` / `reset_committed(reset_mask)` | `reset_transaction(env_ids)` / `reset_committed(env_ids)` |
 | recorder 钩子 | `record_pre_reset(reset_mask)` / `record_post_reset(reset_mask)` | `record_pre_reset(env_ids)` / `record_post_reset(env_ids)` |
@@ -34,17 +35,15 @@ UniLab 1.5 将公共 reset 契约恢复为 IsaacLab/mjlab 风格的 `env_ids` �
 （`resolve_reset_env_ids`、`reset_env_ids_mask`、`resolve_reset_mask`）。
 backend 不受影响——见下方 FAQ。
 
-## Deprecation 时间线
+## 已移除的 mask 形态
 
-- **v1.5** —— 公共契约使用 `env_ids`。**位置传参**的定宽 bool 张量仍可使用并触发
-  `DeprecationWarning`。仍定义 v1.4 边界 `reset(env, reset_mask, **params)` 的
-  class 型 reset 事件项会在构造期被检测
-  （`EventManager._detect_mask_form_reset`）、告警一次，并在本版本内继续可用。
-  `EventManager.dispatch_reset(...)` 是 `apply(mode="reset", env_ids=...)` 的
-  废弃包装。
-- **v1.6** —— 以上 mask 形态全部移除。
+- **v1.5** —— 公共契约使用 `env_ids`。**位置传参**的定宽 bool 张量会抛
+  `TypeError`。仍定义 v1.4 边界 `reset(env, reset_mask, **params)` 的
+  class 型 reset 事件项不再被检测：reset term 只以 `func(env, env_ids, **params)`
+  形式被调用。`EventManager.dispatch_reset` 已移除；请使用
+  `apply(mode="reset", env_ids=...)`。
 
-关键字形式**不在**兼容窗口内：v1.5 中 `env.reset(reset_mask=mask)` 会立即抛
+关键字形式同样报错：v1.5 中 `env.reset(reset_mask=mask)` 会立即抛
 `TypeError`。请将参数名改为 `env_ids` 并传行索引。
 
 ## 将 mask-preserving term 回退为 `env_ids` 实现
@@ -100,8 +99,8 @@ class randomize_link_friction:
 
 有状态 class term 注意区分两个钩子：`func(env, env_ids, **params)` 是 reset 事件
 本体，而 class 上单参数的 `reset(self, env_ids)` 仍是状态清理钩子（参见
-`src/unilab/envs/mdp/events.py` 中 `apply_body_impulse.reset`）。只有双参数的
-`reset(env, reset_mask, **params)` 形态是被废弃的 mask 边界。写仿真状态的 event
+`src/unilab/envs/mdp/events.py` 中 `apply_body_impulse.reset`）。双参数的
+`reset(env, reset_mask, **params)` 形态已移除，不再被派发。写仿真状态的 event
 term 仍通过环境持有的 packed reset transaction 提交，只有行选择器形态变化。
 
 ### Reward / termination / curriculum / metric 的 class term
@@ -167,8 +166,8 @@ def reset(self, env_ids: torch.Tensor | None = None):
     backend_mask = reset_env_ids_mask(ids, num_envs=self.num_envs, device=self.device)
 ```
 
-`resolve_reset_env_ids` 同时实现了兼容窗口：接受位置传参的 bool mask（并触发
-`DeprecationWarning`）、拒绝越界索引，因此 env 实现可以直接获得 v1.5 的契约行为。
+`resolve_reset_env_ids` 直接实施 v1.5 契约：bool mask 抛 `TypeError`、
+越界索引同样被拒绝，因此 env 实现可以直接获得契约行为。
 
 ## 删除任务层 temporal workaround
 
@@ -224,9 +223,10 @@ property，删除 buffer、`reset` 钩子与手写加噪，并把
 ## FAQ
 
 **为什么 `env.reset(reset_mask=mask)` 直接抛 `TypeError` 而不是告警？**
-参数本身已从 `reset_mask` 更名为 `env_ids`。兼容窗口只覆盖位置传参的 bool 张量
-形态（可在运行时按 dtype 识别）；保留关键字别名会静默接受旧契约，把更名推迟到
-v1.6 时才爆发。立即报错可以强迫用户现在就完成这一处改名。
+参数本身已从 `reset_mask` 更名为 `env_ids`，且 v1.4 的 mask 形态已不带
+兼容窗口地移除：关键字形式与位置传参的 bool 张量在 v1.5 都会立即抛
+`TypeError`。立即报错可以强迫用户现在就完成这一处改名，而不是在以后的
+版本中爆发。
 
 **自定义 backend 或自定义 reset 事务需要修改吗？** 不需要。
 `SimBackend.apply_reset` 与 packed reset 事务仍消费定宽 bool mask；只有公共
@@ -236,10 +236,10 @@ v1.6 时才爆发。立即报错可以强迫用户现在就完成这一处改名
 受保护钩子 `_resample_command(reset_mask)` 保持 v1.4 的 mask 形态；自定义
 `NoiseModel` 子类保持 `reset(reset_mask)`。两个 manager 都在公共边界完成转换。
 
-**如何迁移 `EventManager.dispatch_reset(mask, ...)` 调用？** 替换为
+**如何迁移 `EventManager.dispatch_reset(mask, ...)` 调用？**
+`dispatch_reset` 已在 v1.5 移除。替换为
 `event_manager.apply(mode="reset", env_ids=mask.nonzero(as_tuple=False).flatten(), global_env_step_count=...)`；
-如果你手上已有行索引，直接传入即可。`dispatch_reset` 在 v1.6 前仍可用（伴随
-`DeprecationWarning`）。
+如果你手上已有行索引，直接传入即可。
 
 **v1.4 中 `min_step_count_between_reset` 的过滤去哪了？** v1.4 的
 `dispatch_reset` 忽略了该配置；v1.5 在

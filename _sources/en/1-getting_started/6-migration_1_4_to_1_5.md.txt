@@ -4,10 +4,11 @@ UniLab 1.5 restores the IsaacLab/mjlab-style `env_ids` row-index form as the
 public reset contract ([issue
 #2460](https://github.com/Motphys/UniLab/issues/2460), part of roadmap
 [#2459](https://github.com/Motphys/UniLab/issues/2459)). The v1.4 fixed-width
-bool mask form is deprecated: it keeps working **positionally** for one
-release with a `DeprecationWarning` and is removed in v1.6.
+bool mask form is removed without a compatibility layer ([issue
+#2474](https://github.com/Motphys/UniLab/issues/2474)): passing a bool mask to
+a public reset boundary raises `TypeError`.
 
-This page covers the signature changes, the deprecation window, how to port
+This page covers the signature changes, the removed mask forms, how to port
 mask-preserving terms back to `env_ids`, and how downstream tasks drop their
 v1.4 temporal workarounds. The pre-1.4 implementations are the reference for
 the restored form — for example
@@ -23,7 +24,7 @@ the restored form — for example
 | Action terms | `reset(reset_mask: Tensor)` | `reset(env_ids: Tensor \| None = None)` |
 | Event terms with `mode="reset"` | class boundary `reset(env, reset_mask, **params)` (required) | `func(env, env_ids, **params)`; plain functions work again |
 | `EventManager.apply` | `apply(mode="reset")` raised `ValueError` | `apply(mode="reset", env_ids=..., global_env_step_count=...)` dispatches reset terms |
-| `EventManager.dispatch_reset` | the only reset-event entry point | deprecated wrapper; `DeprecationWarning`, removed in v1.6 |
+| `EventManager.dispatch_reset` | the only reset-event entry point | removed; use `apply(mode="reset", env_ids=...)` |
 | `EventTermCfg.min_step_count_between_reset` | ignored for reset events | per-row trigger filtering restored (1.3.x semantics) |
 | Reset owners | `reset_transaction(reset_mask)` / `reset_committed(reset_mask)` | `reset_transaction(env_ids)` / `reset_committed(env_ids)` |
 | Recorder hooks | `record_pre_reset(reset_mask)` / `record_post_reset(reset_mask)` | `record_pre_reset(env_ids)` / `record_post_reset(env_ids)` |
@@ -39,20 +40,18 @@ bool masks that backend transactions consume lives in exactly one place:
 (`resolve_reset_env_ids`, `reset_env_ids_mask`, `resolve_reset_mask`).
 Backends are unaffected — see the FAQ below.
 
-## Deprecation timeline
+## Removed mask forms
 
 - **v1.5** — the public contract speaks `env_ids`. Passing a fixed-width bool
-  tensor **positionally** to `reset(...)` still works and emits a
-  `DeprecationWarning`. A class-based reset event term that still defines the
-  v1.4 boundary `reset(env, reset_mask, **params)` is detected at construction
-  (`EventManager._detect_mask_form_reset`), warns once, and keeps working for
-  this release. `EventManager.dispatch_reset(...)` is a deprecated wrapper
-  around `apply(mode="reset", env_ids=...)`.
-- **v1.6** — the mask forms above are removed.
+  tensor **positionally** to `reset(...)` raises `TypeError`. A class-based
+  reset event term that still defines the v1.4 boundary
+  `reset(env, reset_mask, **params)` is no longer detected: reset terms are
+  called as `func(env, env_ids, **params)` only. `EventManager.dispatch_reset`
+  is removed; use `apply(mode="reset", env_ids=...)`.
 
-The keyword form is **not** covered by the window:
-`env.reset(reset_mask=mask)` raises `TypeError` immediately in v1.5. Rename
-the argument to `env_ids` and pass row indices.
+The keyword form fails the same way: `env.reset(reset_mask=mask)` raises
+`TypeError` immediately in v1.5. Rename the argument to `env_ids` and pass row
+indices.
 
 ## Porting mask-preserving terms to `env_ids`
 
@@ -108,9 +107,9 @@ class randomize_link_friction:
 For stateful class terms, note the two distinct hooks: `func(env, env_ids,
 **params)` is the reset event itself, while a one-argument
 `reset(self, env_ids)` on the class remains the state-clearing hook (see
-`apply_body_impulse.reset` in `src/unilab/envs/mdp/events.py`). Only the
-two-argument `reset(env, reset_mask, **params)` form is the deprecated mask
-boundary. Event terms that write simulator state keep staging through the
+`apply_body_impulse.reset` in `src/unilab/envs/mdp/events.py`). The
+two-argument `reset(env, reset_mask, **params)` form is removed and no longer
+dispatched. Event terms that write simulator state keep staging through the
 environment-owned packed reset transaction; only the row selector changes.
 
 ### Reward, termination, curriculum, and metric class terms
@@ -175,9 +174,9 @@ def reset(self, env_ids: torch.Tensor | None = None):
     backend_mask = reset_env_ids_mask(ids, num_envs=self.num_envs, device=self.device)
 ```
 
-`resolve_reset_env_ids` also implements the deprecation window: it accepts a
-positional bool mask with a `DeprecationWarning` and rejects out-of-range
-indices, so env implementations get the v1.5 contract behavior for free.
+`resolve_reset_env_ids` enforces the v1.5 contract for you: it rejects bool
+masks with `TypeError` and rejects out-of-range indices, so env
+implementations get the contract behavior for free.
 
 ## Dropping task-level temporal workarounds
 
@@ -238,11 +237,10 @@ terms in a group when every term shares one depth.
 ## FAQ
 
 **Why does `env.reset(reset_mask=mask)` raise `TypeError` instead of
-warning?** The parameter itself is renamed to `env_ids`. The deprecation
-window covers only the positional bool-tensor form, which is detectable at
-runtime by dtype; a keyword alias would silently accept the old contract and
-postpone the rename to v1.6, when it would break harder. Failing fast forces
-the one-word fix now.
+warning?** The parameter itself is renamed to `env_ids`, and the v1.4 mask
+form is removed without a deprecation window: both the keyword form and a
+positional bool tensor raise `TypeError` immediately in v1.5. Failing fast
+forces the one-word fix now instead of breaking harder later.
 
 **Does a custom backend or a custom reset transaction need changes?** No.
 `SimBackend.apply_reset` and the packed reset transaction still consume
@@ -255,10 +253,9 @@ v1.4 mask form; custom `NoiseModel` subclasses keep `reset(reset_mask)`. Both
 managers convert at their public boundary.
 
 **How do I migrate a call to `EventManager.dispatch_reset(mask, ...)`?**
-Replace it with
+`dispatch_reset` is removed in v1.5. Replace it with
 `event_manager.apply(mode="reset", env_ids=mask.nonzero(as_tuple=False).flatten(), global_env_step_count=...)`,
-or keep passing ids you already have. `dispatch_reset` keeps working with a
-`DeprecationWarning` until v1.6.
+or keep passing ids you already have.
 
 **Where did `min_step_count_between_reset` filtering go in v1.4?** v1.4's
 `dispatch_reset` ignored it; v1.5 restores the 1.3.x per-row filtering in

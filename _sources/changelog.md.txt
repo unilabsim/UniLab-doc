@@ -53,20 +53,24 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
   again: `TorchEnv.reset`, `ManagerBase.reset` and all manager/term reset
   boundaries, `EventManager.apply(mode="reset", env_ids=...)`, reset owners,
   and the recorder pre/post-reset hooks take a one-dimensional integer tensor
-  (or `None` for every row). The v1.4 fixed-width bool mask form is deprecated:
-  a bool tensor passed **positionally** still works for one release with a
-  `DeprecationWarning` and will be removed in v1.6. The keyword form is **not**
-  covered by the deprecation window — `reset(reset_mask=...)` now raises
-  `TypeError`; rename the argument to `env_ids` and pass row indices
-  ([#2460](https://github.com/Motphys/UniLab/issues/2460)).
+  (or `None` for every row). The v1.4 fixed-width bool mask form is removed
+  without a compatibility layer: a bool tensor passed positionally now raises
+  `TypeError`, mask-form reset event terms (`reset(env, reset_mask, **params)`)
+  are no longer detected or dispatched, and the `EventManager.dispatch_reset`
+  wrapper is gone — use `apply(mode="reset", env_ids=...)`. The keyword form
+  likewise raises `TypeError`; rename the argument to `env_ids` and pass row
+  indices
+  ([#2460](https://github.com/Motphys/UniLab/issues/2460),
+  [#2474](https://github.com/Motphys/UniLab/issues/2474)).
   公共 reset 契约恢复 IsaacLab/mjlab 风格的 `env_ids` 行索引形态：
   `TorchEnv.reset`、`ManagerBase.reset` 及所有 manager/term reset 边界、
   `EventManager.apply(mode="reset", env_ids=...)`、reset owner 与 recorder
   的 pre/post-reset 钩子均接收一维整数张量（`None` 表示全部行）。v1.4 的
-  定宽 bool mask 形态已 deprecated：**位置传参**的 bool 张量仍可使用一个
-  版本并触发 `DeprecationWarning`，将于 v1.6 移除。关键字形式**不在**
-  兼容窗口内——`reset(reset_mask=...)` 现在直接抛 `TypeError`；请将参数名
-  改为 `env_ids` 并传行索引（#2460）。
+  定宽 bool mask 形态已直接移除、无兼容层：位置传参的 bool 张量现在抛
+  `TypeError`；mask 形态的 reset 事件项（`reset(env, reset_mask, **params)`）
+  不再被检测或派发；`EventManager.dispatch_reset` 包装已删除——请使用
+  `apply(mode="reset", env_ids=...)`。关键字形式同样抛 `TypeError`；请将
+  参数名改为 `env_ids` 并传行索引（#2460，#2474）。
   迁移步骤与逐类 term 的 before/after 示例见迁移指南
   {doc}`/en/1-getting_started/6-migration_1_4_to_1_5` /
   {doc}`/zh_CN/1-getting_started/6-migration_1_4_to_1_5`。
@@ -115,17 +119,15 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
   instead of allocating a fresh `num_envs` bool tensor on every reset/event
   term call: the RL env reset entry, the event/observation/command managers,
   and per-term reset owners each hold their own scratch buffer, so the hot
-  reset path no longer pays a per-call allocation. Public contracts and
-  deprecated bool-mask semantics (positional-only `DeprecationWarning`
-  passthrough, never touching a buffer) are unchanged; `reset_env_ids_mask`
-  keeps its allocating form for fixtures and external callers
+  reset path no longer pays a per-call allocation. Public contracts are
+  unchanged; `reset_env_ids_mask` keeps its allocating form for fixtures and
+  external callers
   ([#2461](https://github.com/Motphys/UniLab/issues/2461)).
   内部 `env_ids` → bool mask 适配层改为 scatter 进 owner 持有的可复用
   buffer（`unilab.base.reset_selectors.ResetMaskBuffer`），不再在每次
   reset/event term 调用时新分配 `num_envs` 大小的 bool 张量：RL env reset
   入口、event/observation/command manager 及各 term 的 reset owner 分别持有
-  各自的 scratch buffer，热路径上消除了逐次分配。公开契约与 deprecated
-  bool-mask 语义（仅位置传参、`DeprecationWarning` 透传、不经 buffer）不变；
+  各自的 scratch buffer，热路径上消除了逐次分配。公开契约不变；
   `reset_env_ids_mask` 保留逐次分配形态供 fixture 与外部调用方使用（#2461）。
 
 ## 1.4.0 (2026-10-20)
