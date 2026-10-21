@@ -40,9 +40,17 @@ uv run train --algo ppo --task go2_joystick_flat --sim mujoco \
 - `algo.load_run`
 - `algo.seed`
 - `training.no_play`
+- `training.tf32_matmul`（仅 PPO 与 APPO owner config 提供）
 - `training.play_only`
 - `training.play_render_mode`
 - `training.logger`
+
+`training.tf32_matmul` 控制 learner 上 float32 矩阵乘使用的后端。`ieee`
+（默认）保持全精度 FP32；`tf32` 启用 TF32 tensor-core kernel，并在 macOS/MPS、
+ROCm/HIP、pre-Ampere CUDA GPU（compute capability < 7.0）与 CPU 上自动回退为
+IEEE。解析结果与回退原因会写入 `run_config.json` 与 `run_summary.json`。该键
+只存在于 PPO 与 APPO owner config：收益来自它们的 FP32 更新路径；SAC 家族的
+主要 matmul 已经由 bf16 AMP 接管，#2477 实测 TF32 在该路径为噪声级。
 
 ## 查看完整 compose 结果
 

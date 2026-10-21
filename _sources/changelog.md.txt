@@ -41,6 +41,25 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
 
 ### Added / 新增
 
+- `training.tf32_matmul` is a new PPO/APPO float32 matmul backend knob:
+  `ieee` (default) preserves full-precision FP32, and `tf32` opts into TF32
+  tensor-core kernels with an automatic IEEE fallback on MPS/macOS, ROCm/HIP,
+  pre-Ampere GPUs (compute capability below 7.0), and CPU. Training
+  entrypoints apply the policy before CUDA and learner construction, play
+  paths honor it, and the resolved value plus fallback reason are recorded in
+  `run_config.json`/`run_summary.json`. The knob is intentionally not exposed
+  for SAC-family learners: their bf16-AMP updates already cast the main
+  matmuls, and the closed #2477 benchmark measured TF32 as neutral there.
+  The main benefit is the FP32 PPO/RSL-RL update path
+  ([#2475](https://github.com/Motphys/UniLab/issues/2475)).
+  新增 PPO/APPO 的 float32 matmul 后端开关 `training.tf32_matmul`：`ieee`
+  （默认）保持全精度 FP32；`tf32` 启用 TF32 tensor-core kernel，并在
+  MPS/macOS、ROCm/HIP、pre-Ampere GPU（compute capability < 7.0）与 CPU 上自动
+  回退为 IEEE。训练入口会在 CUDA 与 learner 构造前应用该策略，play 路径同样
+  生效，解析结果与回退原因写入 `run_config.json`/`run_summary.json`。该键有意
+  不暴露给 SAC 家族：其 bf16-AMP 更新已接管主要 matmul，已关闭的 #2477 实测
+  TF32 在该路径为噪声级。主要收益在 FP32 的 PPO/RSL-RL 更新路径（#2475）。
+
 - Manager-owned observation history and delay are restored:
   `ObservationTermCfg.history_length > 0` and `delay_*` construct and reset
   again, with the v1.3.4 semantics (oldest-to-newest flattening, first-frame

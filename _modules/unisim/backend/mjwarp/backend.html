@@ -1976,7 +1976,16 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_host_dirty</span> <span class="o">=</span> <span class="kc">False</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_refresh_tracked_body_state_device_only</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Refresh tracked body sensors without a host-cache transfer.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Refresh tracked body sensors without a host-cache transfer.</span>
+
+<span class="sd">        The refresh kernels stay on the backend&#39;s (blocking) Warp stream.</span>
+<span class="sd">        Tensor consumers are ordered through the legacy default stream or the</span>
+<span class="sd">        step completion event, and host consumers pass through</span>
+<span class="sd">        ``_refresh_host_cache``, which synchronizes after its downloads — so no</span>
+<span class="sd">        device-wide synchronize is needed here.  A host-blocking barrier on the</span>
+<span class="sd">        tensor read path would serialize obs assembly behind the physics tail</span>
+<span class="sd">        on every step.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span><span class="p">:</span>
             <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span><span class="o">.</span><span class="n">kinematics</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="p">)</span>
@@ -1984,7 +1993,6 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span><span class="o">.</span><span class="n">com_vel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span><span class="o">.</span><span class="n">sensor_pos</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span><span class="o">.</span><span class="n">sensor_vel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_synchronize</span><span class="p">()</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_host_dirty</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
@@ -2907,18 +2915,22 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_write_mocap_pose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mocap_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">poses</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_host_cache</span><span class="p">()</span>
         <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">over</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">):</span>
             <span class="n">poses</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">poses</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">poses</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;mjwarp mocap poses must be finite float32 values&quot;</span><span class="p">)</span>
+        <span class="c1"># The mocap mirrors are maintained synchronously by every state commit,</span>
+        <span class="c1"># so this write never needs to read the host state cache.  Uploads and</span>
+        <span class="c1"># the forward replay are stream-ordered after any in-flight physics;</span>
+        <span class="c1"># publish the refreshed device state to host readers lazily instead of</span>
+        <span class="c1"># paying a device-wide synchronize and full download per write.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_pos</span><span class="p">[</span><span class="n">rows</span><span class="p">,</span> <span class="n">mocap_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">poses</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_quat</span><span class="p">[</span><span class="n">rows</span><span class="p">,</span> <span class="n">mocap_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">poses</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">mocap_pos</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_pos</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">mocap_quat</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_quat</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_execute_device_forward</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_synchronize</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_refresh_host_cache</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span> <span class="o">=</span> <span class="kc">True</span>
 
 <div class="viewcode-block" id="MjwarpBackend.get_body_subtree_ids">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_subtree_ids">[docs]</a>
@@ -4286,7 +4298,11 @@
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="s2">&quot;mixing device-resident and host interval wrenches is unsupported&quot;</span>
             <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_host_cache</span><span class="p">()</span>
+        <span class="c1"># No plan-level host-cache publication: every host handler that reads</span>
+        <span class="c1"># state publishes it on entry, and the velocity-delta handler writes</span>
+        <span class="c1"># device rows directly.  A device-resident tensor step leaves the cache</span>
+        <span class="c1"># stale on every tick, so an unconditional publication here would pay a</span>
+        <span class="c1"># full state download for plans that never read host state.</span>
         <span class="c1"># A non-empty plan starts from cleared external wrenches, matching the</span>
         <span class="c1"># MuJoCo backend: ops within one plan accumulate, while a later plan</span>
         <span class="c1"># replaces anything a previous plan staged before it was consumed.</span>
@@ -4415,7 +4431,6 @@
         <span class="n">velocity_delta</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply a row-selective world-frame velocity kick to the configured free root.&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_host_cache</span><span class="p">()</span>
         <span class="n">qvel_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_root_velocity_qvel_ids</span>
         <span class="k">if</span> <span class="n">qvel_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
@@ -4468,16 +4483,24 @@
         <span class="k">if</span> <span class="n">active_rows</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">return</span>
 
-        <span class="c1"># Kick the host-cache rows and re-commit them through the existing</span>
-        <span class="c1"># upload + forward barrier so sensors/kinematics stay coherent.</span>
+        <span class="c1"># Kick the live device rows directly through the stable Torch view.</span>
+        <span class="c1"># The delta add and the forward replay are stream-ordered after any</span>
+        <span class="c1"># in-flight physics (the same ordering the step_tensor control upload</span>
+        <span class="c1"># relies on), so no device-wide synchronize or host state round-trip is</span>
+        <span class="c1"># needed; host readers publish the refreshed state lazily.</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
         <span class="n">qvel_columns</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">qvel_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_qvel_cache</span><span class="p">[</span><span class="n">active_rows</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">qvel_columns</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]]</span> <span class="o">+=</span> <span class="n">velocity_delta</span><span class="p">[</span>
-            <span class="n">active_rows</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:</span>
-        <span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">qvel</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_qvel_cache</span><span class="p">)</span>
+        <span class="n">deltas</span> <span class="o">=</span> <span class="n">velocity_delta</span><span class="p">[</span><span class="n">active_rows</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="n">qvel_view</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="s2">&quot;qvel&quot;</span><span class="p">)</span>
+        <span class="n">rows_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">active_rows</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">qvel_view</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">columns_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">qvel_columns</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">qvel_view</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">qvel_view</span><span class="p">[</span><span class="n">rows_tensor</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">columns_tensor</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]]</span> <span class="o">+=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span>
+            <span class="n">deltas</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">qvel_view</span><span class="o">.</span><span class="n">device</span>
+        <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_execute_device_forward</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_synchronize</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_refresh_host_cache</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span> <span class="o">=</span> <span class="kc">True</span>
 
 <div class="viewcode-block" id="MjwarpBackend.materialize">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.materialize">[docs]</a>

@@ -40,9 +40,19 @@ Common fields:
 - `algo.load_run`
 - `algo.seed`
 - `training.no_play`
+- `training.tf32_matmul` (PPO and APPO owner configs only)
 - `training.play_only`
 - `training.play_render_mode`
 - `training.logger`
+
+`training.tf32_matmul` controls the backend used for float32 matrix multiplies
+on the learner. `ieee` (default) keeps full-precision FP32; `tf32` opts into
+TF32 tensor-core kernels and automatically falls back to IEEE on macOS/MPS,
+ROCm/HIP, pre-Ampere CUDA GPUs (compute capability below 7.0), and CPU. The
+resolved value and fallback reason are recorded in `run_config.json` and
+`run_summary.json`. The knob exists only on the PPO and APPO owner configs
+because the win is on their FP32 update path; SAC-family learners already cast
+their main matmuls through bf16 AMP, where #2477 measured TF32 as neutral.
 
 ## Inspect the Composed Config
 
