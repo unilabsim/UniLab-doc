@@ -13,7 +13,7 @@ UniLab 遵循[语义化版本](https://semver.org/)。本共享页面以中英�
 PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完整提交历史请参阅
 [UniLab 仓库](https://github.com/unilabsim/UniLab)。
 
-## Unreleased / 未发布
+## 1.5.0 (2026-10-22)
 
 ### Breaking changes / 破坏性变更
 
@@ -129,6 +129,28 @@ PyPI 版本变更与未发布变更；发布日期采用 PyPI 上传日期。完
   入口、event/observation/command manager 及各 term 的 reset owner 分别持有
   各自的 scratch buffer，热路径上消除了逐次分配。公开契约不变；
   `reset_env_ids_mask` 保留逐次分配形态供 fixture 与外部调用方使用（#2461）。
+
+### Fixed / 修复
+
+- Fixed the mjwarp off-policy collector `Env Step` breakdown hiding
+  `Backend Step`: an event-backed asynchronous step's physics wait surfaces at
+  the first host read of the step outputs — the update-state termination drain,
+  or the autoreset done-mask gate when update_state performs no host read — and
+  was misattributed to `Update State` / `Reset Done`. Both windows now roll up
+  into `Backend Step` through `TorchEnv._collect_step_core_drain_ms`; total
+  `Env Step` accounting is unchanged and synchronous backends keep their
+  existing attribution. The off-policy terminal System column also gained a
+  `CUDA MPS` indicator (`on` / `ambient` / `off`) driven by the run's
+  `cuda_process_sharing` manifest evidence
+  ([#2495](https://github.com/Motphys/UniLab/issues/2495)).
+  修复 mjwarp off-policy collector `Env Step` 分解缺 `Backend Step` 的问题：
+  事件型异步 step 的物理等待发生在 step 输出后的第一个 host 读取处
+  （update_state 内 termination drain；若 update_state 无 host 读取则为
+  autoreset done-mask 门控），此前被误归入 `Update State` / `Reset Done`。
+  两个窗口现在经 `TorchEnv._collect_step_core_drain_ms` 归入 `Backend Step`；
+  `Env Step` 总额不变，同步后端归因不变。off-policy 终端 System 列新增
+  `CUDA MPS` 指示（`on` / `ambient` / `off`），取值自 run 的
+  `cuda_process_sharing` manifest 证据（#2495）。
 
 ## 1.4.0 (2026-10-20)
 
