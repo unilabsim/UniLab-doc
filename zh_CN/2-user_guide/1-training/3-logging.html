@@ -534,7 +534,9 @@ key 的契约如下：</p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">Learner</span> <span class="pre">(Iter</span> <span class="pre">Wall)</span></code>：learner 主线程的一圈；所有行使用 <code class="docutils literal notranslate"><span class="pre">Iter</span> <span class="pre">Wall</span></code> 作分母。</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">Collector</span> <span class="pre">(own</span> <span class="pre">clock)</span></code>：collector 子进程自己的采集时钟，与 learner 并行。</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">System</span></code>：buffer 大小、timeout rate、env 数和每 rank batch 大小。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">System</span></code>：buffer 大小、timeout rate、env 数、每 rank batch 大小，以及 rank
+本地 CUDA MPS 状态（验证通过的请求显示 <code class="docutils literal notranslate"><span class="pre">on</span></code>，环境级透明 daemon 显示
+<code class="docutils literal notranslate"><span class="pre">ambient</span></code>，否则 <code class="docutils literal notranslate"><span class="pre">off</span></code>）。</p></li>
 </ul>
 </li>
 </ul>
@@ -847,7 +849,11 @@ reader 遇到 canonical tag、canonical/legacy 混合或不支持的 metric sche
 <code class="docutils literal notranslate"><span class="pre">Metrics</span> <span class="pre">Publish</span></code>，以及嵌套的 <code class="docutils literal notranslate"><span class="pre">Action</span> <span class="pre">Validate</span></code> / <code class="docutils literal notranslate"><span class="pre">Apply</span> <span class="pre">Action</span></code> /
 <code class="docutils literal notranslate"><span class="pre">Action+Backend</span></code> 明细属于安静诊断项：它们仍是 canonical TensorBoard / W&amp;B 字段，
 但只有达到 collector cycle 的 1% 时才出现在终端。<code class="docutils literal notranslate"><span class="pre">Backend</span> <span class="pre">Step</span></code>、
-<code class="docutils literal notranslate"><span class="pre">Update</span> <span class="pre">State</span></code> 与 <code class="docutils literal notranslate"><span class="pre">Reset</span> <span class="pre">Done</span></code> 是嵌套诊断而非额外 cycle 切片，同样按该显著性规则显示。</p>
+<code class="docutils literal notranslate"><span class="pre">Update</span> <span class="pre">State</span></code> 与 <code class="docutils literal notranslate"><span class="pre">Reset</span> <span class="pre">Done</span></code> 是嵌套诊断而非额外 cycle 切片，同样按该显著性规则显示。
+对于事件型异步后端（mjwarp），设备物理等待发生在 step 输出的第一次 host 读取
+——update_state 内 termination 阶段的 queue drain（若 update_state 没有 host 读取，
+则为 autoreset 的 done-mask 门控）——并归因到 <code class="docutils literal notranslate"><span class="pre">Backend</span> <span class="pre">Step</span></code>，因此该行反映真实设备
+工作而非仅 kernel 发射开销。</p>
 <p><code class="docutils literal notranslate"><span class="pre">Learner</span> <span class="pre">Action</span> <span class="pre">Wait</span></code> 特意不叫 “Inference Wait”：它不是纯 inference latency。如果 collector
 在 learner update 期间先完成 <code class="docutils literal notranslate"><span class="pre">Env</span> <span class="pre">Step</span> <span class="pre">+</span> <span class="pre">Replay</span> <span class="pre">Write</span></code> 并提交下一 request，这一项会包含
 剩余 update、下一轮 learner <code class="docutils literal notranslate"><span class="pre">Collector</span> <span class="pre">Wait</span></code> 中的少量调度延迟，以及下一次 <code class="docutils literal notranslate"><span class="pre">Inference</span> <span class="pre">+</span> <span class="pre">Collector</span> <span class="pre">Release</span></code>。所以它很长并不与“两侧并行”矛盾，反而说明 collector 比 learner

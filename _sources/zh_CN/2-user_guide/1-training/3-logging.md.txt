@@ -76,7 +76,9 @@ key 的契约如下：
 - 120 列及以上时，timing 使用完整三列：
   - `Learner (Iter Wall)`：learner 主线程的一圈；所有行使用 `Iter Wall` 作分母。
   - `Collector (own clock)`：collector 子进程自己的采集时钟，与 learner 并行。
-  - `System`：buffer 大小、timeout rate、env 数和每 rank batch 大小。
+  - `System`：buffer 大小、timeout rate、env 数、每 rank batch 大小，以及 rank
+    本地 CUDA MPS 状态（验证通过的请求显示 `on`，环境级透明 daemon 显示
+    `ambient`，否则 `off`）。
 
 Metric 渲染按语义分组：loss 与 policy 状态使用稳定短标签，training 诊断缩进，
 replay-ingress gauge 显示为 `Ingress Backpressure`、`Ingress Depth` 等标签；它们
@@ -238,6 +240,10 @@ SAC / FlashSAC 每个 vectorized env tick 记录热路径互斥阶段，终端�
 `Action+Backend` 明细属于安静诊断项：它们仍是 canonical TensorBoard / W&B 字段，
 但只有达到 collector cycle 的 1% 时才出现在终端。`Backend Step`、
 `Update State` 与 `Reset Done` 是嵌套诊断而非额外 cycle 切片，同样按该显著性规则显示。
+对于事件型异步后端（mjwarp），设备物理等待发生在 step 输出的第一次 host 读取
+——update_state 内 termination 阶段的 queue drain（若 update_state 没有 host 读取，
+则为 autoreset 的 done-mask 门控）——并归因到 `Backend Step`，因此该行反映真实设备
+工作而非仅 kernel 发射开销。
 
 `Learner Action Wait` 特意不叫 “Inference Wait”：它不是纯 inference latency。如果 collector
 在 learner update 期间先完成 `Env Step + Replay Write` 并提交下一 request，这一项会包含

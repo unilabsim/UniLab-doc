@@ -82,8 +82,10 @@ The terminal has explicit width tiers:
     uses `Iter Wall` as its denominator.
   - `Collector (own clock)` is measured in the collector subprocess and runs in
     parallel with the learner.
-  - `System` contains the buffer size, timeout rate, environment count, and
-    per-rank batch size.
+  - `System` contains the buffer size, timeout rate, environment count,
+    per-rank batch size, and the rank-local CUDA MPS status (`on` for a
+    validated request, `ambient` for a transparent environment-level daemon,
+    `off` otherwise).
 
 Metric rendering separates semantic groups: losses and policy state use stable short
 labels, training diagnostics are indented, and replay-ingress gauges render as
@@ -265,7 +267,11 @@ The terminal keeps the core cycle rows above visible. `Inference Request`,
 canonical TensorBoard / W&B fields, but appear in the terminal only when they
 reach at least 1% of the collector cycle. `Backend Step`, `Update State`, and
 `Reset Done` follow the same materiality rule because they are nested diagnostics
-rather than additional cycle slices.
+rather than additional cycle slices. For an event-backed asynchronous backend
+(mjwarp), the device physics wait surfaces at the first host read of the step
+outputs — the update-state termination drain, or the autoreset done-mask gate
+when update_state performs no host read — and is attributed to `Backend Step`,
+so the row reports real device work instead of only the kernel-launch overhead.
 
 `Learner Action Wait` is deliberately not named “Inference Wait”: it is not pure
 inference latency. If the collector finishes `Env Step + Replay Write` and submits its

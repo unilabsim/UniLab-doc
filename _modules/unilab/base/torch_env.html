@@ -851,6 +851,14 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_state</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
         <span class="n">update_state_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">update_state_cpu_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">produces_completion_receipts</span><span class="p">:</span>
+            <span class="c1"># An event-backed asynchronous step drains its device work at the</span>
+            <span class="c1"># first update-state host read; re-attribute that measured window</span>
+            <span class="c1"># to the backend step phase so update_state reports manager work.</span>
+            <span class="n">drain_ms</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect_step_core_drain_ms</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">drain_ms</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="n">step_core_ms</span> <span class="o">+=</span> <span class="n">drain_ms</span>
+                <span class="n">update_state_ms</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">update_state_ms</span> <span class="o">-</span> <span class="n">drain_ms</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span> <span class="o">+=</span> <span class="mi">1</span>
@@ -860,8 +868,17 @@
         <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
         <span class="c1"># Preserve the semantic autoreset gate: an empty done mask must not</span>
-        <span class="c1"># consume reset RNG or publish a terminal carrier.</span>
+        <span class="c1"># consume reset RNG or publish a terminal carrier. When update_state</span>
+        <span class="c1"># made no host read of the step outputs, this gate is the first</span>
+        <span class="c1"># synchronization point after an event-backed asynchronous backend</span>
+        <span class="c1"># step, so its wait belongs to the backend step phase rather than to</span>
+        <span class="c1"># reset bookkeeping.</span>
         <span class="n">did_reset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset</span> <span class="ow">and</span> <span class="nb">bool</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">terminated</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">())</span>
+        <span class="n">step_core_ms</span> <span class="o">+=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="n">step_core_cpu_ms</span> <span class="o">+=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+
+        <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+        <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">did_reset</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_envs</span><span class="p">()</span>
         <span class="n">reset_done_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
@@ -1188,6 +1205,18 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_collect_reset_backend_timing_ms</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return backend-owned sub-timings from the most recent tensor reset.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="p">{}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_collect_step_core_drain_ms</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="n">TorchEnvState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the update-state window that drained an async backend step.</span>
+
+<span class="sd">        Only consulted when the backend publishes event-backed completion</span>
+<span class="sd">        receipts (``produces_completion_receipts``); synchronous backends drain</span>
+<span class="sd">        nothing, so the default is zero. An env whose update-state sub-phase</span>
+<span class="sd">        hosts the first read of asynchronous step outputs overrides this to</span>
+<span class="sd">        report that measured window.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">del</span> <span class="n">state</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_clear_step_final_observation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
