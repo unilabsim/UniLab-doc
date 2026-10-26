@@ -607,8 +607,8 @@ profile 自动汇总；不要手工编辑表格内容。需要刷新时运行：
 <td><p>CUDA</p></td>
 <td><p>Required for the entire tensor lifecycle</p></td>
 <td><p>Supported: Linux CUDA only</p></td>
-<td><p>Unsupported; no CPU, MPS, or ROCm fallback</p></td>
-<td><p>Unsupported; no CPU, MPS, or ROCm fallback</p></td>
+<td><p>Unsupported UniSim tensor profile; Genesis engine natively supports Metal, with no CPU or substitute-backend fallback</p></td>
+<td><p>Supported: Linux ROCm with HIP Torch and exact gs.amdgpu (cuda); no CPU or substitute-backend fallback</p></td>
 <td><p>In-process; no external Python worker</p></td>
 <td><p>支持</p></td>
 <td><p>不支持</p></td>
@@ -816,22 +816,24 @@ profile 自动汇总；不要手工编辑表格内容。需要刷新时运行：
 <section id="id3">
 <h2>平台故障排查<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
 <p>CUDA-only tensor 后端在 CPU、MPS、macOS、ROCm/HIP、CUDA 不可用、CUDA 序号
-非法以及设备越界时，都会在后端构造前失败；不会回退到 NumPy 或 host bridge。</p>
+非法以及设备越界时，都会在后端构造前失败；Genesis 则接受其声明的
+HIP/ROCm + <code class="docutils literal notranslate"><span class="pre">gs.amdgpu</span></code> profile。不支持的请求不会回退到 NumPy 或 host bridge。</p>
 <p>请在同一个进程环境中检查 Torch runtime 与可见序号：</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import torch; print(torch.__version__, torch.version.cuda, torch.version.hip, torch.cuda.is_available(), torch.cuda.device_count(), torch.cuda.current_device())&quot;</span>
 </pre></div>
 </div>
-<p>CUDA-only 矩阵要求 <code class="docutils literal notranslate"><span class="pre">torch.version.hip</span></code> 为 <code class="docutils literal notranslate"><span class="pre">None</span></code>。若 CUDA 不可用，先检查
-NVIDIA 驱动与容器运行时不匹配，再调整任务配置。设置了
-<code class="docutils literal notranslate"><span class="pre">CUDA_VISIBLE_DEVICES</span></code> 时，后端序号指向重映射后的命名空间，而不是宿主机
-全局物理索引。</p>
-<p>在 macOS 与 ROCm 上请使用 CPU-authoritative host-bridge 后端。在 ROCm 上，
-只要 learner 设备为 CUDA——默认的 <code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device=auto</span></code> 会跟随
+<p>CUDA-only 后端与 Genesis <code class="docutils literal notranslate"><span class="pre">gs.cuda</span></code> 配对要求 <code class="docutils literal notranslate"><span class="pre">torch.version.hip</span></code> 为 <code class="docutils literal notranslate"><span class="pre">None</span></code>；
+Genesis <code class="docutils literal notranslate"><span class="pre">gs.amdgpu</span></code> 配对则要求 HIP build。若 GPU runtime 不可用，先检查
+驱动与容器运行时不匹配，再调整任务配置。设置了 <code class="docutils literal notranslate"><span class="pre">CUDA_VISIBLE_DEVICES</span></code> 时，
+后端序号指向重映射后的命名空间，而不是宿主机全局物理索引。</p>
+<p>在 macOS 上请使用 CPU-authoritative host-bridge 后端。ROCm 支持 host bridge
+与 Genesis exact-<code class="docutils literal notranslate"><span class="pre">gs.amdgpu</span></code> device-resident profile。对于 host bridge，只要
+learner 设备为 CUDA——默认的 <code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device=auto</span></code> 会跟随
 learner 设备——或训练显式设置 <code class="docutils literal notranslate"><span class="pre">training.collector_tensor_device=cuda</span></code>，且所选
-HOST_BRIDGE 后端声明并接受被路由的 <code class="docutils literal notranslate"><span class="pre">cuda</span></code> <code class="docutils literal notranslate"><span class="pre">env.collector_tensor_device</span></code>，
-Manager/TorchEnv 就使用当前 GPU；CPU learner 保持 CPU，torch.mps learner
-保留 owner/default CPU 放置，直接构造环境仍为 CPU。host bridge 使用 GPU
-Torch buffer 不代表 GPU physics，也不代表 device-resident 后端生命周期。</p>
+后端声明并接受被路由的 <code class="docutils literal notranslate"><span class="pre">cuda</span></code> <code class="docutils literal notranslate"><span class="pre">env.collector_tensor_device</span></code>，Manager/TorchEnv
+就使用当前 GPU；CPU learner 保持 CPU，torch.mps learner 保留 owner/default
+CPU 放置，直接构造环境仍为 CPU。host bridge 使用 GPU Torch buffer 不代表
+GPU physics，也不代表 device-resident 后端生命周期。</p>
 </section>
 </section>
 

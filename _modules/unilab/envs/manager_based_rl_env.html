@@ -932,7 +932,10 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_mask_buffer</span> <span class="o">=</span> <span class="n">ResetMaskBuffer</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">event_term_mask_buffer</span> <span class="o">=</span> <span class="n">ResetMaskBuffer</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_has_transition</span> <span class="o">=</span> <span class="kc">False</span>
-
+        <span class="c1"># Cold-path binds happen while managers construct. Declare the Manager</span>
+        <span class="c1"># carrier&#39;s device now so reset-capability negotiation checks the same</span>
+        <span class="c1"># plane that the packed reset transaction will use after materialize.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_state</span><span class="o">.</span><span class="n">declare_packed_reset_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_load_managers</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mapped_obs_dims</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_observation_mapping</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_substep_capabilities</span><span class="p">()</span>
@@ -961,6 +964,7 @@
                     <span class="n">env_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_all_env_rows</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_manager</span><span class="o">.</span><span class="n">uses_startup_rows</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
                 <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_compile_tensor_read_plan</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">observation_manager</span><span class="o">.</span><span class="n">bind_read_phase</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">command_manager</span><span class="o">.</span><span class="n">bind_read_phase</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_manager_tensor_runtime</span><span class="p">()</span></div>
 
@@ -968,6 +972,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_compile_tensor_read_plan</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Compile the scene&#39;s only packed tensor read phase.&quot;&quot;&quot;</span>
         <span class="n">specs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">SceneTensorReadSpec</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">specs</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_observation_ray_read_specs</span><span class="p">())</span>
         <span class="n">specs</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_action_tensor_read_specs</span><span class="p">())</span>
         <span class="n">specs</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_observation_tensor_read_specs</span><span class="p">())</span>
         <span class="n">specs</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_task_tensor_state_read_specs</span><span class="p">())</span>
@@ -1042,6 +1047,10 @@
                         <span class="p">)</span>
                     <span class="p">)</span>
                 <span class="n">term</span> <span class="o">=</span> <span class="n">term_cfg</span><span class="o">.</span><span class="n">func</span>
+                <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">&quot;ray_pattern&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="c1"># Ray terms already declared a pose-only body request above.</span>
+                    <span class="c1"># They must not also add the legacy four-field body-state set.</span>
+                    <span class="k">continue</span>
                 <span class="n">body_names</span> <span class="o">=</span> <span class="n">term_cfg</span><span class="o">.</span><span class="n">params</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;tensor_body_names&quot;</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">body_names</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                     <span class="n">body_names</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="s2">&quot;tensor_body_names&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
@@ -1065,6 +1074,41 @@
                         <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; requires an entity_name parameter&quot;</span>
                     <span class="p">)</span>
                 <span class="n">specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">SceneTensorReadSpec</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">entity_name</span><span class="p">,</span> <span class="n">body_names</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">body_names</span><span class="p">)))</span>
+        <span class="k">return</span> <span class="n">specs</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_observation_ray_read_specs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">SceneTensorReadSpec</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Collect pose-only blocks needed by tensor ray observations.&quot;&quot;&quot;</span>
+        <span class="n">specs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">SceneTensorReadSpec</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">requested_entities</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">group_name</span><span class="p">,</span> <span class="n">terms</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">observation_manager</span><span class="o">.</span><span class="n">active_terms</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">terms</span><span class="p">:</span>
+                <span class="n">term_cfg</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observation_manager</span><span class="o">.</span><span class="n">get_term_cfg</span><span class="p">(</span><span class="n">group_name</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+                <span class="n">ray_pattern</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">term_cfg</span><span class="o">.</span><span class="n">func</span><span class="p">,</span> <span class="s2">&quot;ray_pattern&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">ray_pattern</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ray_pattern</span><span class="p">,</span> <span class="n">mdp</span><span class="o">.</span><span class="n">RayPatternCfg</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                        <span class="s2">&quot;ManagerBasedRlEnv ray declaration for observation term &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">group_name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; must be RayPatternCfg; got &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">ray_pattern</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
+                <span class="k">for</span> <span class="n">entity_name</span><span class="p">,</span> <span class="n">entity</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">entities</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="k">if</span> <span class="n">entity_name</span> <span class="ow">in</span> <span class="n">requested_entities</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">body_names</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">body_names</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">NotImplementedError</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">body_names</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="n">requested_entities</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">entity_name</span><span class="p">)</span>
+                    <span class="n">specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="n">SceneTensorReadSpec</span><span class="p">(</span>
+                            <span class="n">entity</span><span class="o">=</span><span class="n">entity_name</span><span class="p">,</span>
+                            <span class="n">body_names</span><span class="o">=</span><span class="n">body_names</span><span class="p">,</span>
+                            <span class="n">body_fields</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;pos_w&quot;</span><span class="p">,</span> <span class="s2">&quot;quat_w&quot;</span><span class="p">),</span>
+                        <span class="p">)</span>
+                    <span class="p">)</span>
         <span class="k">return</span> <span class="n">specs</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_manager_term_tensor_read_specs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">SceneTensorReadSpec</span><span class="p">]:</span>
@@ -2295,6 +2339,7 @@
 <div class="viewcode-block" id="ManagerBasedRlEnv.close">
 <a class="viewcode-back" href="../../../api_reference/envs/_autosummary/unilab.envs.manager_based_rl_env.ManagerBasedRlEnv.html#unilab.tasks.locomotion.g1.manager_terms.ManagerBasedRlEnv.close">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">observation_manager</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
         <span class="n">read_plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">read_plan</span>
         <span class="k">if</span> <span class="n">read_plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">read_plan</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>

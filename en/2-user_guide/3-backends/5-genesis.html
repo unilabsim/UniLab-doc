@@ -468,16 +468,26 @@ sensors with <code class="docutils literal notranslate"><span class="pre">data=&
 reproduction of it.</p></li>
 <li><p><strong>Actuators</strong>: <code class="docutils literal notranslate"><span class="pre">&lt;position</span> <span class="pre">kp</span> <span class="pre">kv&gt;</span></code> actuators import losslessly and are
 driven with <code class="docutils literal notranslate"><span class="pre">control_dofs_position</span></code>; kp/kd reset randomization is supported
-(the DR capability set declares only the per-env round-trip-measured terms:
-body mass, base mass, kp, kd, plus interval body force).</p></li>
+on the device plane (the DR capability sets declare only the measured device
+reset terms: body mass, base-mass delta, body CoM / base-CoM delta, kp,
+kd; the device interval set additionally covers body force, body torque,
+and world-frame root linear plus root-local angular velocity deltas).</p></li>
 </ul>
 </section>
 <section id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p>Linux x86_64 with an NVIDIA GPU and driver. Only the <code class="docutils literal notranslate"><span class="pre">gs.gpu</span></code> lane is
-validated by the feasibility probe; the CPU backend is not a validated
-support lane.</p></li>
+<li><p>Linux x86_64 with a supported GPU runtime for the Manager tensor runtime.
+UniSim’s reviewed Genesis tensor profile requires Genesis zero-copy and one
+exact runtime pairing: non-HIP Torch CUDA with <code class="docutils literal notranslate"><span class="pre">gs.cuda</span></code>, or HIP/ROCm Torch
+with <code class="docutils literal notranslate"><span class="pre">gs.amdgpu</span></code>. Both negotiate <code class="docutils literal notranslate"><span class="pre">DEVICE_RESIDENT</span></code>, in-process, <code class="docutils literal notranslate"><span class="pre">DIRECT</span></code> and
+retain the public <code class="docutils literal notranslate"><span class="pre">cuda</span></code> Torch device namespace.</p></li>
+<li><p>Genesis 1.3.3 itself natively supports <code class="docutils literal notranslate"><span class="pre">gs.metal</span></code> on Apple Silicon and
+<code class="docutils literal notranslate"><span class="pre">gs.amdgpu</span></code> on Linux HIP, as shown by the direct-engine G1 throughput work
+(UniLab PR #2518 / discussion #2517). Metal remains outside the UniSim
+Genesis adapter tensor lifecycle. On ROCm, <code class="docutils literal notranslate"><span class="pre">gs.cuda</span></code> is rejected as a runtime
+mismatch; on non-HIP CUDA, <code class="docutils literal notranslate"><span class="pre">gs.amdgpu</span></code> is likewise rejected. CPU, portable
+Genesis, Metal, MPS, and substitute backends are never silent fallbacks.</p></li>
 <li><p>The repository’s pinned torch window (torch 2.8 on x86_64): the
 IMUSensor + contact-force sensor combination crashed under torch 2.7 in
 the probe (REPORT §3.4/§8).</p></li>
@@ -559,8 +569,13 @@ select a flat owner YAML.</p></li>
 <li><p><strong>Absolute geom-friction DR</strong>: upstream Genesis only offers a per-env
 friction <em>ratio</em> API, so <code class="docutils literal notranslate"><span class="pre">geom_friction</span></code> reset randomization and
 <code class="docutils literal notranslate"><span class="pre">get_geom_friction</span></code> fail closed.</p></li>
-<li><p><strong>Interval push / body-velocity-delta DR</strong>: rejected at construction/plan
-time (<code class="docutils literal notranslate"><span class="pre">push_body_name</span></code>, push perturbation).</p></li>
+<li><p><strong>Legacy interval push term</strong>: the opaque <code class="docutils literal notranslate"><span class="pre">push</span></code> descriptor is rejected at
+construction/plan time. Use the six-axis velocity-delta event, which commits
+world-frame linear and root-local angular deltas through Genesis public
+state without touching qpos, controls, solver state, or unrelated rows.</p></li>
+<li><p><strong>Host-plane runtime DR</strong>: Genesis accepts reset and interval payloads only
+on its backend-bound CUDA/AMDGPU device. Host payloads fail closed with the
+term and plane named; there is no NumPy or host-bridge fallback.</p></li>
 <li><p><strong>Repeated <code class="docutils literal notranslate"><span class="pre">gs.init</span></code></strong> in one process (see above).</p></li>
 </ul>
 </section>
