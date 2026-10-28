@@ -429,7 +429,8 @@
 <li><p>Superseded by: None</p></li>
 <li><p>Roadmap: <a class="reference external" href="https://github.com/Motphys/UniLab/issues/2520">Issue #2520</a>;
 FlashMimic subset extension:
-<a class="reference external" href="https://github.com/Motphys/UniLab/issues/2521">Issue #2521</a></p></li>
+<a class="reference external" href="https://github.com/Motphys/UniLab/issues/2521">Issue #2521</a>; unified capability sets:
+<a class="reference external" href="https://github.com/Motphys/UniLab/issues/2550">Issue #2550</a></p></li>
 </ul>
 <section id="context">
 <h2>Context<a class="headerlink" href="#context" title="Link to this heading">¶</a></h2>
@@ -447,19 +448,19 @@ before this integration; the authoritative adapter ADR and implementation live i
 <h2>Decision<a class="headerlink" href="#decision" title="Link to this heading">¶</a></h2>
 <p>UniLab consumes the unified contract as device-only Genesis runtime DR:</p>
 <ul class="simple">
-<li><p>Genesis declares reset terms only in <code class="docutils literal notranslate"><span class="pre">supported_device_reset_terms</span></code>, and interval terms only
-in <code class="docutils literal notranslate"><span class="pre">supported_device_interval_terms</span></code>. The host term sets are empty, including for portable
-scenes and sessions without the exact CUDA/AMDGPU lifecycle.</p></li>
-<li><p>Manager capability negotiation selects the plane from the backend-bound tensor device. It never
-treats default host capability wording as a fallback for a device-resident runtime.</p></li>
-<li><p>The packed reset device is declared before cold event-term binds, so owner terms negotiate
-against the same plane that will commit after backend materialization.</p></li>
+<li><p>Genesis declares reset terms in <code class="docutils literal notranslate"><span class="pre">supported_reset_terms</span></code> and interval terms in
+<code class="docutils literal notranslate"><span class="pre">supported_interval_terms</span></code>. These single sets enumerate supported terms without splitting them
+into host/device public capability planes. They do not imply that Genesis accepts host payloads.</p></li>
+<li><p>Manager capability negotiation is plane-independent. The backend-bound tensor device still
+determines operand placement, while the backend owns execution and any adapter-internal
+conversion for an advertised term.</p></li>
+<li><p>The packed reset device is declared before cold event-term binds, so owner terms construct and
+commit operands on the same device after backend materialization.</p></li>
 <li><p>Reset DR is limited to the audited device lifecycle (<code class="docutils literal notranslate"><span class="pre">body_mass</span></code>, <code class="docutils literal notranslate"><span class="pre">base_mass_delta</span></code>,
 <code class="docutils literal notranslate"><span class="pre">body_ipos</span></code>, <code class="docutils literal notranslate"><span class="pre">base_com_offset</span></code>, <code class="docutils literal notranslate"><span class="pre">kp</span></code>, <code class="docutils literal notranslate"><span class="pre">kd</span></code>); interval DR is limited to <code class="docutils literal notranslate"><span class="pre">body_force</span></code>,
 <code class="docutils literal notranslate"><span class="pre">body_torque</span></code>, world-frame root linear velocity delta, and root-local angular velocity delta.
-Unsupported, host-plane, mixed-plane, and CPU/host payloads fail closed with the term and plane
-named.</p></li>
-<li><p>Genesis owner YAML enables <code class="docutils literal notranslate"><span class="pre">pd_gains</span></code> only because that device-plane packed lane declares
+Unsupported terms and CPU/host payloads fail closed with explicit backend errors.</p></li>
+<li><p>Genesis owner YAML enables <code class="docutils literal notranslate"><span class="pre">pd_gains</span></code> only because that device-resident packed lane declares
 <code class="docutils literal notranslate"><span class="pre">kp</span></code>/<code class="docutils literal notranslate"><span class="pre">kd</span></code>. It does not re-enable broad portable host setters, geometry, gravity, DOF, or the
 opaque legacy push descriptor. Startup body mass and the six-axis velocity-delta event use
 their audited public device lifecycle; absolute <code class="docutils literal notranslate"><span class="pre">geom_friction</span></code> remains intentionally
@@ -472,23 +473,23 @@ not permission to execute runtime DR on CPU.</p></li>
 <section id="stable-contracts">
 <h2>Stable Contracts<a class="headerlink" href="#stable-contracts" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">DomainRandomizationCapabilities</span></code> plane sets are authoritative; aggregate projections keep
-<code class="docutils literal notranslate"><span class="pre">dr.reset.*</span></code>/<code class="docutils literal notranslate"><span class="pre">dr.interval.*</span></code> and <code class="docutils literal notranslate"><span class="pre">dr.device.reset.*</span></code>/<code class="docutils literal notranslate"><span class="pre">dr.device.interval.*</span></code> independent.</p></li>
+<li><p>The single <code class="docutils literal notranslate"><span class="pre">DomainRandomizationCapabilities.supported_reset_terms</span></code> and
+<code class="docutils literal notranslate"><span class="pre">supported_interval_terms</span></code> sets are authoritative; execution topology is not an alternate DR
+term set.</p></li>
 <li><p>The Manager packed reset transaction declares its device before reset event construction.</p></li>
 <li><p>Genesis interval dispatch uses public <code class="docutils literal notranslate"><span class="pre">IntervalTermOp</span></code> values only; backend IDs are Torch int64
 on the backend device and wrench payloads are float32 on that same device.</p></li>
 <li><p>Genesis owners cannot declare backend capability by comments or backend-name branches; owner
-YAML may only enable terms whose plane the current backend declares.</p></li>
+YAML may only enable terms that the current backend declares.</p></li>
 </ul>
 </section>
 <section id="alternatives-considered">
 <h2>Alternatives Considered<a class="headerlink" href="#alternatives-considered" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><strong>Default to the historical host plane before packed-device declaration:</strong> rejected. It made a
-portable host setter look valid during cold binds and could accept a term that the eventual
-device commit must reject.</p></li>
-<li><p><strong>Convert host operands inside each backend adapter:</strong> rejected as the Manager contract. It
-reintroduces hidden hot-path H2D detours and plane ambiguity at every adapter boundary.</p></li>
+<li><p><strong>Keep separate host/device capability sets:</strong> rejected. It made a portable host setter look
+valid during cold binds and leaked adapter execution topology into every Manager consumer.</p></li>
+<li><p><strong>Select capability sets from the Manager payload device:</strong> rejected. Term support is a public
+backend capability; payload placement and adapter-internal conversion are execution details.</p></li>
 <li><p><strong>Keep <code class="docutils literal notranslate"><span class="pre">events.pd_gains:</span> <span class="pre">null</span></code> until every Genesis reset term is device-capable:</strong> rejected.
 <code class="docutils literal notranslate"><span class="pre">kp</span></code>/<code class="docutils literal notranslate"><span class="pre">kd</span></code> have one audited lifecycle; unrelated unsupported terms already fail closed and need
 no owner-level blanket disable.</p></li>
@@ -503,8 +504,8 @@ pelvis/torso mass scaling without inertia recomputation, torso COM and full-actu
 reset writes, and six-axis velocity kicks. Its foot-friction event stays disabled.</p></li>
 <li><p>Portable Genesis scenes have a smaller reset contract, and removed portable host runtime paths
 have no compatibility alias in UniLab.</p></li>
-<li><p>Owners must sample device-resident operands on the Manager RNG/backend device. CPU-only Genesis
-sessions do not advertise runtime DR.</p></li>
+<li><p>Owners must sample device-resident operands on the Manager RNG/backend device. Unified term
+sets do not add CPU/host execution support to Genesis.</p></li>
 <li><p>Adding a Genesis reset or interval term requires first extending the audited device lifecycle
 and capability declaration in <code class="docutils literal notranslate"><span class="pre">unisim-core</span></code>, then updating owners/docs here.</p></li>
 </ul>
@@ -512,9 +513,10 @@ and capability declaration in <code class="docutils literal notranslate"><span c
 <section id="evidence-in-repo">
 <h2>Evidence In Repo<a class="headerlink" href="#evidence-in-repo" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">src/unilab/base/entity.py</span></code> — interval plane negotiation and device-resident interval ops.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">src/unilab/base/entity.py</span></code> — plane-independent interval capability checks and device-resident
+interval ops.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">src/unilab/envs/manager_based_rl_env.py</span></code> — packed reset device declaration before event binds.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">src/unilab/base/reset_state.py</span></code> — plane-aware capability checks.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">src/unilab/base/reset_state.py</span></code> — unified reset-term capability checks.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">src/unilab/conf/{ppo,sac}/task/g1_walk_flat/genesis.yaml</span></code> — walk owner parity.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">src/unilab/conf/sac/task/g1_motion_tracking/genesis.yaml</span></code> — FlashMimic DR subset owner.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">tests/base/test_genesis_backend.py</span></code>; <code class="docutils literal notranslate"><span class="pre">tests/envs/mdp/test_events.py</span></code>;

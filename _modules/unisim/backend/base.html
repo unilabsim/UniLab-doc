@@ -642,6 +642,7 @@
     <span class="s2">&quot;COMPLETION_CONTRACT_VERSION&quot;</span><span class="p">,</span>
     <span class="s2">&quot;COMPLETION_OPERATIONS&quot;</span><span class="p">,</span>
     <span class="s2">&quot;DEBUG_PRIMITIVE_KINDS&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;BodyPairContactData&quot;</span><span class="p">,</span>
     <span class="s2">&quot;CameraCfg&quot;</span><span class="p">,</span>
     <span class="s2">&quot;CapabilityReport&quot;</span><span class="p">,</span>
     <span class="s2">&quot;CompiledSceneLayout&quot;</span><span class="p">,</span>
@@ -787,6 +788,8 @@
     <span class="n">state_fields</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">()</span>
     <span class="n">sensor_views</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">stepping</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">generalized_force_injection</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">actuator_gain_scaling</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">selected_reset</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">reset_randomization</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">device_reset_randomization</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
@@ -819,6 +822,8 @@
                     <span class="bp">self</span><span class="o">.</span><span class="n">state_views</span><span class="p">,</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">sensor_views</span><span class="p">,</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">stepping</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">generalized_force_injection</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">actuator_gain_scaling</span><span class="p">,</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">selected_reset</span><span class="p">,</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">reset_randomization</span><span class="p">,</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">device_reset_randomization</span><span class="p">,</span>
@@ -882,6 +887,10 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;supported tensor lifecycle must declare supported Torch devices&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state_views</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">state_fields</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor state views require at least one declared state field&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">generalized_force_injection</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">stepping</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor generalized-force injection requires tensor stepping&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">actuator_gain_scaling</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">stepping</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tensor actuator-gain scaling requires tensor stepping&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">selected_reset_publication</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">selected_reset</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;selected-reset publication requires selected reset&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="p">(</span>
@@ -1078,9 +1087,13 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;One public tracked-body read ordered by the caller&#39;s request.</span>
 
 <span class="sd">    The four fields are backend-owned tensors (or arrays) with leading axes</span>
-<span class="sd">    ``(num_envs, num_bodies)``.  Device-resident adapters return live or stable</span>
-<span class="sd">    views; host-bridge adapters return copied views.  The contract intentionally</span>
-<span class="sd">    does not expose sensor offsets or backend body ids.</span>
+<span class="sd">    ``(num_envs, num_bodies)``. Device-resident adapters return live or stable</span>
+<span class="sd">    views; host-bridge adapters return copied views. ``pos_w`` is world-frame</span>
+<span class="sd">    link-origin position, ``quat_w`` is world orientation in wxyz order,</span>
+<span class="sd">    ``lin_vel_w`` is world-frame link-origin linear velocity (converted from</span>
+<span class="sd">    native COM velocity when necessary), and ``ang_vel_w`` is world angular</span>
+<span class="sd">    velocity. The contract intentionally does not expose sensor offsets or</span>
+<span class="sd">    backend body ids.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">body_names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
@@ -1594,6 +1607,26 @@
 
 
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BodyPairContactData</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fixed-width aggregate of contacts between an ordered body pair.</span>
+
+<span class="sd">    Fields are backend-owned live tensors in environment order. ``active`` is</span>
+<span class="sd">    bool with shape ``(num_envs,)`` and equals ``count &gt; 0``; ``count`` is int32</span>
+<span class="sd">    with the same shape. ``position_w`` and ``force_w`` are float32 with shape</span>
+<span class="sd">    ``(num_envs, 3)``. Positions are world-frame arithmetic means of contact</span>
+<span class="sd">    points on the declared first body&#39;s surface. Forces are world-frame sums</span>
+<span class="sd">    exerted by the declared second body</span>
+<span class="sd">    on the declared first body. All fields are zero for inactive environments.</span>
+<span class="sd">    Values describe the latest completed physics substep, not a step history.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">active</span><span class="p">:</span> <span class="n">Any</span>
+    <span class="n">count</span><span class="p">:</span> <span class="n">Any</span>
+    <span class="n">position_w</span><span class="p">:</span> <span class="n">Any</span>
+    <span class="n">force_w</span><span class="p">:</span> <span class="n">Any</span>
+
+
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">SensorView</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Validated batch view over one or more named backend sensors.</span>
 
@@ -2054,7 +2087,10 @@
 <span class="sd">        the removed 1.x NumPy snapshot API, successful tensor adapters do not</span>
 <span class="sd">        return NumPy arrays.</span>
 <span class="sd">        Consume the declared tensor execution mode rather than probing the array</span>
-<span class="sd">        implementation.</span>
+<span class="sd">        implementation. When declared, ``ctrl`` is the current actuator control</span>
+<span class="sd">        in public actuator order with shape ``(num_envs, num_actuators)``; it is</span>
+<span class="sd">        not a derived joint target or an actuator gain. Device-resident control</span>
+<span class="sd">        views are cold-bound and reflect subsequent writes and reset semantics.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">backend_type</span><span class="si">}</span><span class="s2"> does not support backend state views: &quot;</span>
@@ -2065,7 +2101,12 @@
 <div class="viewcode-block" id="SimBackend.get_sensor_view">
 <a class="viewcode-back" href="../../../api_reference/base/index.html#unisim.backend.motrix.backend.SimBackend.get_sensor_view">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_sensor_view</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return one named sensor view on the declared tensor lifecycle.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return one named sensor view on the declared tensor lifecycle.</span>
+
+<span class="sd">        Scalar/vector sensors return one tensor. An ordered body-pair contact</span>
+<span class="sd">        sensor returns :class:`BodyPairContactData` with the fixed-width fields</span>
+<span class="sd">        documented on that type.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">backend_type</span><span class="si">}</span><span class="s2"> does not support sensor views: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">get_tensor_execution</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span></div>
@@ -2104,6 +2145,52 @@
         <span class="p">)</span></div>
 
 
+<div class="viewcode-block" id="SimBackend.set_generalized_force_tensor">
+<a class="viewcode-back" href="../../../api_reference/base/index.html#unisim.backend.motrix.backend.SimBackend.set_generalized_force_tensor">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_generalized_force_tensor</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">joint_f</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">body_f</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Inject persistent generalized forces consumed at every physics substep.</span>
+
+<span class="sd">        Declaring adapters (``TensorLifecycleCapabilities.generalized_force_injection``)</span>
+<span class="sd">        accept contiguous float32 Torch tensors on the adapter-required device:</span>
+
+<span class="sd">        ``joint_f`` has shape ``(num_envs, nv)`` and carries generalized forces in</span>
+<span class="sd">        public qvel column order, matching the engine&#39;s ``Control.joint_f``</span>
+<span class="sd">        semantics: the solver consumes the value at every substep until it is</span>
+<span class="sd">        overwritten. For free or distance roots, the six root columns are the</span>
+<span class="sd">        world-frame wrench ``(f_x, f_y, f_z, t_x, t_y, t_z)`` applied at the</span>
+<span class="sd">        child body&#39;s center of mass. For ball joints, the three torque columns</span>
+<span class="sd">        are the body-frame torque, dual to the public body-frame angular</span>
+<span class="sd">        velocity qvel layout.</span>
+
+<span class="sd">        ``body_f`` has shape ``(num_envs, num_bodies, 6)`` and carries one</span>
+<span class="sd">        world-frame spatial wrench per body in public body order, matching the</span>
+<span class="sd">        engine&#39;s ``State.body_f`` semantics: the first three components are the</span>
+<span class="sd">        linear force applied at the body&#39;s center of mass and the last three</span>
+<span class="sd">        are the torque. Engines clear ``State.body_f`` at every substep (the</span>
+<span class="sd">        adapter calls ``state.clear_forces()`` before each solver step, which</span>
+<span class="sd">        resets ``body_f`` and never touches ``Control.joint_f``), so the</span>
+<span class="sd">        adapter owns a persistent device buffer and re-applies the injected</span>
+<span class="sd">        wrench after every internal clear: one write is consumed by every</span>
+<span class="sd">        substep of ``step_tensor(nsteps=k)`` and by later steps until</span>
+<span class="sd">        overwritten.</span>
+
+<span class="sd">        Both channels are control inputs, not state: tensor and host resets do</span>
+<span class="sd">        not clear them, and they compose with actuator controls (they are not</span>
+<span class="sd">        consumed or altered by ``step_tensor`` control uploads). A ``None``</span>
+<span class="sd">        channel is left unchanged; write an all-zeros tensor to clear a</span>
+<span class="sd">        channel. At least one channel must be provided.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">backend_type</span><span class="si">}</span><span class="s2"> does not support generalized-force injection: &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">get_tensor_execution</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="SimBackend.set_state_tensor">
 <a class="viewcode-back" href="../../../api_reference/base/index.html#unisim.backend.motrix.backend.SimBackend.set_state_tensor">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_state_tensor</span><span class="p">(</span>
@@ -2127,16 +2214,14 @@
 
 <span class="sd">        ``randomization`` is the unified torch-first</span>
 <span class="sd">        :class:`TensorResetRandomizationPayload`: every populated field is a</span>
-<span class="sd">        dense selected-row Torch tensor table. Tensors on ``torch.cpu`` form</span>
-<span class="sd">        the host plane, checked against</span>
-<span class="sd">        ``DomainRandomizationCapabilities.supported_reset_terms``; tensors on</span>
-<span class="sd">        any other device form the device plane, checked against</span>
-<span class="sd">        ``supported_device_reset_terms`` (empty by default, so undeclared</span>
-<span class="sd">        device support fails closed naming the term). Non-delta terms hold</span>
-<span class="sd">        final absolute values applied as selected-row in-place scatters;</span>
-<span class="sd">        ``base_mass_delta`` and ``base_com_offset`` hold deltas merged with</span>
-<span class="sd">        the adapter baseline. Host adapters convert tensors at their private</span>
-<span class="sd">        NumPy boundary through :mod:`unisim.dr._host`.</span>
+<span class="sd">        dense selected-row Torch tensor table. Requested terms are checked</span>
+<span class="sd">        against ``DomainRandomizationCapabilities.supported_reset_terms``</span>
+<span class="sd">        independently of payload device; adapters own any private conversion</span>
+<span class="sd">        or fallback. Non-delta terms hold final absolute values applied as</span>
+<span class="sd">        selected-row in-place scatters; ``base_mass_delta`` and</span>
+<span class="sd">        ``base_com_offset`` hold deltas merged with the adapter baseline.</span>
+<span class="sd">        Host adapters convert tensors at their private NumPy boundary through</span>
+<span class="sd">        :mod:`unisim.dr._host`.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">backend_type</span><span class="si">}</span><span class="s2"> does not support tensor state writes: &quot;</span>
@@ -2167,8 +2252,8 @@
 <span class="sd">        behind this backend boundary.</span>
 
 <span class="sd">        ``randomization`` is the unified torch-first</span>
-<span class="sd">        :class:`TensorResetRandomizationPayload` (full-width tables on the</span>
-<span class="sd">        mask&#39;s plane); the adapter must preserve every false row.</span>
+<span class="sd">        :class:`TensorResetRandomizationPayload` with full-width tables; the</span>
+<span class="sd">        adapter must preserve every false row.</span>
 <span class="sd">        ``full_refresh=True`` requests an eager equivalent full-batch</span>
 <span class="sd">        derived-state/publication refresh. It is valid only where</span>
 <span class="sd">        ``TensorLifecycleCapabilities.mask_selected_reset_full_refresh`` is</span>
@@ -2622,6 +2707,8 @@
 <span class="sd">            When ``names`` is provided by a supporting adapter, the result has</span>
 <span class="sd">            shape ``(len(names), 2)``. Hinge limits are radians, slide limits</span>
 <span class="sd">            are meters, and joints without enabled limits return infinities.</span>
+<span class="sd">            Request order is preserved and repeated names produce repeated rows.</span>
+<span class="sd">            Values are construction/default model limits, not per-env state.</span>
 <span class="sd">        &quot;&quot;&quot;</span></div>
 
 
@@ -3033,6 +3120,30 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return per-joint (kp, kd) arrays from the backend model.&quot;&quot;&quot;</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> does not support reading actuator gains&quot;</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SimBackend.set_actuator_gain_scale">
+<a class="viewcode-back" href="../../../api_reference/base/index.html#unisim.backend.motrix.backend.SimBackend.set_actuator_gain_scale">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_actuator_gain_scale</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">actuator_ids</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Persistently scale selected position/velocity actuator gains.</span>
+
+<span class="sd">        Both authored gains of every selected actuator are replaced by their</span>
+<span class="sd">        construction defaults times ``scale`` in each selected environment.</span>
+<span class="sd">        Callers select the complete position/velocity pair for each target DOF,</span>
+<span class="sd">        so ``scale=0`` disables the whole drive and ``scale=1`` restores it.</span>
+<span class="sd">        Repeated calls are absolute rather than cumulative and state resets do</span>
+<span class="sd">        not clear the scale. Adapters declare support through</span>
+<span class="sd">        ``TensorLifecycleCapabilities.actuator_gain_scaling``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> does not support actuator gain scaling&quot;</span>
         <span class="p">)</span></div>
 
 

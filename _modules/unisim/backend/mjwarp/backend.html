@@ -570,6 +570,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.model_index</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompiledModelIndex</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr._host</span><span class="w"> </span><span class="kn">import</span> <span class="n">interval_payload_to_host</span><span class="p">,</span> <span class="n">reset_payload_to_host_dict</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">INTERVAL_TERM_BODY_ANGULAR_VELOCITY_DELTA</span><span class="p">,</span>
     <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span>
     <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">,</span>
     <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">,</span>
@@ -614,6 +615,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.ray_query</span><span class="w"> </span><span class="kn">import</span> <span class="n">RayCollisionDescription</span><span class="p">,</span> <span class="n">RayGeometryState</span><span class="p">,</span> <span class="n">RaySceneDescription</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.scene</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneCfg</span><span class="p">,</span> <span class="n">require_scene_composition_support</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.scene_layout</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompiledSceneLayout</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.utils.quaternion</span><span class="w"> </span><span class="kn">import</span> <span class="n">quat_rotate_inverse</span><span class="p">,</span> <span class="n">torch_quat_rotate_inverse</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">..body_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">copy_selected_body_state</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">..ray_scene</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -805,6 +807,7 @@
                     <span class="n">fixed_variant_plan</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_composed_scene</span><span class="o">.</span><span class="n">variant_plan</span><span class="p">,</span>
                     <span class="n">entity_assets</span><span class="o">=</span><span class="p">(),</span>
                     <span class="n">entity_variant</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">contact_excludes</span><span class="o">=</span><span class="p">(),</span>
                 <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_initialize</span><span class="p">(</span>
                 <span class="n">scene</span><span class="p">,</span>
@@ -1841,18 +1844,25 @@
         <span class="k">except</span> <span class="ne">KeyError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Push body </span><span class="si">{</span><span class="n">body_name</span><span class="si">!r}</span><span class="s2"> not found in mjwarp model&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_interval_root_velocity_qvel_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind the configured free root&#39;s world-linear qvel columns on the cold path.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_interval_root_velocity_qvel_ids</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind the configured free root&#39;s velocity and quaternion columns.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_base_name</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_base_body_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">layout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_root_state_layout</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_base_name</span><span class="p">)</span>
         <span class="k">except</span> <span class="p">(</span><span class="ne">NotImplementedError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
             <span class="k">return</span> <span class="kc">None</span>
-        <span class="n">linear_ids</span> <span class="o">=</span> <span class="n">layout</span><span class="o">.</span><span class="n">qvel_indices</span><span class="p">[:</span><span class="mi">3</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">linear_ids</span> <span class="o">!=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">linear_ids</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">linear_ids</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mi">3</span><span class="p">)):</span>
+        <span class="n">qvel_ids</span> <span class="o">=</span> <span class="n">layout</span><span class="o">.</span><span class="n">qvel_indices</span><span class="p">[:</span><span class="mi">6</span><span class="p">]</span>
+        <span class="n">quat_qpos_ids</span> <span class="o">=</span> <span class="n">layout</span><span class="o">.</span><span class="n">qpos_indices</span><span class="p">[</span><span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">qvel_ids</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">6</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">quat_qpos_ids</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
-        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">linear_ids</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">linear_ids</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">linear_ids</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">qvel_ids</span> <span class="o">!=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">qvel_ids</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">qvel_ids</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mi">6</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">quat_qpos_ids</span> <span class="o">!=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">quat_qpos_ids</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">quat_qpos_ids</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mi">4</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">qvel_ids</span><span class="p">)),</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">quat_qpos_ids</span><span class="p">))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_bind_dr_host_mirrors</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Allocate per-world host mirrors of the DR-writable model fields.</span>
@@ -2702,10 +2712,8 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_tensor_capabilities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorLifecycleCapabilities</span><span class="p">:</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.packed_reset</span><span class="w"> </span><span class="kn">import</span> <span class="n">PACKED_RESET_MODEL_FIELDS</span>
 
-        <span class="c1"># Packed reset commits device-plane payloads through set_state_tensor,</span>
-        <span class="c1"># so the packable fields are exactly the declared device reset terms.</span>
         <span class="n">packed_fields</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span>
-            <span class="n">PACKED_RESET_MODEL_FIELDS</span> <span class="o">&amp;</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">supported_device_reset_terms</span>
+            <span class="n">PACKED_RESET_MODEL_FIELDS</span> <span class="o">&amp;</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">supported_reset_terms</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="n">TensorLifecycleCapabilities</span><span class="p">(</span>
             <span class="n">execution</span><span class="o">=</span><span class="n">TensorExecution</span><span class="o">.</span><span class="n">DEVICE_RESIDENT</span><span class="p">,</span>
@@ -2941,6 +2949,18 @@
 <div class="viewcode-block" id="MjwarpBackend.get_root_state_layout">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_root_state_layout">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_root_state_layout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root_body_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RootStateLayout</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_layout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">entity_name</span><span class="p">,</span> <span class="n">separator</span><span class="p">,</span> <span class="n">local_name</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">root_body_name</span><span class="p">)</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">separator</span><span class="p">:</span>
+                <span class="n">entity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_layout</span><span class="o">.</span><span class="n">get_entity</span><span class="p">(</span><span class="n">entity_name</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">local_name</span> <span class="o">==</span> <span class="n">entity</span><span class="o">.</span><span class="n">root_body</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">entity</span><span class="o">.</span><span class="n">root_mode</span> <span class="o">!=</span> <span class="s2">&quot;floating&quot;</span><span class="p">:</span>
+                        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                            <span class="sa">f</span><span class="s2">&quot;portable entity </span><span class="si">{</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> has no floating root state&quot;</span>
+                        <span class="p">)</span>
+                    <span class="k">return</span> <span class="n">RootStateLayout</span><span class="p">(</span>
+                        <span class="nb">tuple</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">root_qpos_indices</span><span class="p">),</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">root_qvel_indices</span><span class="p">)</span>
+                    <span class="p">)</span>
         <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compiled_index</span><span class="o">.</span><span class="n">free_root_layout</span><span class="p">(</span><span class="n">root_body_name</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">RootStateLayout</span><span class="p">(</span><span class="n">qpos_indices</span><span class="o">=</span><span class="n">qpos</span><span class="p">,</span> <span class="n">qvel_indices</span><span class="o">=</span><span class="n">qvel</span><span class="p">)</span></div>
 
@@ -3580,15 +3600,17 @@
                     <span class="s2">&quot;TensorResetRandomizationPayload or None&quot;</span>
                 <span class="p">)</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
-                <span class="c1"># The payload&#39;s tensor devices decide the data plane: torch.cpu</span>
-                <span class="c1"># takes the host mirror model-update path; any other device</span>
-                <span class="c1"># takes the device-resident scatter path.</span>
                 <span class="k">if</span> <span class="n">_reset_payload_plane_device</span><span class="p">(</span><span class="n">randomization</span><span class="p">)</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cpu&quot;</span><span class="p">:</span>
                     <span class="n">updates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_reset_randomization</span><span class="p">(</span>
                         <span class="n">env_indices</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">randomization</span>
                     <span class="p">)</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">_apply_model_updates</span><span class="p">(</span><span class="n">updates</span><span class="p">)</span>
                     <span class="n">model_randomized</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">updates</span><span class="o">.</span><span class="n">fields</span> <span class="ow">or</span> <span class="n">updates</span><span class="o">.</span><span class="n">actuator_fields</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">randomization</span><span class="o">.</span><span class="n">geom_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_apply_device_reset_host_fallback</span><span class="p">(</span>
+                        <span class="n">env_indices</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">randomization</span>
+                    <span class="p">)</span>
+                    <span class="n">model_randomized</span> <span class="o">=</span> <span class="kc">True</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">device_randomization</span> <span class="o">=</span> <span class="n">randomization</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span><span class="p">:</span>
@@ -3766,12 +3788,16 @@
         <span class="n">model_update_ms</span> <span class="o">=</span> <span class="mf">0.0</span>
         <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_tensor_reset_randomization</span><span class="p">(</span>
-                <span class="kc">None</span><span class="p">,</span>
-                <span class="n">randomization</span><span class="p">,</span>
-                <span class="n">validation</span><span class="p">,</span>
-                <span class="n">reset_mask</span><span class="o">=</span><span class="n">mask_tensor</span><span class="p">,</span>
-            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">geom_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_apply_masked_device_reset_host_fallback</span><span class="p">(</span><span class="n">mask_tensor</span><span class="p">,</span> <span class="n">randomization</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_fused</span><span class="p">(</span><span class="n">validation</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_apply_tensor_reset_randomization</span><span class="p">(</span>
+                    <span class="kc">None</span><span class="p">,</span>
+                    <span class="n">randomization</span><span class="p">,</span>
+                    <span class="n">validation</span><span class="p">,</span>
+                    <span class="n">reset_mask</span><span class="o">=</span><span class="n">mask_tensor</span><span class="p">,</span>
+                <span class="p">)</span>
             <span class="n">model_update_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_fused</span><span class="p">(</span><span class="n">validation</span><span class="p">)</span>
@@ -3901,39 +3927,17 @@
                     <span class="n">RESET_TERM_KD</span><span class="p">,</span>
                 <span class="p">}</span>
             <span class="p">),</span>
-            <span class="c1"># The device plane scatters every host term except geom_size,</span>
-            <span class="c1"># whose derived geom_rbound/geom_aabb rows stay host-computed.</span>
-            <span class="n">supported_device_reset_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span>
-                <span class="p">{</span>
-                    <span class="n">RESET_TERM_BASE_MASS</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_BASE_COM</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_GRAVITY</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_BODY_IQUAT</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_BODY_INERTIA</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_BODY_IPOS</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_BODY_MASS</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_DOF_ARMATURE</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_DOF_DAMPING</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_DOF_FRICTIONLOSS</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_GEOM_FRICTION</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_GEOM_SOLREF</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_GEOM_SOLIMP</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_KP</span><span class="p">,</span>
-                    <span class="n">RESET_TERM_KD</span><span class="p">,</span>
-                <span class="p">}</span>
-            <span class="p">),</span>
             <span class="n">supported_interval_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span>
                 <span class="p">{</span><span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">,</span> <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">}</span>
                 <span class="o">|</span> <span class="p">(</span>
-                    <span class="p">{</span><span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">}</span>
+                    <span class="p">{</span>
+                        <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">,</span>
+                        <span class="n">INTERVAL_TERM_BODY_ANGULAR_VELOCITY_DELTA</span><span class="p">,</span>
+                    <span class="p">}</span>
                     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_root_velocity_qvel_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                     <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
                 <span class="p">)</span>
-            <span class="p">),</span>
-            <span class="c1"># Device-resident interval handling is the producer-sampled push</span>
-            <span class="c1"># staged straight into the live xfrc_applied field.</span>
-            <span class="n">supported_device_interval_terms</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span>
-                <span class="p">{</span><span class="n">INTERVAL_TERM_PUSH</span><span class="p">}</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
+                <span class="o">|</span> <span class="p">({</span><span class="n">INTERVAL_TERM_PUSH</span><span class="p">}</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">set</span><span class="p">())</span>
             <span class="p">),</span>
             <span class="n">supports_fixed_variants</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">supported_fixed_variant_layouts</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(</span>
@@ -4094,10 +4098,9 @@
 <span class="sd">        ``base_mass_delta``/``base_com_offset`` whose merge with the immutable</span>
 <span class="sd">        per-env default column runs in Torch here, with value rules ported</span>
 <span class="sd">        from the host ``_validate_extended_randomization`` /</span>
-<span class="sd">        ``_prepare_reset_randomization`` checks.  ``geom_size`` fails closed:</span>
-<span class="sd">        its derived ``geom_rbound`` / ``geom_aabb`` rows are computed</span>
-<span class="sd">        host-side today, and no device-side derivation exists in this slice.</span>
-<span class="sd">        Field validation shares one fused device-side reduction (one D2H</span>
+<span class="sd">        ``_prepare_reset_randomization`` checks. Payloads containing</span>
+<span class="sd">        ``geom_size`` use the backend-private host fallback before reaching</span>
+<span class="sd">        this scatter path. Field validation shares one fused device-side reduction (one D2H</span>
 <span class="sd">        sync) with the reset entry operands passed in ``validation``; a failed</span>
 <span class="sd">        aggregate re-checks each operand on the cold path so the error still</span>
 <span class="sd">        names its field.</span>
@@ -4105,18 +4108,10 @@
         <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
         <span class="n">unsupported</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span>
-            <span class="n">payload</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">(),</span> <span class="n">plane</span><span class="o">=</span><span class="s2">&quot;device&quot;</span>
+            <span class="n">payload</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;mjwarp does not support device reset terms: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="n">payload</span><span class="o">.</span><span class="n">geom_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="s2">&quot;mjwarp device reset randomization does not support geom_size: &quot;</span>
-                <span class="s2">&quot;derived geom_rbound/geom_aabb rows are computed host-side &quot;</span>
-                <span class="s2">&quot;today; use a host-plane (torch.cpu) payload instead&quot;</span>
-            <span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp does not support reset terms: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="n">num_rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span> <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
         <span class="n">ngeom</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">ngeom</span><span class="p">)</span>
         <span class="n">checks</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">validation</span><span class="p">)</span> <span class="k">if</span> <span class="n">validation</span> <span class="k">else</span> <span class="p">[]</span>
@@ -4285,6 +4280,41 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span><span class="o">.</span><span class="n">set_const_0</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="p">,</span> <span class="n">restore</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_device_reset_host_fallback</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply one validated device payload through the private host model boundary.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">host_values</span> <span class="o">=</span> <span class="n">reset_payload_to_host_dict</span><span class="p">(</span><span class="n">randomization</span><span class="p">)</span>
+        <span class="n">host_payload</span> <span class="o">=</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">(</span>
+            <span class="o">**</span><span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">values</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">host_values</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+        <span class="p">)</span>
+        <span class="n">updates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_reset_randomization</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">host_payload</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_apply_model_updates</span><span class="p">(</span><span class="n">updates</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_masked_device_reset_host_fallback</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">reset_mask</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">randomization</span><span class="p">:</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compact a full-width device payload before the geom-size host fallback.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">row_ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">selected</span> <span class="o">=</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">(</span>
+            <span class="o">**</span><span class="p">{</span>
+                <span class="n">name</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">row_ids</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_apply_device_reset_host_fallback</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">selected</span><span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_reset_randomization</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
@@ -4292,10 +4322,10 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ModelUpdates</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Own and validate all model writes without touching host/device state.</span>
 
-<span class="sd">        The public payload is torch-first; host-plane (``torch.cpu``) tensors</span>
-<span class="sd">        are materialized to NumPy at this private boundary through</span>
-<span class="sd">        :mod:`unisim.dr._host`. Device-plane payloads fail closed naming the</span>
-<span class="sd">        offending field.</span>
+<span class="sd">        The public payload is torch-first; CPU tensors are materialized to</span>
+<span class="sd">        NumPy at this private boundary through :mod:`unisim.dr._host`. Device</span>
+<span class="sd">        payloads containing ``geom_size`` are converted by the backend before</span>
+<span class="sd">        reaching this preparation step.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">ModelUpdates</span><span class="p">()</span>
@@ -4308,7 +4338,7 @@
         <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
             <span class="k">return</span> <span class="n">ModelUpdates</span><span class="p">()</span>
         <span class="n">unsupported</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">get_unsupported_reset_terms</span><span class="p">(</span>
-            <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">(),</span> <span class="n">plane</span><span class="o">=</span><span class="s2">&quot;host&quot;</span>
+            <span class="n">randomization</span><span class="o">.</span><span class="n">requested_terms</span><span class="p">()</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">unsupported</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp does not support reset terms: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unsupported</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -4401,20 +4431,45 @@
 
     <span class="n">_interval_term_handler_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">IntervalTermOp</span><span class="p">],</span> <span class="kc">None</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_interval_value_is_device</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s2">&quot;device&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">&quot;cpu&quot;</span>
+
 <div class="viewcode-block" id="MjwarpBackend.apply_interval_randomization">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.apply_interval_randomization">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">apply_interval_randomization</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">plan</span><span class="p">:</span> <span class="n">IntervalRandomizationPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
             <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reject_wrench_write_inside_pre_step_control</span><span class="p">(</span><span class="s2">&quot;apply_interval_randomization&quot;</span><span class="p">)</span>
-        <span class="n">has_device_payload</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
-            <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">,</span> <span class="n">TensorIntervalPayload</span><span class="p">)</span> <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">plan</span><span class="o">.</span><span class="n">iter_ops</span><span class="p">()</span>
+        <span class="n">ops</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">iter_ops</span><span class="p">()</span>
+        <span class="n">has_wrapped_device_payload</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">,</span> <span class="n">TensorIntervalPayload</span><span class="p">)</span> <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">ops</span>
         <span class="p">)</span>
-        <span class="k">if</span> <span class="n">has_device_payload</span><span class="p">:</span>
-            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">iter_ops</span><span class="p">())</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">has_wrapped_device_payload</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ops</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                     <span class="s2">&quot;a mjwarp device interval plan must contain exactly one device payload&quot;</span>
                 <span class="p">)</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">apply_interval_randomization</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="n">has_device_payload</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_interval_value_is_device</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_value_is_device</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">body_ids</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">ops</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">has_device_payload</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="s2">&quot;mixing host and device-resident interval wrenches is unsupported&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                    <span class="s2">&quot;mjwarp device interval randomization requires the previous &quot;</span>
+                    <span class="s2">&quot;tensor step receipt to be awaited&quot;</span>
+                <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_stable_device_xfrc_view</span><span class="p">()</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
             <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">apply_interval_randomization</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span>
             <span class="k">return</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span><span class="p">:</span>
@@ -4435,27 +4490,22 @@
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_interval_term_handlers</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">IntervalTermOp</span><span class="p">],</span> <span class="kc">None</span><span class="p">]]:</span>
-        <span class="c1"># Built lazily once.  The angular-velocity term intentionally has no</span>
-        <span class="c1"># handler and fails closed in the base dispatch (previously it was</span>
-        <span class="c1"># silently dropped).</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span> <span class="o">=</span> <span class="p">{</span>
                 <span class="n">INTERVAL_TERM_PUSH</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">push_robots</span><span class="p">(</span>
                     <span class="n">cast</span><span class="p">(</span><span class="n">TensorIntervalPayload</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span>
                 <span class="p">),</span>
-                <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span>
-                    <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">)),</span>
-                    <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
+                <span class="n">INTERVAL_TERM_BODY_FORCE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_interval_body_wrench</span><span class="p">(</span>
+                    <span class="n">op</span><span class="p">,</span> <span class="n">torque</span><span class="o">=</span><span class="kc">False</span>
                 <span class="p">),</span>
-                <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_torque</span><span class="p">(</span>
-                    <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">)),</span>
-                    <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
+                <span class="n">INTERVAL_TERM_BODY_TORQUE</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_interval_body_wrench</span><span class="p">(</span>
+                    <span class="n">op</span><span class="p">,</span> <span class="n">torque</span><span class="o">=</span><span class="kc">True</span>
                 <span class="p">),</span>
                 <span class="n">INTERVAL_TERM_BODY_LINEAR_VELOCITY_DELTA</span><span class="p">:</span> <span class="p">(</span>
-                    <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_linear_velocity_delta</span><span class="p">(</span>
-                        <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">)),</span>
-                        <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
-                    <span class="p">)</span>
+                    <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_interval_root_velocity_delta</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">angular</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                <span class="p">),</span>
+                <span class="n">INTERVAL_TERM_BODY_ANGULAR_VELOCITY_DELTA</span><span class="p">:</span> <span class="p">(</span>
+                    <span class="k">lambda</span> <span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_interval_root_velocity_delta</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">angular</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
                 <span class="p">),</span>
             <span class="p">}</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span>
@@ -4500,6 +4550,50 @@
         <span class="n">xfrc</span><span class="p">[:,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push_body_id</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">sampled</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span> <span class="o">=</span> <span class="kc">True</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_device_interval_body_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;mjwarp device interval body_ids must be a torch.Tensor&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">body_ids</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;mjwarp device interval body_ids must be a 1-D tensor&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">body_ids</span><span class="o">.</span><span class="n">dtype</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;mjwarp device interval body_ids must have integer dtype&quot;</span><span class="p">)</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
+            <span class="s2">&quot;body_ids&quot;</span><span class="p">,</span>
+            <span class="n">body_ids</span><span class="p">,</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">body_ids</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),),</span>
+            <span class="n">dtype_name</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">body_ids</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span>
+            <span class="n">check_finite</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="ow">and</span> <span class="nb">bool</span><span class="p">(((</span><span class="n">ids</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">ids</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nbody</span><span class="p">))</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp interval body_ids must be in [0, </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_nbody</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">ids</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_interval_body_wrench</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">IntervalTermOp</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">torque</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">body_ids</span> <span class="o">=</span> <span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_value_is_device</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_device_body_wrench</span><span class="p">(</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">,</span> <span class="n">torque</span><span class="o">=</span><span class="n">torque</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="n">host_body_ids</span> <span class="o">=</span> <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">body_ids</span><span class="p">)</span>
+        <span class="n">host_values</span> <span class="o">=</span> <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">torque</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_torque</span><span class="p">(</span><span class="n">host_body_ids</span><span class="p">,</span> <span class="n">host_values</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span><span class="n">host_body_ids</span><span class="p">,</span> <span class="n">host_values</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_device_body_wrench</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">torque</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_device_interval_body_ids</span><span class="p">(</span><span class="n">body_ids</span><span class="p">)</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;body_torque&quot;</span> <span class="k">if</span> <span class="n">torque</span> <span class="k">else</span> <span class="s2">&quot;body_force&quot;</span>
+        <span class="n">wrench</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
+            <span class="n">name</span><span class="p">,</span>
+            <span class="n">values</span><span class="p">,</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">ids</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="mi">3</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">channel</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span> <span class="k">if</span> <span class="n">torque</span> <span class="k">else</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stable_device_xfrc_view</span><span class="p">()[:,</span> <span class="p">:,</span> <span class="n">channel</span><span class="p">]</span><span class="o">.</span><span class="n">index_add_</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">wrench</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span> <span class="o">=</span> <span class="kc">True</span>
 
 <div class="viewcode-block" id="MjwarpBackend.apply_body_force">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.apply_body_force">[docs]</a>
@@ -4548,18 +4642,75 @@
         <span class="n">zero_force</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">body_ids</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">apply_body_force</span><span class="p">(</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">zero_force</span><span class="p">,</span> <span class="n">torque</span><span class="o">=</span><span class="n">torque</span><span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_interval_root_velocity_delta</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">IntervalTermOp</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">angular</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">body_ids</span> <span class="o">=</span> <span class="n">require_op_body_ids</span><span class="p">(</span><span class="n">op</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_value_is_device</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_device_body_velocity_delta</span><span class="p">(</span><span class="n">body_ids</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">,</span> <span class="n">angular</span><span class="o">=</span><span class="n">angular</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="n">host_body_ids</span> <span class="o">=</span> <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">body_ids</span><span class="p">)</span>
+        <span class="n">host_values</span> <span class="o">=</span> <span class="n">interval_payload_to_host</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">angular</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_angular_velocity_delta</span><span class="p">(</span><span class="n">host_body_ids</span><span class="p">,</span> <span class="n">host_values</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_body_linear_velocity_delta</span><span class="p">(</span><span class="n">host_body_ids</span><span class="p">,</span> <span class="n">host_values</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_device_body_velocity_delta</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">body_ids</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">velocity_delta</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">angular</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">resolved</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_root_velocity_qvel_ids</span>
+        <span class="k">if</span> <span class="n">resolved</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;mjwarp interval body velocity perturbation requires base_name to identify &quot;</span>
+                <span class="s2">&quot;a body with exactly one free joint&quot;</span>
+            <span class="p">)</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_device_interval_body_ids</span><span class="p">(</span><span class="n">body_ids</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ids</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">!=</span> <span class="mi">1</span> <span class="ow">or</span> <span class="nb">bool</span><span class="p">((</span><span class="n">ids</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_base_body_id</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;mjwarp interval body velocity perturbation only supports the configured &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;free root body </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_base_name</span><span class="si">!r}</span><span class="s2"> (id=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_base_body_id</span><span class="si">}</span><span class="s2">)&quot;</span>
+            <span class="p">)</span>
+        <span class="n">label</span> <span class="o">=</span> <span class="s2">&quot;angular&quot;</span> <span class="k">if</span> <span class="n">angular</span> <span class="k">else</span> <span class="s2">&quot;linear&quot;</span>
+        <span class="n">delta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_operand</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;body_</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">_velocity_delta&quot;</span><span class="p">,</span>
+            <span class="n">velocity_delta</span><span class="p">,</span>
+            <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">qvel_ids</span><span class="p">,</span> <span class="n">quat_qpos_ids</span> <span class="o">=</span> <span class="n">resolved</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">qvel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="s2">&quot;qvel&quot;</span><span class="p">)</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span>
+            <span class="n">qvel_ids</span><span class="p">[</span><span class="mi">3</span><span class="p">:</span><span class="mi">6</span><span class="p">]</span> <span class="k">if</span> <span class="n">angular</span> <span class="k">else</span> <span class="n">qvel_ids</span><span class="p">[:</span><span class="mi">3</span><span class="p">],</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">qvel</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="n">delta</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="k">if</span> <span class="n">angular</span><span class="p">:</span>
+            <span class="n">quat_columns</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span>
+                <span class="n">quat_qpos_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">qvel</span><span class="o">.</span><span class="n">device</span>
+            <span class="p">)</span>
+            <span class="n">quat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="s2">&quot;qpos&quot;</span><span class="p">)[:,</span> <span class="n">quat_columns</span><span class="p">]</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="n">torch_quat_rotate_inverse</span><span class="p">(</span><span class="n">torch</span><span class="p">,</span> <span class="n">quat</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
+        <span class="n">qvel</span><span class="p">[:,</span> <span class="n">columns</span><span class="p">]</span> <span class="o">+=</span> <span class="n">values</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_execute_device_forward</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span> <span class="o">=</span> <span class="kc">True</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_apply_body_linear_velocity_delta</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">velocity_delta</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply a row-selective world-frame velocity kick to the configured free root.&quot;&quot;&quot;</span>
-        <span class="n">qvel_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_root_velocity_qvel_ids</span>
-        <span class="k">if</span> <span class="n">qvel_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">resolved</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_root_velocity_qvel_ids</span>
+        <span class="k">if</span> <span class="n">resolved</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                 <span class="s2">&quot;mjwarp interval body velocity perturbation requires base_name to identify &quot;</span>
                 <span class="s2">&quot;a body with exactly one free joint&quot;</span>
             <span class="p">)</span>
+        <span class="n">qvel_ids</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">resolved</span>
 
         <span class="n">raw_body_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">body_ids</span><span class="p">)</span>
         <span class="k">if</span> <span class="p">(</span>
@@ -4613,13 +4764,72 @@
         <span class="c1"># needed; host readers publish the refreshed state lazily.</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-        <span class="n">qvel_columns</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">qvel_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
+        <span class="n">qvel_columns</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">qvel_ids</span><span class="p">[:</span><span class="mi">3</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
         <span class="n">deltas</span> <span class="o">=</span> <span class="n">velocity_delta</span><span class="p">[</span><span class="n">active_rows</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         <span class="n">qvel_view</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="s2">&quot;qvel&quot;</span><span class="p">)</span>
         <span class="n">rows_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">active_rows</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">qvel_view</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="n">columns_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">qvel_columns</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">qvel_view</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="n">qvel_view</span><span class="p">[</span><span class="n">rows_tensor</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">columns_tensor</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]]</span> <span class="o">+=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span>
             <span class="n">deltas</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">qvel_view</span><span class="o">.</span><span class="n">device</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_execute_device_forward</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_body_angular_velocity_delta</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">velocity_delta</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply a world-frame angular kick in the free root&#39;s body frame.&quot;&quot;&quot;</span>
+        <span class="n">resolved</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_root_velocity_qvel_ids</span>
+        <span class="k">if</span> <span class="n">resolved</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;mjwarp interval body velocity perturbation requires base_name to identify &quot;</span>
+                <span class="s2">&quot;a body with exactly one free joint&quot;</span>
+            <span class="p">)</span>
+        <span class="n">qvel_ids</span><span class="p">,</span> <span class="n">quat_qpos_ids</span> <span class="o">=</span> <span class="n">resolved</span>
+        <span class="n">raw_body_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">body_ids</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">raw_body_ids</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="n">raw_body_ids</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="n">raw_body_ids</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">bool_</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;mjwarp interval angular velocity body_ids must be 1-D integers&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">array_equal</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">raw_body_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">_base_body_id</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;mjwarp interval body velocity perturbation only supports the configured &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;free root body </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_base_name</span><span class="si">!r}</span><span class="s2"> (id=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_base_body_id</span><span class="si">}</span><span class="s2">)&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">velocity_delta</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;mjwarp interval angular velocity perturbation must be an np.ndarray&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">velocity_delta</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;mjwarp interval angular velocity perturbation must have shape &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">velocity_delta</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="n">velocity_delta</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">floating</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;mjwarp interval angular velocity perturbation must be floating&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">velocity_delta</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;mjwarp interval angular velocity perturbation contains NaN or Inf&quot;</span><span class="p">)</span>
+        <span class="n">active_rows</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">velocity_delta</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">active_rows</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_host_cache</span><span class="p">()</span>
+        <span class="n">quat_columns</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">quat_qpos_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
+        <span class="n">quat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_qpos_cache</span><span class="p">[</span><span class="n">active_rows</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">quat_columns</span><span class="p">]</span>
+        <span class="n">local_delta</span> <span class="o">=</span> <span class="n">quat_rotate_inverse</span><span class="p">(</span><span class="n">quat</span><span class="p">,</span> <span class="n">velocity_delta</span><span class="p">[</span><span class="n">active_rows</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:])</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">qvel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="s2">&quot;qvel&quot;</span><span class="p">)</span>
+        <span class="n">rows_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">active_rows</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">qvel</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">qvel_ids</span><span class="p">[</span><span class="mi">3</span><span class="p">:</span><span class="mi">6</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">qvel</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">qvel</span><span class="p">[</span><span class="n">rows_tensor</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">columns</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]]</span> <span class="o">+=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span>
+            <span class="n">local_delta</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">qvel</span><span class="o">.</span><span class="n">device</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_execute_device_forward</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
