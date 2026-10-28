@@ -1689,15 +1689,7 @@
                 <span class="s2">&quot;declare a post-substep hook.&quot;</span>
             <span class="p">)</span>
 
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">sim_substeps</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">requires_substep_state_feedback</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="s2">&quot;ManagerBasedRlEnv Torch lifecycle P1 does not support state-feedback &quot;</span>
-                <span class="s2">&quot;actions on every physics substep&quot;</span>
-            <span class="p">)</span>
-
     <span class="k">def</span><span class="w"> </span><span class="nf">_configure_action_control</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="c1"># Tensor Manager stepping consumes one control tensor per control step in</span>
-        <span class="c1"># P1; multi-substep state feedback fails closed during validation.</span>
         <span class="k">return</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_control_to_backend_boundary</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
@@ -1766,6 +1758,22 @@
         <span class="k">return</span> <span class="n">state</span></div>
 
 
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">requires_substep_state_feedback</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">requires_substep_state_feedback</span>
+
+<div class="viewcode-block" id="ManagerBasedRlEnv.apply_substep_action">
+<a class="viewcode-back" href="../../../api_reference/envs/_autosummary/unilab.envs.manager_based_rl_env.ManagerBasedRlEnv.html#unilab.tasks.locomotion.g1.manager_terms.ManagerBasedRlEnv.apply_substep_action">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply_substep_action</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_invalidate_state_reads</span><span class="p">()</span>
+        <span class="n">read_plan</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">read_plan</span>
+        <span class="k">if</span> <span class="n">read_plan</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">uses_tensor_state_packet</span><span class="p">:</span>
+            <span class="n">read_plan</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sim_step_counter</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">apply_action</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_control_to_backend_boundary</span><span class="p">()</span></div>
+
+
 <div class="viewcode-block" id="ManagerBasedRlEnv.apply_action">
 <a class="viewcode-back" href="../../../api_reference/envs/_autosummary/unilab.envs.manager_based_rl_env.ManagerBasedRlEnv.html#unilab.tasks.locomotion.g1.manager_terms.ManagerBasedRlEnv.apply_action">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">apply_action</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">actions</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="n">TorchEnvState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
@@ -1778,7 +1786,9 @@
             <span class="c1"># state once after physics.</span>
             <span class="n">read_plan</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">process_public_action</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_sim_step_counter</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">sim_substeps</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sim_step_counter</span> <span class="o">+=</span> <span class="p">(</span>
+            <span class="mi">1</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">requires_substep_state_feedback</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">sim_substeps</span>
+        <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">action_manager</span><span class="o">.</span><span class="n">apply_action</span><span class="p">()</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_control_to_backend_boundary</span><span class="p">()</span></div>
 
