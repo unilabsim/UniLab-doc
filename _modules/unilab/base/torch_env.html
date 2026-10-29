@@ -534,6 +534,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">abc</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Mapping</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
@@ -638,8 +639,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_truncated_scratch</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">num_envs</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_final_observation_scratch</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_action_finite_valid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_control_finite_valid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state_finite_valid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_control_finite_check</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_control_finite_check</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_obs_finite_valid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_count</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_runtime_bound</span> <span class="o">=</span> <span class="kc">False</span>
@@ -650,7 +652,13 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_scattered_reset_obs</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_rgb_array_renderer_ready</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="p">:</span> <span class="s2">&quot;NanGuard | None&quot;</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span><span class="p">:</span> <span class="n">CompletionToken</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span><span class="p">:</span> <span class="n">CompletionToken</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;defer_finite_validation&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+        <span class="n">interval</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;finite_validation_interval&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">interval</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">interval</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">interval</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;finite_validation_interval must be a positive integer&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_finite_validation_interval</span> <span class="o">=</span> <span class="n">interval</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span></div>
 
 
     <span class="nd">@property</span>
@@ -791,17 +799,15 @@
 
         <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
-        <span class="c1"># Manager action owners publish one device-resident control verdict</span>
-        <span class="c1"># during this phase; it must not leak into the next step.</span>
+        <span class="c1"># Action terms publish into one device-resident control verdict. Clear</span>
+        <span class="c1"># both publication carriers before each new action is processed.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_control_finite_valid</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pending_control_finite_check</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="n">ctrl</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_action</span><span class="p">(</span><span class="n">actions</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
+        <span class="n">guard_defer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">bad_ctrl_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">check_ctrl</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">bad_ctrl_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span>
-                    <span class="n">bad_ctrl_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_nan_guard_model_file</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span>
-                <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_control</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span>
+            <span class="n">guard_defer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">defer_validation</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_control_with_nan_guard</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="n">defer</span><span class="o">=</span><span class="n">guard_defer</span><span class="p">)</span>
         <span class="n">apply_action_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">apply_action_cpu_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
 
@@ -839,14 +845,29 @@
         <span class="k">finally</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tensor_diagnostics_state</span><span class="p">())</span>
+            <span class="n">transition_step</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">capture_due</span><span class="p">(</span><span class="n">transition_step</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tensor_diagnostics_state</span><span class="p">(),</span> <span class="n">step</span><span class="o">=</span><span class="n">transition_step</span><span class="p">)</span>
             <span class="n">nan_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">check</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">obs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">reward</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">obs</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">reward</span><span class="p">,</span>
+                <span class="n">step</span><span class="o">=</span><span class="n">transition_step</span><span class="p">,</span>
+                <span class="n">defer</span><span class="o">=</span><span class="n">guard_defer</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="k">if</span> <span class="n">nan_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span>
-                    <span class="n">nan_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_nan_guard_model_file</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span>
-                <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">nan_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_nan_guard_model_file</span><span class="p">(),</span> <span class="n">transition_step</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">defer_validation</span><span class="p">:</span>
+                <span class="n">deferred_nan_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">poll</span><span class="p">(</span><span class="n">step</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">deferred_nan_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span>
+                        <span class="n">deferred_nan_ids</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_nan_guard_model_file</span><span class="p">(),</span>
+                        <span class="n">transition_step</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                        <span class="s2">&quot;NanGuard detected NaN or Inf for environments &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">deferred_nan_ids</span><span class="p">[:</span><span class="mi">10</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_state</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
         <span class="n">update_state_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">update_state_cpu_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
@@ -882,6 +903,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_envs</span><span class="p">()</span>
         <span class="n">reset_done_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">reset_done_cpu_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">poll_finite_validation</span><span class="p">()</span>
 
         <span class="n">timing</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;timing&quot;</span><span class="p">,</span> <span class="p">{})</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">did_reset</span><span class="p">:</span>
@@ -940,7 +962,11 @@
         <span class="k">for</span> <span class="n">substep</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">sim_substeps</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">substep</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
                 <span class="n">ctrl</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_substep_action</span><span class="p">()</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_validate_control</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_validate_control_with_nan_guard</span><span class="p">(</span>
+                    <span class="n">ctrl</span><span class="p">,</span>
+                    <span class="n">defer</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span>
+                    <span class="ow">or</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">defer_validation</span><span class="p">),</span>
+                <span class="p">)</span>
             <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">step_tensor</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
                 <span class="k">continue</span>
@@ -957,7 +983,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_action</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">actions</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_action_contract</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_record_action_finite</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_action_finite_valid</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_action_finite_valid</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;TorchEnv action contains NaN or Inf&quot;</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_action_contract</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">actions</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -978,6 +1004,26 @@
         <span class="k">if</span> <span class="n">actions</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TorchEnv action device must be </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">actions</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_control_with_nan_guard</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctrl</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">defer</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate one control, including state-feedback substeps, on the same guard path.&quot;&quot;&quot;</span>
+        <span class="n">guard</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span>
+        <span class="k">if</span> <span class="n">guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">bad_ctrl_ids</span> <span class="o">=</span> <span class="n">guard</span><span class="o">.</span><span class="n">check_ctrl</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span><span class="p">,</span> <span class="n">defer</span><span class="o">=</span><span class="n">defer</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">bad_ctrl_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">guard</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">bad_ctrl_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_nan_guard_model_file</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_control</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="c1"># A deferred diagnostic guard attached to a strict environment</span>
+            <span class="c1"># still needs its abnormal control dump before the strict raise.</span>
+            <span class="k">if</span> <span class="n">guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span><span class="p">:</span>
+                <span class="n">ctrl_nan_ids</span> <span class="o">=</span> <span class="n">guard</span><span class="o">.</span><span class="n">poll</span><span class="p">(</span><span class="n">step</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">ctrl_nan_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">guard</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span>
+                        <span class="n">ctrl_nan_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_nan_guard_model_file</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span>
+                    <span class="p">)</span>
+            <span class="k">raise</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_control</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctrl</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TorchEnv control must be a torch.Tensor, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -992,15 +1038,18 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;TorchEnv control must be contiguous&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">ctrl</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TorchEnv control device must be </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">ctrl</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="c1"># Check the final tensor after every action term and encoder-bias</span>
+        <span class="c1"># adjustment. A term&#39;s earlier verdict cannot certify this value.</span>
+        <span class="n">valid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_control_finite_valid</span>
+        <span class="n">valid</span><span class="o">.</span><span class="n">logical_and_</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
         <span class="n">verdict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_publish_control_finite_verdict</span><span class="p">()</span>
-        <span class="k">if</span> <span class="n">verdict</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># The action owner records one device-resident control verdict per</span>
-            <span class="c1"># step. Publishing it here keeps the fail-closed contract while</span>
-            <span class="c1"># removing the per-step scalar host read from the CUDA hot path.</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">verdict</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;TorchEnv control contains NaN or Inf&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">verdict</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+            <span class="n">valid</span><span class="o">.</span><span class="n">logical_and_</span><span class="p">(</span><span class="n">verdict</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">verdict</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span>
+            <span class="n">valid</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="o">.</span><span class="n">logical_and_</span><span class="p">(</span><span class="n">valid</span><span class="p">)</span>
             <span class="k">return</span>
-        <span class="n">valid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">valid</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;TorchEnv control contains NaN or Inf&quot;</span><span class="p">)</span>
 
@@ -1036,6 +1085,9 @@
         <span class="n">valid</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">reward</span><span class="p">,</span> <span class="o">*</span><span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">logical_and</span><span class="p">(</span><span class="n">valid</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(),</span> <span class="n">out</span><span class="o">=</span><span class="n">valid</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="o">.</span><span class="n">logical_and_</span><span class="p">(</span><span class="n">valid</span><span class="p">)</span>
+            <span class="k">return</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">valid</span><span class="p">):</span>
             <span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="p">(</span>
                 <span class="o">*</span><span class="p">((</span><span class="sa">f</span><span class="s2">&quot;obs[</span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">]&quot;</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">items</span><span class="p">()),</span>
@@ -1053,8 +1105,25 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_record_action_finite</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">actions</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Record the public action finite verdict on its persistent carrier.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_action_finite_valid</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="o">.</span><span class="n">logical_and_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_action_finite_valid</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_publish_control_finite_verdict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="TorchEnv.record_control_finite_verdict">
+<a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.record_control_finite_verdict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">record_control_finite_verdict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">verdict</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Accumulate an action term&#39;s device verdict before control publication.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">verdict</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">verdict</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bool</span>
+            <span class="ow">or</span> <span class="n">verdict</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">0</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;TorchEnv control finite verdict must be a scalar bool tensor&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">verdict</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TorchEnv control finite verdict device must be </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_control_finite_valid</span><span class="o">.</span><span class="n">logical_and_</span><span class="p">(</span><span class="n">verdict</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_publish_control_finite_verdict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish and consume the manager control verdict, if recorded.&quot;&quot;&quot;</span>
         <span class="n">verdict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_control_finite_check</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pending_control_finite_check</span> <span class="o">=</span> <span class="kc">None</span>
@@ -1099,7 +1168,11 @@
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;TorchEnvState.final_observation[</span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">] device must be </span><span class="si">{</span><span class="n">expected</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span>
                 <span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_finite_float</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;final_observation[</span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">]&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_require_floating_float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_record_finite_validation</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;final_observation[</span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">]&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_validate_finite_float</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;final_observation[</span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">]&quot;</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_compute_truncated</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="n">TorchEnvState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_truncated_scratch</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
@@ -1201,6 +1274,9 @@
         <span class="n">valid</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">obs</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">logical_and</span><span class="p">(</span><span class="n">valid</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(),</span> <span class="n">out</span><span class="o">=</span><span class="n">valid</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="o">.</span><span class="n">logical_and_</span><span class="p">(</span><span class="n">valid</span><span class="p">)</span>
+            <span class="k">return</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">valid</span><span class="p">):</span>
             <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">obs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                 <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
@@ -1467,6 +1543,95 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span></div>
 
 
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">defer_finite_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether finite checks accumulate on the device between polls.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">finite_validation_interval</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Number of steps between deferred finite-validation polls.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_finite_validation_interval</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_record_finite_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Accumulate one finite verdict without a scalar host read.&quot;&quot;&quot;</span>
+        <span class="k">del</span> <span class="n">label</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="o">.</span><span class="n">logical_and_</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+
+<div class="viewcode-block" id="TorchEnv.record_finite_validation">
+<a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.record_finite_validation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">record_finite_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Allow a manager to add a finite verdict to the shared boundary.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_record_finite_validation</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">label</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="TorchEnv.poll_finite_validation">
+<a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.poll_finite_validation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">poll_finite_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">force</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish all deferred verdicts at one fixed host boundary.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">force</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_finite_validation_interval</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
+        <span class="n">verdicts</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="p">]</span>
+        <span class="n">managers</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="s2">&quot;action_manager&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;reward_manager&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;observation_manager&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;command_manager&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;metrics_manager&quot;</span><span class="p">,</span>
+        <span class="p">):</span>
+            <span class="n">manager</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">verdict</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">manager</span><span class="p">,</span> <span class="s2">&quot;finite_verdict&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">verdict</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+                <span class="n">verdicts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">verdict</span><span class="p">)</span>
+                <span class="n">managers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">manager</span><span class="p">)</span>
+
+        <span class="n">guard</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span>
+        <span class="n">guard_bad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">bad_verdict</span> <span class="o">=</span> <span class="n">guard</span><span class="o">.</span><span class="n">device_verdict</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">bad_verdict</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+                <span class="n">guard_bad</span> <span class="o">=</span> <span class="n">bad_verdict</span>
+                <span class="n">verdicts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">logical_not</span><span class="p">(</span><span class="n">bad_verdict</span><span class="p">))</span>
+
+        <span class="n">valid</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">verdicts</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">valid</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">manager</span> <span class="ow">in</span> <span class="n">managers</span><span class="p">:</span>
+                <span class="n">reset</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">manager</span><span class="p">,</span> <span class="s2">&quot;reset_finite_verdict&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">reset</span><span class="p">):</span>
+                    <span class="n">reset</span><span class="p">()</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">manager</span><span class="o">.</span><span class="n">finite_verdict</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">guard_bad</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">guard</span><span class="o">.</span><span class="n">reset_verdict</span><span class="p">()</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
+        <span class="c1"># Detailed scans and diagnostics are reserved for the abnormal path.</span>
+        <span class="n">base_valid</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">guard_bad</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">nan_ids</span> <span class="o">=</span> <span class="n">guard</span><span class="o">.</span><span class="n">poll</span><span class="p">(</span><span class="n">step</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">nan_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">guard</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">nan_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_nan_guard_model_file</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;NanGuard detected NaN or Inf at validation boundary for environments &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">nan_ids</span><span class="p">[:</span><span class="mi">10</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+        <span class="n">handled_nonfatal</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">for</span> <span class="n">manager</span> <span class="ow">in</span> <span class="n">managers</span><span class="p">:</span>
+            <span class="n">poll</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">manager</span><span class="p">,</span> <span class="s2">&quot;poll_finite_validation&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">poll</span><span class="p">)</span> <span class="ow">and</span> <span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span>
+                <span class="n">handled_nonfatal</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">handled_nonfatal</span> <span class="ow">and</span> <span class="n">base_valid</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;TorchEnv deferred finite validation detected NaN or Inf&quot;</span><span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="TorchEnv.set_nan_guard">
 <a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.set_nan_guard">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_nan_guard</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">guard</span><span class="p">:</span> <span class="n">NanGuard</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -1563,7 +1728,13 @@
 <div class="viewcode-block" id="TorchEnv.close">
 <a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.close">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">cleanup_scene_assets</span><span class="p">()</span></div>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># A short final cycle still owns device verdicts. Preserve an</span>
+            <span class="c1"># existing training error when close runs from a finally block.</span>
+            <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">poll_finite_validation</span><span class="p">(</span><span class="n">force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">cleanup_scene_assets</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="TorchEnv.apply_action">

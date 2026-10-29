@@ -556,6 +556,14 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">.tensor_sampler</span><span class="w"> </span><span class="kn">import</span> <span class="n">MotionSampler</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_float32_half_ulp_upper_bound</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Bound one round-to-nearest float32 error at this nonnegative magnitude.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">math</span><span class="o">.</span><span class="n">ldexp</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mi">150</span><span class="p">)</span>
+    <span class="n">exponent</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">frexp</span><span class="p">(</span><span class="n">value</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">math</span><span class="o">.</span><span class="n">ldexp</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">exponent</span> <span class="o">-</span> <span class="mi">25</span><span class="p">,</span> <span class="o">-</span><span class="mi">150</span><span class="p">))</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_quat_error_squared_torch</span><span class="p">(</span><span class="n">reference</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">actual</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the absolute-dot shortest-path angular error.&quot;&quot;&quot;</span>
     <span class="n">rel</span> <span class="o">=</span> <span class="n">quat_mul</span><span class="p">(</span><span class="n">quat_conjugate</span><span class="p">(</span><span class="n">reference</span><span class="p">),</span> <span class="n">actual</span><span class="p">)</span>
@@ -1066,6 +1074,14 @@
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cfg</span><span class="p">:</span> <span class="n">MotionCommandCfg</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">):</span>
         <span class="n">_validate_motion_command_cfg</span><span class="p">(</span><span class="n">cfg</span><span class="p">)</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">env</span><span class="p">)</span>
+        <span class="c1"># A full reset establishes a conservative host-side lower bound for</span>
+        <span class="c1"># every resample timer. The G1 tracking profile uses a fixed 1e9-second</span>
+        <span class="c1"># interval, so ordinary steps cannot resample during a training run.</span>
+        <span class="c1"># The bound only skips the empty-mask CPU probe; base timer/RNG work</span>
+        <span class="c1"># still runs in its original order.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_timer_lower_bound_s</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_inside_step_compute</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_skip_timer_resample</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="n">device</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">device</span>
         <span class="k">if</span> <span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span> <span class="ow">and</span> <span class="n">device</span><span class="o">.</span><span class="n">index</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda&quot;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_device</span><span class="p">())</span>
@@ -1391,9 +1407,12 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">command</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_command</span><span class="p">),</span> <span class="n">out</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_command_finite_valid</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_command_finite_valid</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_refresh_motion_torch</span><span class="p">()</span>
+        <span class="c1"># The command/observation aggregate owns the deferred verdict. Strict</span>
+        <span class="c1"># mode keeps the immediate recovery check for interactive debugging.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_env&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span> <span class="s2">&quot;defer_finite_validation&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_command</span><span class="p">),</span> <span class="n">out</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_command_finite_valid</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_command_finite_valid</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_refresh_motion_torch</span><span class="p">()</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_command</span>
 
     <span class="nd">@property</span>
@@ -1469,6 +1488,24 @@
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">time_left</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">sampled</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">time_left</span><span class="p">))</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_resample_command</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">or</span> <span class="p">(</span>
+                <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="nb">slice</span><span class="p">)</span>
+                <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="o">*</span><span class="n">env_ids</span><span class="o">.</span><span class="n">indices</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">)))</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span>
+            <span class="p">)</span>
+            <span class="ow">or</span> <span class="p">(</span>
+                <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
+                <span class="ow">and</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span>
+                <span class="ow">and</span> <span class="nb">bool</span><span class="p">(</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+            <span class="p">)</span>
+        <span class="p">):</span>
+            <span class="c1"># Float32 sampling may round slightly below the configured lower</span>
+            <span class="c1"># bound. Keep a conservative margin before declaring any timer</span>
+            <span class="c1"># mask provably empty.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_timer_lower_bound_s</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+                <span class="mf">0.0</span><span class="p">,</span> <span class="n">resample_lower</span> <span class="o">-</span> <span class="nb">max</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="nb">abs</span><span class="p">(</span><span class="n">resample_lower</span><span class="p">))</span> <span class="o">*</span> <span class="mf">1.0e-6</span>
+            <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_resample_ingested_mask</span> <span class="o">=</span> <span class="n">reset_mask</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_payload_validated</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="k">return</span> <span class="p">{}</span></div>
@@ -1501,8 +1538,53 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether the current reset payload already passed owner validation.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_last_reset_payload_validated</span><span class="p">)</span>
 
+<div class="viewcode-block" id="MotionCommand.compute">
+<a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.manager_terms.MotionCommand.html#unilab.tasks.motion_tracking.common.manager_terms.MotionCommand.compute">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dt</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Track a safe timer horizon without inspecting a CUDA scalar.&quot;&quot;&quot;</span>
+        <span class="n">remaining</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_timer_lower_bound_s</span>
+        <span class="k">if</span> <span class="n">remaining</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dt</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+                <span class="c1"># Only the owner-controlled, bounded per-step carrier has a</span>
+                <span class="c1"># known upper bound without a device read. Other tensor dt</span>
+                <span class="c1"># callers fall back to the original mask probe.</span>
+                <span class="n">owned_dt</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">,</span> <span class="s2">&quot;_command_dt&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="n">consumed</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="o">.</span><span class="n">step_dt</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="mf">1.0e-6</span><span class="p">)</span> <span class="k">if</span> <span class="n">dt</span> <span class="ow">is</span> <span class="n">owned_dt</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;inf&quot;</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dt</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span> <span class="ow">and</span> <span class="n">math</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">dt</span><span class="p">)</span> <span class="ow">and</span> <span class="n">dt</span> <span class="o">&gt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="n">consumed</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">dt</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">consumed</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;inf&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">consumed</span><span class="p">):</span>
+                <span class="c1"># time_left is float32. A subtraction can round *down* by half</span>
+                <span class="c1"># an ULP of the timer, while the dt carrier can round *up* by</span>
+                <span class="c1"># half an ULP of dt. Account for both errors before using the</span>
+                <span class="c1"># host lower bound to prove that every device timer is positive.</span>
+                <span class="n">timer_upper</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_resampling_time_range</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="mf">0.0</span><span class="p">)</span>
+                <span class="n">consumed</span> <span class="o">+=</span> <span class="n">_float32_half_ulp_upper_bound</span><span class="p">(</span><span class="n">consumed</span><span class="p">)</span>
+                <span class="n">consumed</span> <span class="o">+=</span> <span class="n">_float32_half_ulp_upper_bound</span><span class="p">(</span><span class="n">timer_upper</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_timer_lower_bound_s</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">remaining</span> <span class="o">-</span> <span class="n">consumed</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_inside_step_compute</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">compute</span><span class="p">(</span><span class="n">dt</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_inside_step_compute</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Only this timer dispatch may use the conservative bound. A clip-wrap</span>
+        <span class="c1"># resample from _update_command still honors its actual device mask.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_skip_timer_resample</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_inside_step_compute</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_timer_lower_bound_s</span> <span class="o">&gt;</span> <span class="mf">0.0</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_resample</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_skip_timer_resample</span> <span class="o">=</span> <span class="kc">False</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_resample_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Full-width motion sampling and masked state publication.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_skip_timer_resample&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="k">return</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
             <span class="c1"># An empty selected-reset mask is a no-op semantic boundary. It must</span>
             <span class="c1"># not consume sampler or task RNG merely to preserve a fixed-width</span>
