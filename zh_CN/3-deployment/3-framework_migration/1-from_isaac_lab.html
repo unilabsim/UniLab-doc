@@ -548,6 +548,35 @@ terminations / curriculum / metrics / recorders）可以省略 <code class="docu
 <p>Hydra compose 在冷路径把这份声明物化为 plain typed config。未知字段、无法解析的
 <code class="docutils literal notranslate"><span class="pre">_target_</span></code>/<code class="docutils literal notranslate"><span class="pre">func</span></code> 和错误 config 类型都会在 reset/step 之前报错。直接用 Python 构造
 config 只用于 focused 底层测试。</p>
+<section id="id3">
+<h4>执行器模型与指令延迟<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h4>
+<p>执行器动力学保留在机器人或任务的 MJCF 中，不要恢复 <code class="docutils literal notranslate"><span class="pre">EntityCfg</span></code> 执行器层。
+对于转子惯量 <code class="docutils literal notranslate"><span class="pre">J</span></code> 和减速比 <code class="docutils literal notranslate"><span class="pre">N</span></code>，将反射惯量 <code class="docutils literal notranslate"><span class="pre">I</span> <span class="pre">=</span> <span class="pre">J</span> <span class="pre">*</span> <span class="pre">N**2</span></code> 写入关节的
+<code class="docutils literal notranslate"><span class="pre">armature</span></code>。对于固有频率 <code class="docutils literal notranslate"><span class="pre">omega</span></code> 和阻尼比 <code class="docutils literal notranslate"><span class="pre">zeta</span></code>，推导
+<code class="docutils literal notranslate"><span class="pre">kp</span> <span class="pre">=</span> <span class="pre">I</span> <span class="pre">*</span> <span class="pre">omega**2</span></code>、<code class="docutils literal notranslate"><span class="pre">kv</span> <span class="pre">=</span> <span class="pre">2</span> <span class="pre">*</span> <span class="pre">zeta</span> <span class="pre">*</span> <span class="pre">I</span> <span class="pre">*</span> <span class="pre">omega</span></code>，并在 position 执行器上声明：</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;joint</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;knee&quot;</span><span class="w"> </span><span class="na">armature=</span><span class="s">&quot;0.02&quot;</span><span class="nt">/&gt;</span>
+<span class="nt">&lt;actuator&gt;</span>
+<span class="w">  </span><span class="nt">&lt;position</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;knee_drive&quot;</span><span class="w"> </span><span class="na">joint=</span><span class="s">&quot;knee&quot;</span><span class="w"> </span><span class="na">kp=</span><span class="s">&quot;40&quot;</span><span class="w"> </span><span class="na">kv=</span><span class="s">&quot;1.2&quot;</span><span class="nt">/&gt;</span>
+<span class="nt">&lt;/actuator&gt;</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">JointPositionActionCfg</span></code> 与 <code class="docutils literal notranslate"><span class="pre">MotionJointPositionActionCfg</span></code> 还支持
+<code class="docutils literal notranslate"><span class="pre">delay_min_lag</span></code> 和 <code class="docutils literal notranslate"><span class="pre">delay_max_lag</span></code>。lag 是包含端点的物理子步数，对应时间范围为
+<code class="docutils literal notranslate"><span class="pre">lag</span> <span class="pre">*</span> <span class="pre">env.sim_dt</span></code>，而不是 <code class="docutils literal notranslate"><span class="pre">ctrl_dt</span></code> 的倍数：</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">env</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">actions</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">joint_pos</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">_target_</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">unilab.envs.mdp.JointPositionActionCfg</span>
+<span class="w">      </span><span class="nt">entity_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">robot</span>
+<span class="w">      </span><span class="nt">actuator_names</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;.*&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">delay_min_lag</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+<span class="w">      </span><span class="nt">delay_max_lag</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</pre></div>
+</div>
+<p>Manager 按环境、按物理子步独立采样延迟，局部 reset 只清除所选环境的历史。
+初始化或 reset 后的首个目标会回填历史。这些字段覆盖指令延迟，不覆盖 DC
+电机的转矩—转速饱和曲线。</p>
+</section>
 </section>
 <section id="runtime">
 <h3>5. 只注册一条通用 runtime 路径<a class="headerlink" href="#runtime" title="Link to this heading">¶</a></h3>
@@ -564,15 +593,15 @@ config 只用于 focused 底层测试。</p>
 Compatible task 都直接注册
 <code class="docutils literal notranslate"><span class="pre">make_manager_based_rl_env</span></code>。</p>
 </section>
-<section id="id3">
-<h3>6. 在适配风险附近验证<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<section id="id4">
+<h3>6. 在适配风险附近验证<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
 <p>测试 Hydra compose 与 typed materialization、term 顺序与数学、selector 失败、
 observation/action shape、局部 reset，以及至少一个真实已注册 backend 的 transition。行为
 应与固定来源 task 对比；完成语义迁移后再做性能 benchmark。</p>
 </section>
 </section>
-<section id="id4">
-<h2>任务迁移最终状态<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<section id="id5">
+<h2>任务迁移最终状态<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
 <p>任务迁移状态由 registry 与迁移矩阵维护。fail-closed 的 source of truth 是
 <code class="docutils literal notranslate"><span class="pre">src/unilab/tasks/migration_matrix.py</span></code>：<code class="docutils literal notranslate"><span class="pre">migration_record()</span></code> 对没有
 entry 的 production task 名称抛出 <code class="docutils literal notranslate"><span class="pre">KeyError</span></code>，因此新增 production 注册必须显式做出
@@ -582,16 +611,16 @@ entry 的 production task 名称抛出 <code class="docutils literal notranslate
 tensor-only Manager-Based runtime。</p></li>
 </ul>
 </section>
-<section id="id5">
-<h2>仓库证据<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<section id="id6">
+<h2>仓库证据<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">tests/fixtures/isaac_lab_cartpole/</span></code> 迁移了 Isaac Lab commit
 <code class="docutils literal notranslate"><span class="pre">b0542fe2d45bf91c4e1d9ef6952b9c709c80b4e8</span></code> 的 Manager-Based Cartpole task。它保留
 全部 12 个来源 term 的名称和顺序，同时把 Torch 适配为 NumPy、嵌套 config object 适配
 为 Hydra YAML，并用 fixture-local MJCF 实现 scene/action/reset 边界。这只是 test-only
 证据，不是 production task 或 Isaac Lab 全量支持声明。</p>
 </section>
-<section id="id6">
-<h2>另请参阅<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<section id="id7">
+<h2>另请参阅<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="../../4-developer_guide/1-architecture/6-manager_based_api.html"><span class="doc">Manager-Based API</span></a></p></li>
 <li><p><a class="reference internal" href="../../4-developer_guide/2-contracts/1-env_contract.html"><span class="doc">Env contract</span></a></p></li>
@@ -664,14 +693,17 @@ tensor-only Manager-Based runtime。</p></li>
 <li><a class="reference internal" href="#task">1. 盘点来源 task</a></li>
 <li><a class="reference internal" href="#scene-asset">2. 在冷路径迁移 scene 与 asset</a></li>
 <li><a class="reference internal" href="#term-manager">3. 迁移 term 代码，不改 manager 结构</a></li>
-<li><a class="reference internal" href="#hydra-task-owner">4. 让 Hydra 成为唯一 task 配置 owner</a></li>
-<li><a class="reference internal" href="#runtime">5. 只注册一条通用 runtime 路径</a></li>
-<li><a class="reference internal" href="#id3">6. 在适配风险附近验证</a></li>
+<li><a class="reference internal" href="#hydra-task-owner">4. 让 Hydra 成为唯一 task 配置 owner</a><ul>
+<li><a class="reference internal" href="#id3">执行器模型与指令延迟</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id4">任务迁移最终状态</a></li>
-<li><a class="reference internal" href="#id5">仓库证据</a></li>
-<li><a class="reference internal" href="#id6">另请参阅</a></li>
+<li><a class="reference internal" href="#runtime">5. 只注册一条通用 runtime 路径</a></li>
+<li><a class="reference internal" href="#id4">6. 在适配风险附近验证</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id5">任务迁移最终状态</a></li>
+<li><a class="reference internal" href="#id6">仓库证据</a></li>
+<li><a class="reference internal" href="#id7">另请参阅</a></li>
 </ul>
 </li>
 </ul>

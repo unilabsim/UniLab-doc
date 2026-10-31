@@ -539,6 +539,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.torch_env</span><span class="w"> </span><span class="kn">import</span> <span class="n">TorchEnv</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.managers._buffers.delay_buffer</span><span class="w"> </span><span class="kn">import</span> <span class="n">DelayBuffer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.managers.action_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActionTerm</span><span class="p">,</span> <span class="n">ActionTermCfg</span>
 
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
@@ -780,6 +781,22 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Configuration for joint-position control.&quot;&quot;&quot;</span>
 
     <span class="n">use_default_offset</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">delay_min_lag</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Minimum position-target delay in physical substeps (inclusive).&quot;&quot;&quot;</span>
+    <span class="n">delay_max_lag</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Maximum position-target delay in physical substeps (inclusive).&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="p">(</span><span class="s2">&quot;delay_min_lag&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">delay_min_lag</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;delay_max_lag&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">delay_max_lag</span><span class="p">),</span>
+        <span class="p">):</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;JointPositionActionCfg </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be an int&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">value</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;JointPositionActionCfg </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be &gt;= 0&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">delay_max_lag</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">delay_min_lag</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;JointPositionActionCfg delay_max_lag must be &gt;= delay_min_lag&quot;</span><span class="p">)</span>
 
 <div class="viewcode-block" id="JointPositionActionCfg.build">
 <a class="viewcode-back" href="../../../../../api_reference/envs/_autosummary/unilab.envs.mdp.actions.actions.JointPositionActionCfg.html#unilab.envs.mdp.JointPositionActionCfg.build">[docs]</a>
@@ -811,8 +828,40 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_target_ids</span>
         <span class="p">)</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">num_joints</span> <span class="ow">and</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_target_ids</span><span class="p">)</span> <span class="o">==</span> <span class="nb">tuple</span><span class="p">(</span>
             <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">num_joints</span><span class="p">)</span>
-        <span class="p">)</span></div>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_delay_buffer</span><span class="p">:</span> <span class="n">DelayBuffer</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_requires_substep_state_feedback</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">delay_max_lag</span> <span class="o">&gt;</span> <span class="mi">0</span>
+        <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">delay_max_lag</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_delay_buffer</span> <span class="o">=</span> <span class="n">DelayBuffer</span><span class="p">(</span>
+                <span class="n">min_lag</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">delay_min_lag</span><span class="p">,</span>
+                <span class="n">max_lag</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">delay_max_lag</span><span class="p">,</span>
+                <span class="n">batch_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span>
+                <span class="n">torch_generator</span><span class="o">=</span><span class="n">env</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">generator</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">,</span>
+            <span class="p">)</span></div>
 
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">requires_substep_state_feedback</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_requires_substep_state_feedback</span>
+
+    <span class="nd">@requires_substep_state_feedback</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">requires_substep_state_feedback</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_requires_substep_state_feedback</span> <span class="o">=</span> <span class="n">value</span>
+
+<div class="viewcode-block" id="JointPositionAction.reset">
+<a class="viewcode-back" href="../../../../../api_reference/envs/_autosummary/unilab.envs.mdp.actions.actions.JointPositionAction.html#unilab.envs.mdp.JointPositionAction.reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delay_buffer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_delay_buffer</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_delay_target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delay_buffer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">target</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_delay_buffer</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delay_buffer</span><span class="o">.</span><span class="n">compute</span><span class="p">()</span>
 
 <div class="viewcode-block" id="JointPositionAction.apply_actions">
 <a class="viewcode-back" href="../../../../../api_reference/envs/_autosummary/unilab.envs.mdp.actions.actions.JointPositionAction.html#unilab.envs.mdp.JointPositionAction.apply_actions">[docs]</a>
@@ -831,12 +880,11 @@
                 <span class="n">encoder_bias</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_target_index</span><span class="p">),</span>
                 <span class="n">out</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_tensor_target</span><span class="p">,</span>
             <span class="p">)</span>
+            <span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delay_target</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tensor_target</span><span class="p">)</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_full_width_natural_target</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">set_full_width_joint_position_target</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tensor_target</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">set_full_width_joint_position_target</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">set_joint_position_target</span><span class="p">(</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_target</span><span class="p">,</span> <span class="n">joint_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_target_ids</span>
-                <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">set_joint_position_target</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">joint_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_target_ids</span><span class="p">)</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">,</span> <span class="n">TorchEnv</span><span class="p">):</span>
                 <span class="c1"># Accumulate every term&#39;s processed-action verdict on device.</span>
                 <span class="c1"># TorchEnv also checks the final control after this adjustment.</span>
@@ -846,7 +894,8 @@
         <span class="n">encoder_bias</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">encoder_bias_tensor</span><span class="o">.</span><span class="n">to</span><span class="p">(</span>
             <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="kc">True</span>
         <span class="p">)</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_target_index</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">set_joint_position_target</span><span class="p">(</span><span class="n">processed</span> <span class="o">-</span> <span class="n">encoder_bias</span><span class="p">,</span> <span class="n">joint_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_target_ids</span><span class="p">)</span></div>
+        <span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delay_target</span><span class="p">(</span><span class="n">processed</span> <span class="o">-</span> <span class="n">encoder_bias</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">set_joint_position_target</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">joint_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_target_ids</span><span class="p">)</span></div>
 </div>
 
 

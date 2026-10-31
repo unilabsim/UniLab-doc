@@ -563,6 +563,38 @@ class name.</p>
 cold path. Unknown fields, unresolved <code class="docutils literal notranslate"><span class="pre">_target_</span></code>/<code class="docutils literal notranslate"><span class="pre">func</span></code> references, and wrong
 config types fail before reset or step. Direct Python config construction is
 reserved for focused lower-level tests.</p>
+<section id="actuator-model-and-command-delay">
+<h4>Actuator model and command delay<a class="headerlink" href="#actuator-model-and-command-delay" title="Link to this heading">¶</a></h4>
+<p>Keep actuator dynamics in the robot or task MJCF rather than restoring an
+<code class="docutils literal notranslate"><span class="pre">EntityCfg</span></code> actuator layer. For rotor inertia <code class="docutils literal notranslate"><span class="pre">J</span></code> and gear ratio <code class="docutils literal notranslate"><span class="pre">N</span></code>, write the
+reflected inertia <code class="docutils literal notranslate"><span class="pre">I</span> <span class="pre">=</span> <span class="pre">J</span> <span class="pre">*</span> <span class="pre">N**2</span></code> to the joint’s <code class="docutils literal notranslate"><span class="pre">armature</span></code>. For natural
+frequency <code class="docutils literal notranslate"><span class="pre">omega</span></code> and damping ratio <code class="docutils literal notranslate"><span class="pre">zeta</span></code>, derive <code class="docutils literal notranslate"><span class="pre">kp</span> <span class="pre">=</span> <span class="pre">I</span> <span class="pre">*</span> <span class="pre">omega**2</span></code> and
+<code class="docutils literal notranslate"><span class="pre">kv</span> <span class="pre">=</span> <span class="pre">2</span> <span class="pre">*</span> <span class="pre">zeta</span> <span class="pre">*</span> <span class="pre">I</span> <span class="pre">*</span> <span class="pre">omega</span></code>, then declare them on the position actuator:</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;joint</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;knee&quot;</span><span class="w"> </span><span class="na">armature=</span><span class="s">&quot;0.02&quot;</span><span class="nt">/&gt;</span>
+<span class="nt">&lt;actuator&gt;</span>
+<span class="w">  </span><span class="nt">&lt;position</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;knee_drive&quot;</span><span class="w"> </span><span class="na">joint=</span><span class="s">&quot;knee&quot;</span><span class="w"> </span><span class="na">kp=</span><span class="s">&quot;40&quot;</span><span class="w"> </span><span class="na">kv=</span><span class="s">&quot;1.2&quot;</span><span class="nt">/&gt;</span>
+<span class="nt">&lt;/actuator&gt;</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">JointPositionActionCfg</span></code> and <code class="docutils literal notranslate"><span class="pre">MotionJointPositionActionCfg</span></code> also accept
+<code class="docutils literal notranslate"><span class="pre">delay_min_lag</span></code> and <code class="docutils literal notranslate"><span class="pre">delay_max_lag</span></code>. Lags are inclusive physical-substep counts,
+so the corresponding time range is <code class="docutils literal notranslate"><span class="pre">lag</span> <span class="pre">*</span> <span class="pre">env.sim_dt</span></code>, not a multiple of
+<code class="docutils literal notranslate"><span class="pre">ctrl_dt</span></code>:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">env</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">actions</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">joint_pos</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">_target_</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">unilab.envs.mdp.JointPositionActionCfg</span>
+<span class="w">      </span><span class="nt">entity_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">robot</span>
+<span class="w">      </span><span class="nt">actuator_names</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;.*&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">delay_min_lag</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+<span class="w">      </span><span class="nt">delay_max_lag</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</pre></div>
+</div>
+<p>The Manager samples delay independently per environment and physical substep,
+and selected resets clear only the selected histories. The first target after
+initialization or reset backfills the history. These fields cover command
+delay, not a DC motor’s torque-speed saturation curve.</p>
+</section>
 </section>
 <section id="register-one-generic-runtime-path">
 <h3>5. Register one generic runtime path<a class="headerlink" href="#register-one-generic-runtime-path" title="Link to this heading">¶</a></h3>
@@ -684,7 +716,10 @@ task or a blanket Isaac Lab support claim.</p>
 <li><a class="reference internal" href="#inventory-the-source-task">1. Inventory the source task</a></li>
 <li><a class="reference internal" href="#port-scene-and-assets-on-the-cold-path">2. Port scene and assets on the cold path</a></li>
 <li><a class="reference internal" href="#port-term-code-not-the-manager-structure">3. Port term code, not the manager structure</a></li>
-<li><a class="reference internal" href="#make-hydra-the-only-task-configuration-owner">4. Make Hydra the only task configuration owner</a></li>
+<li><a class="reference internal" href="#make-hydra-the-only-task-configuration-owner">4. Make Hydra the only task configuration owner</a><ul>
+<li><a class="reference internal" href="#actuator-model-and-command-delay">Actuator model and command delay</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#register-one-generic-runtime-path">5. Register one generic runtime path</a></li>
 <li><a class="reference internal" href="#validate-near-each-adaptation">6. Validate near each adaptation</a></li>
 </ul>

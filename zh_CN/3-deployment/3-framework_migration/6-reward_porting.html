@@ -455,7 +455,30 @@ Manager-Based reward 接收 env，通过 entity facade 和各 manager 读取批�
 两者返回非负代价，惩罚符号由负的 <code class="docutils literal notranslate"><span class="pre">weight</span></code> 提供，不要重复取负。</p>
 </section>
 <section id="id2">
-<h2>接触条件奖励<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<h2>执行器力读回<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>在机器人或任务的源 XML 中，为每个执行器声明一个命名的
+<code class="docutils literal notranslate"><span class="pre">&lt;actuatorfrc&gt;</span></code> 传感器。每个传感器读取 MuJoCo 执行空间中的标量作用力，
+而不是关节空间中的广义力：</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;sensor&gt;</span>
+<span class="w">  </span><span class="nt">&lt;actuatorfrc</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;hip_force&quot;</span><span class="w"> </span><span class="na">actuator=</span><span class="s">&quot;hip&quot;</span><span class="nt">/&gt;</span>
+<span class="w">  </span><span class="nt">&lt;actuatorfrc</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;knee_force&quot;</span><span class="w"> </span><span class="na">actuator=</span><span class="s">&quot;knee&quot;</span><span class="nt">/&gt;</span>
+<span class="nt">&lt;/sensor&gt;</span>
+</pre></div>
+</div>
+<p>基于类的 Manager term 通过 <code class="docutils literal notranslate"><span class="pre">tensor_sensor_names</span></code> 声明相同的名称。在 packed
+Torch 路径上，按执行器顺序读取这些视图；需要矩阵时，将各个
+<code class="docutils literal notranslate"><span class="pre">(num_envs,</span> <span class="pre">1)</span></code> 视图拼接：</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">names</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;hip_force&quot;</span><span class="p">,</span> <span class="s2">&quot;knee_force&quot;</span><span class="p">)</span>
+<span class="n">entity</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">scene</span><span class="p">[</span><span class="s2">&quot;robot&quot;</span><span class="p">]</span>
+<span class="n">views</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">read_plan</span><span class="o">.</span><span class="n">sensor_tensor_views</span><span class="p">(</span><span class="n">entity</span><span class="p">,</span> <span class="n">names</span><span class="p">)</span><span class="o">.</span><span class="n">values</span>
+<span class="n">actuator_force</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">views</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>结果形状为 <code class="docutils literal notranslate"><span class="pre">(num_envs,</span> <span class="pre">num_actuators)</span></code>。L2 力矩惩罚应使用相同的 packed
+视图，不要根据 PD 增益重建力矩。</p>
+</section>
+<section id="id3">
+<h2>接触条件奖励<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
 <p>接触历史不是通用 <code class="docutils literal notranslate"><span class="pre">state.prev_contact</span></code> 字段。需要计时或边沿检测的 reward
 使用有状态的 manager term，并在局部 reset 时重置对应 env 的缓存。
 现有示例位于 <code class="docutils literal notranslate"><span class="pre">unilab.tasks.locomotion.common.gait_terms</span></code>：
@@ -463,13 +486,13 @@ Manager-Based reward 接收 env，通过 entity facade 和各 manager 读取批�
 它们不等同于 Legged Gym 的首次接触奖励；迁移时核对触发时刻、计时单位和
 command gating，再通过固定轨迹比较逐项输出。</p>
 </section>
-<section id="id3">
-<h2>终止处理<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<section id="id4">
+<h2>终止处理<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">unilab.envs.mdp.is_terminated</span></code> 读取 termination manager 的非 timeout
 终止掩码。通过负权重构成终止惩罚，并单独核对 timeout 是否应参与源任务惩罚。</p>
 </section>
-<section id="id4">
-<h2>参考<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<section id="id5">
+<h2>参考<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="5-task_config_translation.html"><span class="doc">任务配置翻译速查表</span></a></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">src/unilab/envs/mdp/rewards.py</span></code></p></li>
@@ -539,9 +562,10 @@ command gating，再通过固定轨迹比较逐项输出。</p>
             <ul>
 <li><a class="reference internal" href="#">Reward 移植</a><ul>
 <li><a class="reference internal" href="#id1">跟踪、平滑与关节限制</a></li>
-<li><a class="reference internal" href="#id2">接触条件奖励</a></li>
-<li><a class="reference internal" href="#id3">终止处理</a></li>
-<li><a class="reference internal" href="#id4">参考</a></li>
+<li><a class="reference internal" href="#id2">执行器力读回</a></li>
+<li><a class="reference internal" href="#id3">接触条件奖励</a></li>
+<li><a class="reference internal" href="#id4">终止处理</a></li>
+<li><a class="reference internal" href="#id5">参考</a></li>
 </ul>
 </li>
 </ul>
