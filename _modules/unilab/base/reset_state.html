@@ -565,7 +565,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">EntityStatePatch</span><span class="p">,</span> <span class="n">SceneResetRequest</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.scene_layout</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompiledSceneLayout</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.rotation</span><span class="w"> </span><span class="kn">import</span> <span class="n">quat_apply_inverse</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.utils.math</span><span class="w"> </span><span class="kn">import</span> <span class="n">quat_apply_inverse</span>
 
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.packed_reset</span><span class="w"> </span><span class="kn">import</span> <span class="n">PackedResetTransaction</span>
@@ -673,6 +673,14 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_pending</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span><span class="p">:</span> <span class="n">PackedResetTransaction</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># Backend packed-reset validation mode mirrors the env&#39;s finite</span>
+        <span class="c1"># validation policy: &quot;strict&quot; raises at the write site, &quot;deferred&quot;</span>
+        <span class="c1"># latches device-side verdicts that the env&#39;s poll boundary drains.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_packed_validation_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;strict&quot;</span>
+        <span class="c1"># When the owning env defers finite validation, tensor payload verdicts</span>
+        <span class="c1"># accumulate into this env-owned device carrier instead of forcing a</span>
+        <span class="c1"># host read per reset write; the env&#39;s poll boundary raises.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict_sink</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_state_default_installed</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_owner_tensor_write_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_requested_rows_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
@@ -690,6 +698,32 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">active</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether a reset lifecycle currently owns the transaction.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active</span>
+
+<div class="viewcode-block" id="ResetStateTransaction.set_finite_verdict_sink">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.set_finite_verdict_sink">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_finite_verdict_sink</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">verdict</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Accumulate reset payload finite verdicts into the env&#39;s carrier.</span>
+
+<span class="sd">        ``None`` (the default) keeps the eager fail-closed host check. The sink</span>
+<span class="sd">        must only be installed while the owning environment defers finite</span>
+<span class="sd">        validation, since the env&#39;s poll boundary is what raises.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">verdict</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">verdict</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">verdict</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bool</span>
+            <span class="ow">or</span> <span class="n">verdict</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">0</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;finite verdict sink must be a scalar bool tensor&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict_sink</span> <span class="o">=</span> <span class="n">verdict</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_packed_validation_mode</span> <span class="o">=</span> <span class="s2">&quot;deferred&quot;</span> <span class="k">if</span> <span class="n">verdict</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">&quot;strict&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span><span class="o">.</span><span class="n">validation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_validation_mode</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">packed_reset_transaction</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PackedResetTransaction</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The backend-owned packed transaction, once lazily constructed.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">tensor_active</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
@@ -761,6 +795,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
             <span class="s2">&quot;PackedResetTransaction&quot;</span><span class="p">,</span> <span class="n">bind_packed_reset</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="n">resolved</span><span class="p">)</span>
         <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span><span class="o">.</span><span class="n">validation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_validation_mode</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_state_default_installed</span> <span class="o">=</span> <span class="kc">False</span></div>
 
 
@@ -1918,7 +1953,13 @@
         <span class="n">joint_velocity</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate the fused motion payload through one device synchronization.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate the fused motion payload on the device.</span>
+
+<span class="sd">        With a finite-verdict sink (deferred validation) the aggregate latches</span>
+<span class="sd">        into the env carrier without a host read; eager mode reads the scalar</span>
+<span class="sd">        verdict once (``bool(tensor)`` always synchronizes) and only the</span>
+<span class="sd">        failure path scans payloads for the detailed raise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">quat_norm</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">vector_norm</span><span class="p">(</span><span class="n">root_state</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
         <span class="n">valid_quat</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span>
             <span class="n">quat_norm</span><span class="p">,</span>
@@ -1932,12 +1973,13 @@
             <span class="o">&amp;</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">joint_velocity</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
             <span class="o">&amp;</span> <span class="n">valid_quat</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
         <span class="p">)</span>
-        <span class="c1"># Avoid a Python bool conversion of the aggregate: scalar conversion is</span>
-        <span class="c1"># itself synchronized and this fused reset path already has one device</span>
-        <span class="c1"># reduction. Compare against a device-resident true scalar so the</span>
-        <span class="c1"># success path remains non-synchronizing; invalid diagnostics below are</span>
-        <span class="c1"># still allowed to synchronize and identify the offending payload.</span>
-        <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">equal</span><span class="p">(</span><span class="n">valid</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">valid</span><span class="p">)):</span>
+        <span class="n">sink</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict_sink</span>
+        <span class="k">if</span> <span class="n">sink</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Deferred mode: latch the aggregate on the env&#39;s device-resident</span>
+            <span class="c1"># carrier without a host read; the env&#39;s poll boundary raises.</span>
+            <span class="n">sink</span><span class="o">.</span><span class="n">logical_and_</span><span class="p">(</span><span class="n">valid</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">valid</span><span class="p">):</span>
             <span class="k">return</span>
         <span class="n">payloads</span> <span class="o">=</span> <span class="p">(</span>
             <span class="p">(</span><span class="s2">&quot;root state&quot;</span><span class="p">,</span> <span class="n">root_state</span><span class="p">),</span>
@@ -2511,7 +2553,13 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_default_qvel</span> <span class="o">=</span> <span class="n">default_qvel</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_tensor_root_payload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root_state</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate finite values and quaternion norms through one device comparison.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate finite values and quaternion norms on the device.</span>
+
+<span class="sd">        With a finite-verdict sink (deferred validation) the aggregate latches</span>
+<span class="sd">        into the env carrier without a host read; eager mode reads the scalar</span>
+<span class="sd">        verdict once (``bool(tensor)`` always synchronizes) and only the</span>
+<span class="sd">        failure path re-scans for the detailed raise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">quat_norm</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">vector_norm</span><span class="p">(</span><span class="n">root_state</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
         <span class="n">valid_quat</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span>
             <span class="n">quat_norm</span><span class="p">,</span>
@@ -2520,7 +2568,11 @@
             <span class="n">atol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">valid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">root_state</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span> <span class="o">&amp;</span> <span class="n">valid_quat</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
-        <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">equal</span><span class="p">(</span><span class="n">valid</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">valid</span><span class="p">)):</span>
+        <span class="n">sink</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict_sink</span>
+        <span class="k">if</span> <span class="n">sink</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">sink</span><span class="o">.</span><span class="n">logical_and_</span><span class="p">(</span><span class="n">valid</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">valid</span><span class="p">):</span>
             <span class="k">return</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">root_state</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>

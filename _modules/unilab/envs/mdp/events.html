@@ -544,6 +544,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.managers.manager_base</span><span class="w"> </span><span class="kn">import</span> <span class="n">ManagerTermBase</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.managers.rng</span><span class="w"> </span><span class="kn">import</span> <span class="n">ManagerRng</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.managers.scene_entity_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneEntityCfg</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.utils.math</span><span class="w"> </span><span class="kn">import</span> <span class="n">quat_apply</span><span class="p">,</span> <span class="n">quat_from_euler_xyz</span><span class="p">,</span> <span class="n">quat_mul</span>
 
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.entity</span><span class="w"> </span><span class="kn">import</span> <span class="n">Entity</span>
@@ -2216,7 +2217,15 @@
         <span class="p">)</span>
         <span class="c1"># Pre-sample the initial cooldown so the first impulse is preceded by a</span>
         <span class="c1"># cooldown rather than firing immediately at t=0.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_interval_time_left</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_cooldown</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_interval_time_left</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_cooldown</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">)</span>
+        <span class="c1"># Host mirror of the next lifecycle event: a conservative lower bound on</span>
+        <span class="c1"># min(where(active, time_remaining, interval_time_left)) plus the exact</span>
+        <span class="c1"># any-active verdict. IEEE-754 rounding is monotone, so subtracting the</span>
+        <span class="c1"># same float64 dt on host and device keeps the bound valid; while it is</span>
+        <span class="c1"># positive no timer can expire or trigger and the step reads no device</span>
+        <span class="c1"># state at all. Both are refreshed at probe boundaries and at reset.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_next_event_lb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cooldown_s</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_any_active</span> <span class="o">=</span> <span class="kc">False</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_sample_cooldown</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">count</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
@@ -2242,6 +2251,20 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">del</span> <span class="n">env_ids</span><span class="p">,</span> <span class="n">force_range</span><span class="p">,</span> <span class="n">torque_range</span><span class="p">,</span> <span class="n">duration_s</span><span class="p">,</span> <span class="n">cooldown_s</span><span class="p">,</span> <span class="n">asset_cfg</span>
         <span class="n">dt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_dt</span>
+
+        <span class="n">host_lb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_next_event_lb</span> <span class="o">-</span> <span class="n">dt</span>
+        <span class="k">if</span> <span class="n">host_lb</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="c1"># The host lower bound proves no timer expires or triggers this</span>
+            <span class="c1"># step: advance the timers and, while impulses are known active,</span>
+            <span class="c1"># keep the wrench re-stage without reading any device state.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_host_next_event_lb</span> <span class="o">=</span> <span class="n">host_lb</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_any_active</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_time_remaining</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="p">]</span> <span class="o">-=</span> <span class="n">dt</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_interval_time_left</span> <span class="o">-=</span> <span class="n">dt</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_stage_wrench</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_interval_time_left</span> <span class="o">-=</span> <span class="n">dt</span>
+            <span class="k">return</span>
 
         <span class="c1"># Decrement active impulse timers, then expire finished impulses.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_time_remaining</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="p">]</span> <span class="o">-=</span> <span class="n">dt</span>
@@ -2283,7 +2306,7 @@
                     <span class="n">dtype</span><span class="o">=</span><span class="n">quat_rows</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
                     <span class="n">device</span><span class="o">=</span><span class="n">quat_rows</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
                 <span class="p">)</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">count</span> <span class="o">*</span> <span class="n">num_bodies</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
-                <span class="n">offset_w</span> <span class="o">=</span> <span class="n">_quat_apply</span><span class="p">(</span><span class="n">quat_rows</span><span class="p">,</span> <span class="n">offsets</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="n">num_bodies</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+                <span class="n">offset_w</span> <span class="o">=</span> <span class="n">quat_apply</span><span class="p">(</span><span class="n">quat_rows</span><span class="p">,</span> <span class="n">offsets</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="n">num_bodies</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
                 <span class="n">torques</span> <span class="o">=</span> <span class="n">torques</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">offset_w</span><span class="p">,</span> <span class="n">forces</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_active_forces</span><span class="p">[</span><span class="n">trigger_ids</span><span class="p">]</span> <span class="o">=</span> <span class="n">forces</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_active_torques</span><span class="p">[</span><span class="n">trigger_ids</span><span class="p">]</span> <span class="o">=</span> <span class="n">torques</span>
@@ -2300,14 +2323,24 @@
         <span class="c1"># persistent channels. Idle envs skip the call entirely so the term</span>
         <span class="c1"># never clobbers another producer&#39;s staged forces.</span>
         <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="o">.</span><span class="n">any</span><span class="p">()</span> <span class="ow">or</span> <span class="n">expired</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">apply_body_wrench_to_sim</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_active_forces</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_active_torques</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_uses_torque</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_backend_body_ids</span><span class="p">,</span>
-                <span class="n">env_ids</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;apply_body_impulse&quot;</span><span class="p">,</span>
-            <span class="p">)</span></div>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_stage_wrench</span><span class="p">()</span>
 
+        <span class="c1"># Refresh the host mirror at this probe boundary. The next event is the</span>
+        <span class="c1"># nearest active duration or inactive cooldown; the any-active verdict</span>
+        <span class="c1"># is exact here.</span>
+        <span class="n">next_event</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_time_remaining</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_time_left</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_next_event_lb</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">next_event</span><span class="o">.</span><span class="n">amin</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_any_active</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="o">.</span><span class="n">any</span><span class="p">())</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_stage_wrench</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">apply_body_wrench_to_sim</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_active_forces</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_active_torques</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_uses_torque</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_backend_body_ids</span><span class="p">,</span>
+            <span class="n">env_ids</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;apply_body_impulse&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
 
 <div class="viewcode-block" id="ApplyBodyImpulse.reset">
 <a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.events.ApplyBodyImpulse.html#unilab.envs.mdp.events.ApplyBodyImpulse.reset">[docs]</a>
@@ -2322,13 +2355,20 @@
         <span class="k">if</span> <span class="n">was_active</span><span class="p">:</span>
             <span class="c1"># Reset rows now stage zeros, which actively clears persistent</span>
             <span class="c1"># channels; other rows re-stage their unchanged wrench.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_entity</span><span class="o">.</span><span class="n">apply_body_wrench_to_sim</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_active_forces</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_active_torques</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_uses_torque</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_backend_body_ids</span><span class="p">,</span>
-                <span class="n">env_ids</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                <span class="n">term_name</span><span class="o">=</span><span class="s2">&quot;apply_body_impulse&quot;</span><span class="p">,</span>
-            <span class="p">)</span></div>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_stage_wrench</span><span class="p">()</span>
+            <span class="c1"># A full-width reset provably clears every active row; a partial</span>
+            <span class="c1"># reset re-reads the verdict once at this reset boundary.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_host_any_active</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="kc">False</span> <span class="k">if</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span> <span class="k">else</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_active</span><span class="o">.</span><span class="n">any</span><span class="p">())</span>
+            <span class="p">)</span>
+        <span class="c1"># Reset rows restart their cooldown at &gt;= cooldown lower bound. A</span>
+        <span class="c1"># full-width reset provably retires every active row, so the next event</span>
+        <span class="c1"># is exactly the cooldown lower bound; a partial reset keeps the</span>
+        <span class="c1"># previous bound for the untouched rows.</span>
+        <span class="k">if</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_envs</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_host_next_event_lb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cooldown_s</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_host_next_event_lb</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_host_next_event_lb</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cooldown_s</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_selected_body_quats</span><span class="p">(</span>
@@ -2481,10 +2521,10 @@
         <span class="o">+</span> <span class="n">pose_samples</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">root_states</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
         <span class="o">+</span> <span class="n">env</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">env_origins</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">device</span><span class="p">))</span>
     <span class="p">)</span>
-    <span class="n">orientation_delta</span> <span class="o">=</span> <span class="n">_quat_from_euler_xyz</span><span class="p">(</span>
+    <span class="n">orientation_delta</span> <span class="o">=</span> <span class="n">quat_from_euler_xyz</span><span class="p">(</span>
         <span class="n">pose_samples</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">],</span> <span class="n">pose_samples</span><span class="p">[:,</span> <span class="mi">4</span><span class="p">],</span> <span class="n">pose_samples</span><span class="p">[:,</span> <span class="mi">5</span><span class="p">]</span>
     <span class="p">)</span>
-    <span class="n">root_states</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">]</span> <span class="o">=</span> <span class="n">_quat_mul</span><span class="p">(</span><span class="n">root_states</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">],</span> <span class="n">orientation_delta</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">root_states</span><span class="o">.</span><span class="n">dtype</span><span class="p">))</span>
+    <span class="n">root_states</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">]</span> <span class="o">=</span> <span class="n">quat_mul</span><span class="p">(</span><span class="n">root_states</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">],</span> <span class="n">orientation_delta</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">root_states</span><span class="o">.</span><span class="n">dtype</span><span class="p">))</span>
 
     <span class="n">velocity_samples</span> <span class="o">=</span> <span class="n">_sample_se3_range</span><span class="p">(</span>
         <span class="n">velocity_range</span><span class="p">,</span> <span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span> <span class="n">_require_rng</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;reset_root_state_uniform&quot;</span><span class="p">)</span>
@@ -2515,48 +2555,6 @@
     <span class="k">return</span> <span class="n">bounds</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_quat_from_euler_xyz</span><span class="p">(</span>
-    <span class="n">roll</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">pitch</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">yaw</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert XYZ Euler angles to device-resident wxyz quaternions.&quot;&quot;&quot;</span>
-    <span class="n">cos_roll</span><span class="p">,</span> <span class="n">sin_roll</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">roll</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">roll</span><span class="p">)</span>
-    <span class="n">cos_pitch</span><span class="p">,</span> <span class="n">sin_pitch</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">pitch</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">pitch</span><span class="p">)</span>
-    <span class="n">cos_yaw</span><span class="p">,</span> <span class="n">sin_yaw</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">yaw</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">yaw</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span>
-        <span class="p">(</span>
-            <span class="n">cos_roll</span> <span class="o">*</span> <span class="n">cos_pitch</span> <span class="o">*</span> <span class="n">cos_yaw</span> <span class="o">+</span> <span class="n">sin_roll</span> <span class="o">*</span> <span class="n">sin_pitch</span> <span class="o">*</span> <span class="n">sin_yaw</span><span class="p">,</span>
-            <span class="n">sin_roll</span> <span class="o">*</span> <span class="n">cos_pitch</span> <span class="o">*</span> <span class="n">cos_yaw</span> <span class="o">-</span> <span class="n">cos_roll</span> <span class="o">*</span> <span class="n">sin_pitch</span> <span class="o">*</span> <span class="n">sin_yaw</span><span class="p">,</span>
-            <span class="n">cos_roll</span> <span class="o">*</span> <span class="n">sin_pitch</span> <span class="o">*</span> <span class="n">cos_yaw</span> <span class="o">+</span> <span class="n">sin_roll</span> <span class="o">*</span> <span class="n">cos_pitch</span> <span class="o">*</span> <span class="n">sin_yaw</span><span class="p">,</span>
-            <span class="n">cos_roll</span> <span class="o">*</span> <span class="n">cos_pitch</span> <span class="o">*</span> <span class="n">sin_yaw</span> <span class="o">-</span> <span class="n">sin_roll</span> <span class="o">*</span> <span class="n">sin_pitch</span> <span class="o">*</span> <span class="n">cos_yaw</span><span class="p">,</span>
-        <span class="p">),</span>
-        <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
-    <span class="p">)</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_quat_apply</span><span class="p">(</span><span class="n">quat_wxyz</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">vector</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Apply broadcast-compatible wxyz quaternions to device-resident vectors.&quot;&quot;&quot;</span>
-    <span class="n">quat_xyz</span> <span class="o">=</span> <span class="n">quat_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span>
-    <span class="k">if</span> <span class="n">vector</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&lt;</span> <span class="n">quat_xyz</span><span class="o">.</span><span class="n">ndim</span><span class="p">:</span>
-        <span class="n">vector</span> <span class="o">=</span> <span class="n">vector</span><span class="o">.</span><span class="n">expand_as</span><span class="p">(</span><span class="n">quat_xyz</span><span class="p">)</span>
-    <span class="n">cross</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">quat_xyz</span><span class="p">,</span> <span class="n">vector</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="n">second_cross</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">quat_xyz</span><span class="p">,</span> <span class="n">cross</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">vector</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">quat_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">cross</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">second_cross</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_quat_mul</span><span class="p">(</span><span class="n">left_wxyz</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">right_wxyz</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Multiply broadcast-compatible device-resident wxyz quaternions.&quot;&quot;&quot;</span>
-    <span class="n">left_w</span><span class="p">,</span> <span class="n">left_xyz</span> <span class="o">=</span> <span class="n">left_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">],</span> <span class="n">left_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span>
-    <span class="n">right_w</span><span class="p">,</span> <span class="n">right_xyz</span> <span class="o">=</span> <span class="n">right_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">],</span> <span class="n">right_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span>
-    <span class="n">cross</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">left_xyz</span><span class="p">,</span> <span class="n">right_xyz</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span>
-        <span class="p">(</span>
-            <span class="n">left_w</span> <span class="o">*</span> <span class="n">right_w</span> <span class="o">-</span> <span class="p">(</span><span class="n">left_xyz</span> <span class="o">*</span> <span class="n">right_xyz</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
-            <span class="n">left_w</span> <span class="o">*</span> <span class="n">right_xyz</span> <span class="o">+</span> <span class="n">right_w</span> <span class="o">*</span> <span class="n">left_xyz</span> <span class="o">+</span> <span class="n">cross</span><span class="p">,</span>
-        <span class="p">),</span>
-        <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
-    <span class="p">)</span>
-
-
 <span class="k">def</span><span class="w"> </span><span class="nf">_root_reset_kernel</span><span class="p">(</span>
     <span class="n">default_rows</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">origins_rows</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
@@ -2569,8 +2567,8 @@
     <span class="k">if</span> <span class="n">origins_rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">output</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">+=</span> <span class="n">origins_rows</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span>
     <span class="n">output</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">+=</span> <span class="n">pose_delta</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span>
-    <span class="n">orientation_delta</span> <span class="o">=</span> <span class="n">_quat_from_euler_xyz</span><span class="p">(</span><span class="n">pose_delta</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">],</span> <span class="n">pose_delta</span><span class="p">[:,</span> <span class="mi">4</span><span class="p">],</span> <span class="n">pose_delta</span><span class="p">[:,</span> <span class="mi">5</span><span class="p">])</span>
-    <span class="n">output</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">]</span> <span class="o">=</span> <span class="n">_quat_mul</span><span class="p">(</span><span class="n">output</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">],</span> <span class="n">orientation_delta</span><span class="p">)</span>
+    <span class="n">orientation_delta</span> <span class="o">=</span> <span class="n">quat_from_euler_xyz</span><span class="p">(</span><span class="n">pose_delta</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">],</span> <span class="n">pose_delta</span><span class="p">[:,</span> <span class="mi">4</span><span class="p">],</span> <span class="n">pose_delta</span><span class="p">[:,</span> <span class="mi">5</span><span class="p">])</span>
+    <span class="n">output</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">]</span> <span class="o">=</span> <span class="n">quat_mul</span><span class="p">(</span><span class="n">output</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">],</span> <span class="n">orientation_delta</span><span class="p">)</span>
     <span class="n">output</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">:</span><span class="mi">13</span><span class="p">]</span> <span class="o">+=</span> <span class="n">velocity_delta</span>
 
 

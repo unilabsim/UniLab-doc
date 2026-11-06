@@ -533,8 +533,11 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">ctypes</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">gc</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">importlib.util</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Tuple</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
@@ -948,46 +951,52 @@
 <span class="c1"># --------------------------------------------------------------------------- #</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_load_utils_math</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load the shared math primitives module without a package import.</span>
+
+<span class="sd">    The module is loaded by file path (like the protocol/kinematics worker</span>
+<span class="sd">    modules) so this module stays importable without Torch; the load happens</span>
+<span class="sd">    on first use, when a Torch runtime is guaranteed by the caller, so its</span>
+<span class="sd">    Torch primitives are defined.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;unisim_worker_utils_math&quot;</span>
+    <span class="n">module</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">module</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parents</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">/</span> <span class="s2">&quot;utils&quot;</span> <span class="o">/</span> <span class="s2">&quot;math.py&quot;</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">spec_from_file_location</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">spec</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">spec</span><span class="o">.</span><span class="n">loader</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;cannot load shared math primitives&quot;</span><span class="p">)</span>
+        <span class="n">module</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">module_from_spec</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">module</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">spec</span><span class="o">.</span><span class="n">loader</span><span class="o">.</span><span class="n">exec_module</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+            <span class="k">raise</span>
+    <span class="k">return</span> <span class="n">module</span>
+
+
 <div class="viewcode-block" id="quat_rotate">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacgym.tensor.quat_rotate.html#unisim.backend.isaacgym.tensor.quat_rotate">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">quat_rotate</span><span class="p">(</span><span class="n">torch</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">quat_wxyz</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">vectors</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Rotate broadcast-compatible wxyz-quaternion vectors without package imports.&quot;&quot;&quot;</span>
-    <span class="n">quat_vector</span> <span class="o">=</span> <span class="n">quat_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">vectors</span><span class="o">.</span><span class="n">shape</span><span class="p">))</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">quat_vector</span><span class="o">.</span><span class="n">shape</span><span class="p">)):</span>
-        <span class="n">vectors</span> <span class="o">=</span> <span class="n">vectors</span><span class="o">.</span><span class="n">expand_as</span><span class="p">(</span><span class="n">quat_vector</span><span class="p">)</span>
-    <span class="n">cross</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">quat_vector</span><span class="p">,</span> <span class="n">vectors</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="n">second_cross</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">quat_vector</span><span class="p">,</span> <span class="n">cross</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">vectors</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">quat_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">cross</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">second_cross</span></div>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Rotate broadcast-compatible wxyz-quaternion vectors (shared math owner).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_load_utils_math</span><span class="p">()</span><span class="o">.</span><span class="n">quat_apply</span><span class="p">(</span><span class="n">quat_wxyz</span><span class="p">,</span> <span class="n">vectors</span><span class="p">)</span></div>
 
 
 
 <div class="viewcode-block" id="quat_mul">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacgym.tensor.quat_mul.html#unisim.backend.isaacgym.tensor.quat_mul">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">quat_mul</span><span class="p">(</span><span class="n">torch</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">left_wxyz</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">right_wxyz</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Multiply broadcast-compatible wxyz quaternions without package imports.&quot;&quot;&quot;</span>
-    <span class="n">left_w</span><span class="p">,</span> <span class="n">left_xyz</span> <span class="o">=</span> <span class="n">left_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">],</span> <span class="n">left_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span>
-    <span class="n">right_w</span><span class="p">,</span> <span class="n">right_xyz</span> <span class="o">=</span> <span class="n">right_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">],</span> <span class="n">right_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">right_xyz</span><span class="o">.</span><span class="n">shape</span><span class="p">))</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">left_xyz</span><span class="o">.</span><span class="n">shape</span><span class="p">)):</span>
-        <span class="n">right_xyz</span> <span class="o">=</span> <span class="n">right_xyz</span><span class="o">.</span><span class="n">expand_as</span><span class="p">(</span><span class="n">left_xyz</span><span class="p">)</span>
-    <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">left_xyz</span><span class="o">.</span><span class="n">shape</span><span class="p">))</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">right_xyz</span><span class="o">.</span><span class="n">shape</span><span class="p">)):</span>
-        <span class="n">left_xyz</span> <span class="o">=</span> <span class="n">left_xyz</span><span class="o">.</span><span class="n">expand_as</span><span class="p">(</span><span class="n">right_xyz</span><span class="p">)</span>
-    <span class="n">cross</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">left_xyz</span><span class="p">,</span> <span class="n">right_xyz</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span>
-        <span class="p">(</span>
-            <span class="n">left_w</span> <span class="o">*</span> <span class="n">right_w</span> <span class="o">-</span> <span class="p">(</span><span class="n">left_xyz</span> <span class="o">*</span> <span class="n">right_xyz</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
-            <span class="n">left_w</span> <span class="o">*</span> <span class="n">right_xyz</span> <span class="o">+</span> <span class="n">right_w</span> <span class="o">*</span> <span class="n">left_xyz</span> <span class="o">+</span> <span class="n">cross</span><span class="p">,</span>
-        <span class="p">),</span>
-        <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
-    <span class="p">)</span></div>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Multiply broadcast-compatible wxyz quaternions (shared math owner).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_load_utils_math</span><span class="p">()</span><span class="o">.</span><span class="n">quat_mul</span><span class="p">(</span><span class="n">left_wxyz</span><span class="p">,</span> <span class="n">right_wxyz</span><span class="p">)</span></div>
 
 
 
 <div class="viewcode-block" id="quat_rotate_inverse">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.isaacgym.tensor.quat_rotate_inverse.html#unisim.backend.isaacgym.tensor.quat_rotate_inverse">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">quat_rotate_inverse</span><span class="p">(</span><span class="n">torch</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">quat_wxyz</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">vectors</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Rotate vectors into wxyz-quaternion frames without package imports.&quot;&quot;&quot;</span>
-    <span class="n">conjugate</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">quat_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">],</span> <span class="o">-</span><span class="n">quat_wxyz</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">quat_rotate</span><span class="p">(</span><span class="n">torch</span><span class="p">,</span> <span class="n">conjugate</span><span class="p">,</span> <span class="n">vectors</span><span class="p">)</span></div>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Rotate vectors into wxyz-quaternion frames (shared math owner).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_load_utils_math</span><span class="p">()</span><span class="o">.</span><span class="n">quat_apply_inverse</span><span class="p">(</span><span class="n">quat_wxyz</span><span class="p">,</span> <span class="n">vectors</span><span class="p">)</span></div>
 
 
 

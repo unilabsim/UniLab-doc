@@ -537,10 +537,10 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.envs.mdp.observations</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">joint_view</span><span class="p">,</span>
-    <span class="n">quat_apply_inverse</span><span class="p">,</span>
     <span class="n">root_body_view</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.managers.scene_entity_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneEntityCfg</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.utils.math</span><span class="w"> </span><span class="kn">import</span> <span class="n">quat_apply_inverse</span>
 
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.entity</span><span class="w"> </span><span class="kn">import</span> <span class="n">Entity</span>
@@ -550,7 +550,9 @@
 <span class="n">_DEFAULT_ASSET_CFG</span> <span class="o">=</span> <span class="n">SceneEntityCfg</span><span class="p">(</span><span class="s2">&quot;robot&quot;</span><span class="p">)</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_state_tensor</span><span class="p">(</span><span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span> <span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">width</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_state_tensor</span><span class="p">(</span>
+    <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span> <span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">width</span><span class="p">:</span> <span class="nb">int</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
     <span class="n">state</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
     <span class="n">expected</span> <span class="o">=</span> <span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">width</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="n">expected</span><span class="p">:</span>
@@ -558,6 +560,12 @@
             <span class="sa">f</span><span class="s2">&quot;Termination term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; received entity state shape &quot;</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">, expected </span><span class="si">{</span><span class="n">expected</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
+    <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">defer_finite_validation</span><span class="p">:</span>
+        <span class="c1"># Deferred mode accumulates the verdict on the env&#39;s device-resident</span>
+        <span class="c1"># carrier; the fixed poll boundary raises on a latched failure instead</span>
+        <span class="c1"># of synchronizing here on every step.</span>
+        <span class="n">env</span><span class="o">.</span><span class="n">record_finite_validation</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;termination[</span><span class="si">{</span><span class="n">term_name</span><span class="si">!r}</span><span class="s2">]&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">state</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">state</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
         <span class="n">invalid_rows</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="o">~</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">state</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">flatten</span><span class="p">()[:</span><span class="mi">10</span><span class="p">]</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
@@ -568,7 +576,7 @@
 
 
 <div class="viewcode-block" id="time_out">
-<a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.terminations.time_out.html#unilab.envs.mdp.terminations.time_out">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.terminations.html#unilab.envs.mdp.terminations.time_out">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">time_out</span><span class="p">(</span><span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Terminate when the episode length reaches its maximum.&quot;&quot;&quot;</span>
     <span class="n">output</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;time_out_scratch&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
@@ -595,14 +603,14 @@
     <span class="n">projected_gravity</span> <span class="o">=</span> <span class="n">quat_apply_inverse</span><span class="p">(</span>
         <span class="n">view</span><span class="o">.</span><span class="n">quat_w</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:],</span> <span class="n">gravity</span><span class="o">.</span><span class="n">expand</span><span class="p">((</span><span class="n">view</span><span class="o">.</span><span class="n">quat_w</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">3</span><span class="p">))</span>
     <span class="p">)</span>
-    <span class="n">_state_tensor</span><span class="p">(</span><span class="s2">&quot;bad_orientation&quot;</span><span class="p">,</span> <span class="n">projected_gravity</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+    <span class="n">_state_tensor</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;bad_orientation&quot;</span><span class="p">,</span> <span class="n">projected_gravity</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
     <span class="n">angle</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">acos</span><span class="p">((</span><span class="o">-</span><span class="n">projected_gravity</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">])</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span>
     <span class="k">return</span> <span class="n">angle</span> <span class="o">&gt;</span> <span class="n">limit_angle</span></div>
 
 
 
 <div class="viewcode-block" id="root_height_below_minimum">
-<a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.terminations.root_height_below_minimum.html#unilab.envs.mdp.terminations.root_height_below_minimum">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/envs/_autosummary/unilab.envs.mdp.terminations.html#unilab.envs.mdp.terminations.root_height_below_minimum">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">root_height_below_minimum</span><span class="p">(</span>
     <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">,</span>
     <span class="n">minimum_height</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
@@ -615,7 +623,7 @@
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;root_height_below_minimum minimum_height must be finite&quot;</span><span class="p">)</span>
     <span class="n">_</span><span class="p">,</span> <span class="n">view</span> <span class="o">=</span> <span class="n">root_body_view</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">asset_cfg</span><span class="p">,</span> <span class="s2">&quot;root_height_below_minimum&quot;</span><span class="p">)</span>
     <span class="n">root_pos_w</span> <span class="o">=</span> <span class="n">view</span><span class="o">.</span><span class="n">pos_w</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span>
-    <span class="n">_state_tensor</span><span class="p">(</span><span class="s2">&quot;root_height_below_minimum&quot;</span><span class="p">,</span> <span class="n">root_pos_w</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+    <span class="n">_state_tensor</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;root_height_below_minimum&quot;</span><span class="p">,</span> <span class="n">root_pos_w</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">root_pos_w</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">minimum_height</span></div>
 
 
