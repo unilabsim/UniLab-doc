@@ -823,26 +823,18 @@
         <span class="n">backend_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_physics</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span>
         <span class="n">step_core_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">step_core_cpu_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend_result</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-            <span class="n">pending_completion</span> <span class="o">=</span> <span class="n">backend_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;completion&quot;</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">pending_completion</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
-                <span class="n">pending_completion</span><span class="p">,</span> <span class="n">CompletionToken</span>
-            <span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;completion&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-                    <span class="s2">&quot;backend completion must be a CompletionToken; got &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">pending_completion</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
-                <span class="p">)</span>
-            <span class="c1"># Publish the receipt before update_state so public transition</span>
-            <span class="c1"># consumers can only read it after the update boundary succeeds.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span> <span class="o">=</span> <span class="n">pending_completion</span>
+        <span class="n">pending_completion</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend_step_completion</span><span class="p">(</span><span class="n">backend_result</span><span class="p">)</span>
+        <span class="c1"># Publish the receipt before update_state so public transition consumers</span>
+        <span class="c1"># can only read it after the update boundary succeeds.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span> <span class="o">=</span> <span class="n">pending_completion</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_clear_step_final_observation</span><span class="p">()</span>
-
-        <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
         <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_gate_backend_step_completion</span><span class="p">(</span><span class="n">pending_completion</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_clear_step_final_observation</span><span class="p">()</span>
+
+            <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+            <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">update_state</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
         <span class="k">finally</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span> <span class="o">=</span> <span class="kc">None</span>
@@ -945,22 +937,66 @@
 <div class="viewcode-block" id="TorchEnv.apply_substep_action">
 <a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.apply_substep_action">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">apply_substep_action</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Refresh state-dependent control before the next physics substep.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Refresh state-dependent control before the next physics substep.</span>
+
+<span class="sd">        ``TorchEnv`` consumes the previous substep&#39;s asynchronous completion,</span>
+<span class="sd">        with a stream-ordered read gate, before calling this owner hook.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> must implement apply_substep_action when &quot;</span>
             <span class="s2">&quot;requires_substep_state_feedback is True&quot;</span>
         <span class="p">)</span></div>
 
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_backend_step_completion</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CompletionToken</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate one backend step receipt before a consumer can use it.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">produces_completion_receipts</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;event-backed backend </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">backend_type</span><span class="si">!r}</span><span class="s2"> step did not &quot;</span>
+                    <span class="s2">&quot;publish a completion receipt&quot;</span>
+                <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;backend step result must be a mapping or None; got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">result</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">completion</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;completion&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">completion</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">produces_completion_receipts</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;event-backed backend </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">backend_type</span><span class="si">!r}</span><span class="s2"> step did not &quot;</span>
+                <span class="s2">&quot;publish a completion receipt&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">completion</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">completion</span><span class="p">,</span> <span class="n">CompletionToken</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;backend completion must be a CompletionToken; got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">completion</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">completion</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_gate_backend_step_completion</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">completion</span><span class="p">:</span> <span class="n">CompletionToken</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Order the current Torch consumer stream after an async step.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">completion</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">stream</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="c1"># The receipt owns the public dependency insertion. Passing no stream is</span>
+        <span class="c1"># valid only for already-complete test receipts; metadata-only tokens</span>
+        <span class="c1"># fail closed inside their implementation.</span>
+        <span class="n">completion</span><span class="o">.</span><span class="n">wait_before_read</span><span class="p">(</span><span class="n">stream</span><span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_step_physics</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctrl</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">requires_substep_state_feedback</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">cast</span><span class="p">(</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
                 <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">step_tensor</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">sim_substeps</span><span class="p">),</span>
             <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_backend_step_completion</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">result</span>
 
         <span class="n">backend_result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="n">backend_timing</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">final_completion</span><span class="p">:</span> <span class="n">CompletionToken</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">final_substep</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">sim_substeps</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="n">publishes_receipts</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">for</span> <span class="n">substep</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">sim_substeps</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">substep</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
                 <span class="n">ctrl</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_substep_action</span><span class="p">()</span>
@@ -970,17 +1006,28 @@
                     <span class="ow">or</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">defer_validation</span><span class="p">),</span>
                 <span class="p">)</span>
             <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">step_tensor</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-                <span class="k">continue</span>
-            <span class="n">backend_result</span> <span class="o">=</span> <span class="n">result</span>
-            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;timing&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                <span class="n">backend_timing</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">backend_timing</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">+</span> <span class="n">value</span>
+            <span class="n">completion</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend_step_completion</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+            <span class="n">result_publishes_receipts</span> <span class="o">=</span> <span class="n">completion</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">publishes_receipts</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">publishes_receipts</span> <span class="o">=</span> <span class="n">result_publishes_receipts</span>
+            <span class="k">elif</span> <span class="n">publishes_receipts</span> <span class="o">!=</span> <span class="n">result_publishes_receipts</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;backend completion receipt presence changed between physics substeps&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">backend_result</span> <span class="o">=</span> <span class="n">result</span>
+                <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;timing&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="n">backend_timing</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">backend_timing</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">+</span> <span class="n">value</span>
+            <span class="k">if</span> <span class="n">substep</span> <span class="o">&lt;</span> <span class="n">final_substep</span><span class="p">:</span>
+                <span class="c1"># The next action is both a state consumer and a device-control</span>
+                <span class="c1"># writer. Gate it on this substep before re-entering Manager code.</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_gate_backend_step_completion</span><span class="p">(</span><span class="n">completion</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">final_completion</span> <span class="o">=</span> <span class="n">completion</span>
 
         <span class="k">if</span> <span class="n">backend_result</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
-        <span class="c1"># The final receipt orders the whole substep sequence for transition</span>
-        <span class="c1"># consumers; intermediate receipts are superseded by the next step.</span>
-        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="n">backend_timing</span><span class="p">,</span> <span class="s2">&quot;completion&quot;</span><span class="p">:</span> <span class="n">backend_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;completion&quot;</span><span class="p">)}</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="n">backend_timing</span><span class="p">,</span> <span class="s2">&quot;completion&quot;</span><span class="p">:</span> <span class="n">final_completion</span><span class="p">}</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_action</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">actions</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_action_contract</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>

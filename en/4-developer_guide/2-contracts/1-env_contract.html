@@ -446,10 +446,28 @@ backend tensor lifecycles fail closed.</p></li>
 <ul class="simple">
 <li><p>Env code owns MDP semantics, observation construction, rewards, termination,
 truncation, reset behavior, and final-observation handling.</p></li>
+<li><p>When an async backend publishes a <code class="docutils literal notranslate"><span class="pre">CompletionToken</span></code>, <code class="docutils literal notranslate"><span class="pre">TorchEnv</span></code> uses that
+public receipt to order the current Torch stream before the next
+state-feedback Manager action/read/control write and before final Manager
+state update. Feed-forward stepping remains one batched backend call, and
+synchronous producers without a receipt perform no read gate. Task code must
+not override physics stepping or use backend-private streams/events for this
+ordering.</p></li>
 <li><p>Runners and learners must not invent critic observations by concatenating
 fields outside the env owner layer.</p></li>
 <li><p>If a third-party library still calls critic observations “privileged”, keep
 that name translation inside the adapter. Inside UniLab, the key is <code class="docutils literal notranslate"><span class="pre">critic</span></code>.</p></li>
+<li><p>Manager terms declare tensor reads on the cold path. Ordinary
+<code class="docutils literal notranslate"><span class="pre">tensor_sensor_names</span></code> / <code class="docutils literal notranslate"><span class="pre">tensor_body_names</span></code> requests remain packed scalar/body
+reads. A term that consumes UniSim’s ordered body-pair aggregation declares
+<code class="docutils literal notranslate"><span class="pre">tensor_body_pair_contact_names</span></code>; <code class="docutils literal notranslate"><span class="pre">EntityScene.compile_tensor_reads</span></code> cold-binds
+the ordered names on the requested Torch device and exposes the validated
+live batch through <code class="docutils literal notranslate"><span class="pre">SceneTensorReadPlan.body_pair_contact_view</span></code>. Access never
+binds or refreshes; reset, ordinary update, in-phase mutation repacking, and
+state-feedback substeps all call the plan’s explicit refresh boundary.
+Event, reward, termination, and observation functions may declare this
+attribute. Declarations for one entity must use the identical ordered name
+tuple, which keeps slot semantics unambiguous without per-term rebinding.</p></li>
 </ul>
 </section>
 <section id="evidence-in-repo">
