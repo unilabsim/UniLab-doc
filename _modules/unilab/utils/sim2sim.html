@@ -659,6 +659,32 @@
     <span class="k">return</span> <span class="n">stripped</span>
 
 
+<span class="c1"># The UniSim ray-caster plugin identity was renamed ``uni_ray`` → ``uniray``</span>
+<span class="c1"># (uniray 0.1.1 / unisim-core 2.2+). The rename changes no ray numerics and no</span>
+<span class="c1"># policy I/O, so contract comparisons treat the two spellings as the same</span>
+<span class="c1"># caster instead of rejecting every checkpoint trained before the rename.</span>
+<span class="n">CASTER_VALUE_ALIASES</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;uni_ray&quot;</span><span class="p">:</span> <span class="s2">&quot;uniray&quot;</span><span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_caster_aliases</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Recursively canonicalize renamed caster identity strings.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">is_config</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">OmegaConf</span><span class="o">.</span><span class="n">to_container</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">resolve</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="nb">str</span><span class="p">(</span><span class="n">key</span><span class="p">):</span> <span class="p">(</span>
+                <span class="n">CASTER_VALUE_ALIASES</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="n">child</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="s2">&quot;caster&quot;</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span>
+                <span class="k">else</span> <span class="n">_normalize_caster_aliases</span><span class="p">(</span><span class="n">child</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">}</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+        <span class="n">normalized</span> <span class="o">=</span> <span class="p">[</span><span class="n">_normalize_caster_aliases</span><span class="p">(</span><span class="n">child</span><span class="p">)</span> <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">value</span><span class="p">]</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">normalized</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="k">else</span> <span class="n">normalized</span>
+    <span class="k">return</span> <span class="n">value</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_values_equal</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
     <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">_normalize</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">==</span> <span class="n">_normalize</span><span class="p">(</span><span class="n">b</span><span class="p">))</span>
 
@@ -728,7 +754,9 @@
 <span class="sd">    DENYLIST field differs, including asymmetric presence for</span>
 <span class="sd">    :data:`ENV_STRUCTURAL_DENYLIST` paths. Playback-visualization-only</span>
 <span class="sd">    action fields (:data:`VISUALIZATION_ONLY_ACTION_FIELDS`) are exempt from</span>
-<span class="sd">    the ``env.actions`` comparison. A source run whose contract snapshot</span>
+<span class="sd">    the ``env.actions`` comparison, and renamed ray-caster identities</span>
+<span class="sd">    (:data:`CASTER_VALUE_ALIASES`) are canonicalized on both sides of every</span>
+<span class="sd">    comparison. A source run whose contract snapshot</span>
 <span class="sd">    is missing, malformed, or uses keys outside the current schema fails closed</span>
 <span class="sd">    with the same error regardless of ``strict``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -759,6 +787,8 @@
         <span class="k">if</span> <span class="n">path</span> <span class="o">==</span> <span class="s2">&quot;env.actions&quot;</span><span class="p">:</span>
             <span class="n">source_value</span> <span class="o">=</span> <span class="n">_strip_visualization_only_fields</span><span class="p">(</span><span class="n">source_value</span><span class="p">)</span>
             <span class="n">target_value</span> <span class="o">=</span> <span class="n">_strip_visualization_only_fields</span><span class="p">(</span><span class="n">target_value</span><span class="p">)</span>
+        <span class="n">source_value</span> <span class="o">=</span> <span class="n">_normalize_caster_aliases</span><span class="p">(</span><span class="n">source_value</span><span class="p">)</span>
+        <span class="n">target_value</span> <span class="o">=</span> <span class="n">_normalize_caster_aliases</span><span class="p">(</span><span class="n">target_value</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">_values_equal</span><span class="p">(</span><span class="n">source_value</span><span class="p">,</span> <span class="n">target_value</span><span class="p">):</span>
             <span class="k">continue</span>
         <span class="n">line</span> <span class="o">=</span> <span class="n">_diff_line</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">source_value</span><span class="p">,</span> <span class="n">target_value</span><span class="p">)</span>
