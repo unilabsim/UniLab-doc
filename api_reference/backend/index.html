@@ -235,6 +235,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../en/2-user_guide/1-training/5-resume_and_checkpoints.html">Resume And Checkpoints</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../en/2-user_guide/1-training/6-docker.html">Docker</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../en/2-user_guide/1-training/7-tensor_runtime_production.html">Tensor Runtime Production Guide</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../en/2-user_guide/1-training/8-sync_free_autoreset.html">Sync-Free Autoreset and Reset CUDA Graph</a></li>
 </ul>
 </li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../en/2-user_guide/2-algorithms/0-index.html">Algorithms</a><input aria-label="Toggle navigation of Algorithms" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -643,6 +644,70 @@ by every adapter.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="unisim.backend.base.SimBackend.torch_graph_capture_scope">
+<span class="sig-name descname"><span class="pre">torch_graph_capture_scope</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">torch_stream</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">capture_error_mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'global'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/unisim/backend/base.html#SimBackend.torch_graph_capture_scope"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#unisim.backend.base.SimBackend.torch_graph_capture_scope" title="Link to this definition">¶</a></dt>
+<dd><p>Record this backend’s tensor operations into a Torch CUDA graph.</p>
+<p>Use inside <code class="docutils literal notranslate"><span class="pre">torch.cuda.graph(...)</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">graph</span><span class="p">(</span><span class="n">graph</span><span class="p">):</span>
+    <span class="k">with</span> <span class="n">backend</span><span class="o">.</span><span class="n">torch_graph_capture_scope</span><span class="p">()</span> <span class="k">as</span> <span class="n">capture</span><span class="p">:</span>
+        <span class="n">backend</span><span class="o">.</span><span class="n">set_state_tensor_mask</span><span class="p">(</span><span class="n">mask</span><span class="p">,</span> <span class="n">qpos</span><span class="p">,</span> <span class="n">qvel</span><span class="p">)</span>
+<span class="o">...</span>
+<span class="n">capture</span><span class="o">.</span><span class="n">check_replay_guards</span><span class="p">()</span>
+<span class="n">graph</span><span class="o">.</span><span class="n">replay</span><span class="p">()</span>
+<span class="n">capture</span><span class="o">.</span><span class="n">replay_host_transitions</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Returns a context manager yielding an
+<code class="xref py py-class docutils literal notranslate"><span class="pre">ExternalGraphCapture</span></code>. While it is
+active every device launch targets <code class="docutils literal notranslate"><span class="pre">torch_stream</span></code> (default: the
+current Torch stream, which is the capture stream inside
+<code class="docutils literal notranslate"><span class="pre">torch.cuda.graph</span></code>), backend-internal graphs are not replayed, and
+fail-closed value checks accumulate into
+<a class="reference internal" href="#unisim.backend.base.SimBackend.tensor_validation_verdicts" title="unisim.backend.base.SimBackend.tensor_validation_verdicts"><code class="xref py py-meth docutils literal notranslate"><span class="pre">tensor_validation_verdicts()</span></code></a> instead of reading the device.
+<code class="docutils literal notranslate"><span class="pre">capture_error_mode</span></code> must equal the owner’s <code class="docutils literal notranslate"><span class="pre">torch.cuda.graph</span></code>
+<code class="docutils literal notranslate"><span class="pre">capture_error_mode</span></code> (“global”, “thread_local” or “relaxed”).
+Supported only when <code class="docutils literal notranslate"><span class="pre">get_tensor_capabilities().external_graph_capture</span></code>.
+Every supported operation must have run once eagerly before capture so
+lazily allocated carriers and kernel modules already exist.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>torch_stream</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.15)"><code class="xref py py-data docutils literal notranslate"><span class="pre">Any</span></code></a> | <a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span>)</p></li>
+<li><p><strong>capture_error_mode</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a></span>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.15)"><code class="xref py py-data docutils literal notranslate"><span class="pre">Any</span></code></a></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="unisim.backend.base.SimBackend.tensor_validation_verdicts">
+<span class="sig-name descname"><span class="pre">tensor_validation_verdicts</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/unisim/backend/base.html#SimBackend.tensor_validation_verdicts"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#unisim.backend.base.SimBackend.tensor_validation_verdicts" title="Link to this definition">¶</a></dt>
+<dd><p>Deferred fail-closed tensor checks, or <code class="docutils literal notranslate"><span class="pre">None</span></code> when checks are eager.</p>
+<p>Returns a <code class="xref py py-class docutils literal notranslate"><span class="pre">DeviceVerdicts</span></code> whose
+flags the owner may fold into its own device verdict, or publish with
+<a class="reference internal" href="#unisim.backend.base.SimBackend.flush_tensor_validation" title="unisim.backend.base.SimBackend.flush_tensor_validation"><code class="xref py py-meth docutils literal notranslate"><span class="pre">flush_tensor_validation()</span></code></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.15)"><code class="xref py py-data docutils literal notranslate"><span class="pre">Any</span></code></a> | <a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="unisim.backend.base.SimBackend.flush_tensor_validation">
+<span class="sig-name descname"><span class="pre">flush_tensor_validation</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/unisim/backend/base.html#SimBackend.flush_tensor_validation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#unisim.backend.base.SimBackend.flush_tensor_validation" title="Link to this definition">¶</a></dt>
+<dd><p>Publish deferred tensor checks with one host read; raise on failure.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="unisim.backend.base.SimBackend.get_tensor_runtime_diagnostics">
 <span class="sig-name descname"><span class="pre">get_tensor_runtime_diagnostics</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/unisim/backend/base.html#SimBackend.get_tensor_runtime_diagnostics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#unisim.backend.base.SimBackend.get_tensor_runtime_diagnostics" title="Link to this definition">¶</a></dt>
 <dd><p>Return runtime-selected diagnostics for optional tensor optimizations.</p>
@@ -820,6 +885,29 @@ to read one individual sensor first.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
 <dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="unisim.backend.base.SimBackend.bind_physics_step_tensor_data">
+<span class="sig-name descname"><span class="pre">bind_physics_step_tensor_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">joint_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">body_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">history_length</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/unisim/backend/base.html#SimBackend.bind_physics_step_tensor_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#unisim.backend.base.SimBackend.bind_physics_step_tensor_data" title="Link to this definition">¶</a></dt>
+<dd><p>Bind substep acceleration and normal-contact history on the cold path.</p>
+<p>At least one name list must be nonempty. Names must be unique and
+joints must be single-DoF. <code class="docutils literal notranslate"><span class="pre">history_length</span></code> is a positive integer.
+<code class="docutils literal notranslate"><span class="pre">device=None</span></code> selects the backend device; other devices are rejected.
+Sampling occurs at every physics substep, including host stepping.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>joint_names</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Sequence</span></code></a>[<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a>]</span>)</p></li>
+<li><p><strong>body_names</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Sequence</span></code></a>[<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a>]</span>)</p></li>
+<li><p><strong>history_length</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></a></span>)</p></li>
+<li><p><strong>device</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.15)"><code class="xref py py-data docutils literal notranslate"><span class="pre">Any</span></code></a> | <a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">PhysicsStepTensorDataView</span></code></span></p>
 </dd>
 </dl>
 </dd></dl>
@@ -2373,6 +2461,9 @@ the original.  Replacement frames with a mismatched contract fail closed.</p>
 <li><a class="reference internal" href="#unisim.backend.base.SimBackend.capability_flags"><code class="docutils literal notranslate"><span class="pre">SimBackend.capability_flags</span></code></a></li>
 <li><a class="reference internal" href="#unisim.backend.base.SimBackend.get_tensor_execution"><code class="docutils literal notranslate"><span class="pre">SimBackend.get_tensor_execution()</span></code></a></li>
 <li><a class="reference internal" href="#unisim.backend.base.SimBackend.get_tensor_capabilities"><code class="docutils literal notranslate"><span class="pre">SimBackend.get_tensor_capabilities()</span></code></a></li>
+<li><a class="reference internal" href="#unisim.backend.base.SimBackend.torch_graph_capture_scope"><code class="docutils literal notranslate"><span class="pre">SimBackend.torch_graph_capture_scope()</span></code></a></li>
+<li><a class="reference internal" href="#unisim.backend.base.SimBackend.tensor_validation_verdicts"><code class="docutils literal notranslate"><span class="pre">SimBackend.tensor_validation_verdicts()</span></code></a></li>
+<li><a class="reference internal" href="#unisim.backend.base.SimBackend.flush_tensor_validation"><code class="docutils literal notranslate"><span class="pre">SimBackend.flush_tensor_validation()</span></code></a></li>
 <li><a class="reference internal" href="#unisim.backend.base.SimBackend.get_tensor_runtime_diagnostics"><code class="docutils literal notranslate"><span class="pre">SimBackend.get_tensor_runtime_diagnostics()</span></code></a></li>
 <li><a class="reference internal" href="#unisim.backend.base.SimBackend.get_public_state_widths"><code class="docutils literal notranslate"><span class="pre">SimBackend.get_public_state_widths()</span></code></a></li>
 <li><a class="reference internal" href="#unisim.backend.base.SimBackend.bind_host_bridge_io"><code class="docutils literal notranslate"><span class="pre">SimBackend.bind_host_bridge_io()</span></code></a></li>
@@ -2383,6 +2474,7 @@ the original.  Replacement frames with a mismatched contract fail closed.</p>
 <li><a class="reference internal" href="#unisim.backend.base.SimBackend.get_tracked_body_views"><code class="docutils literal notranslate"><span class="pre">SimBackend.get_tracked_body_views()</span></code></a></li>
 <li><a class="reference internal" href="#unisim.backend.base.SimBackend.bind_body_pair_contact_views"><code class="docutils literal notranslate"><span class="pre">SimBackend.bind_body_pair_contact_views()</span></code></a></li>
 <li><a class="reference internal" href="#unisim.backend.base.SimBackend.refresh_body_pair_contact_views"><code class="docutils literal notranslate"><span class="pre">SimBackend.refresh_body_pair_contact_views()</span></code></a></li>
+<li><a class="reference internal" href="#unisim.backend.base.SimBackend.bind_physics_step_tensor_data"><code class="docutils literal notranslate"><span class="pre">SimBackend.bind_physics_step_tensor_data()</span></code></a></li>
 <li><a class="reference internal" href="#unisim.backend.base.SimBackend.step_tensor"><code class="docutils literal notranslate"><span class="pre">SimBackend.step_tensor()</span></code></a></li>
 <li><a class="reference internal" href="#unisim.backend.base.SimBackend.set_generalized_force_tensor"><code class="docutils literal notranslate"><span class="pre">SimBackend.set_generalized_force_tensor()</span></code></a></li>
 <li><a class="reference internal" href="#unisim.backend.base.SimBackend.set_state_tensor"><code class="docutils literal notranslate"><span class="pre">SimBackend.set_state_tensor()</span></code></a></li>

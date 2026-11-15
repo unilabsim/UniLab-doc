@@ -238,6 +238,7 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/1-training/5-resume_and_checkpoints.html">Resume And Checkpoints</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/1-training/6-docker.html">Docker</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/1-training/7-tensor_runtime_production.html">Tensor Runtime Production Guide</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../../en/2-user_guide/1-training/8-sync_free_autoreset.html">Sync-Free Autoreset and Reset CUDA Graph</a></li>
 </ul>
 </li>
 <li class="toctree-l3 has-children"><a class="reference internal" href="../../../../en/2-user_guide/2-algorithms/0-index.html">Algorithms</a><input aria-label="Toggle navigation of Algorithms" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -541,7 +542,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">replace</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="kn">import</span> <span class="n">PathLike</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">NoReturn</span><span class="p">,</span> <span class="n">cast</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">NoReturn</span><span class="p">,</span> <span class="n">cast</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
@@ -554,6 +555,7 @@
     <span class="n">DebugOverlayGetter</span><span class="p">,</span>
     <span class="n">MocapPoseBinding</span><span class="p">,</span>
     <span class="n">PhysicsStateLayout</span><span class="p">,</span>
+    <span class="n">PhysicsStepTensorDataView</span><span class="p">,</span>
     <span class="n">PlayCapabilities</span><span class="p">,</span>
     <span class="n">PlayRenderPlan</span><span class="p">,</span>
     <span class="n">PublicStateWidths</span><span class="p">,</span>
@@ -568,6 +570,12 @@
     <span class="n">TensorRuntimeDiagnostic</span><span class="p">,</span>
     <span class="n">TrackedBodyStateViews</span><span class="p">,</span>
     <span class="n">normalize_play_render_mode</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.graph_capture</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">DeviceVerdicts</span><span class="p">,</span>
+    <span class="n">ExternalGraphCapture</span><span class="p">,</span>
+    <span class="n">GraphCaptureError</span><span class="p">,</span>
+    <span class="n">closing_capture</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.model_index</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompiledModelIndex</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.dr._host</span><span class="w"> </span><span class="kn">import</span> <span class="n">interval_payload_to_host</span><span class="p">,</span> <span class="n">reset_payload_to_host_dict</span>
@@ -638,6 +646,9 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">.state_commit</span><span class="w"> </span><span class="kn">import</span> <span class="n">ModelUpdates</span><span class="p">,</span> <span class="n">StateCommitPlan</span><span class="p">,</span> <span class="n">float_values</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.variants</span><span class="w"> </span><span class="kn">import</span> <span class="n">FixedVariantRealization</span><span class="p">,</span> <span class="n">install_fixed_variant_fields</span><span class="p">,</span> <span class="n">prepare_fixed_variants</span>
 
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.physics_step_tensor_data</span><span class="w"> </span><span class="kn">import</span> <span class="n">MjwarpPhysicsStepTensorDataView</span>
+
 <span class="n">_GRAPH_CAPTURE_MIN_DRIVER</span> <span class="o">=</span> <span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
 <span class="c1"># MuJoCo compiles ``data=&quot;found force pos&quot;`` to this sensor_intprm dataspec.</span>
 <span class="n">_CONTACT_DATASPEC_AGGREGATE</span> <span class="o">=</span> <span class="mi">19</span>
@@ -689,7 +700,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBodyPairContactPlan">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBodyPairContactPlan.html#unisim.backend.mjwarp.backend.MjwarpBodyPairContactPlan">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBodyPairContactPlan">[docs]</a>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">MjwarpBodyPairContactPlan</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Cold immutable identity of one ordered MJWarp body-pair sensor.&quot;&quot;&quot;</span>
@@ -778,8 +789,34 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">event</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">stream</span><span class="p">)</span>
 
 
+<span class="k">class</span><span class="w"> </span><span class="nc">_CapturedStepCompletionToken</span><span class="p">(</span><span class="n">CompletionToken</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Receipt for a step recorded into an external CUDA graph.</span>
+
+<span class="sd">    A captured step owns no event: its work is ordered on the capture stream,</span>
+<span class="sd">    and every replay of the owner&#39;s graph is ordered on the replay stream.</span>
+<span class="sd">    Readers on that same stream need no extra dependency; any other reader</span>
+<span class="sd">    must use the owner&#39;s replay ordering instead of this receipt.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">:</span> <span class="n">CompletionToken</span><span class="p">,</span> <span class="n">stream</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;contract_version&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">contract_version</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;operation&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">operation</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;sequence&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">sequence</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;producer_id&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">producer_id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stream</span> <span class="o">=</span> <span class="n">stream</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">wait_before_read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">stream</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="s2">&quot;cuda_stream&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="nb">getattr</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stream</span><span class="p">,</span> <span class="s2">&quot;cuda_stream&quot;</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="p">):</span>
+            <span class="k">return</span>
+        <span class="k">raise</span> <span class="n">GraphCaptureError</span><span class="p">(</span>
+            <span class="s2">&quot;a captured mjwarp step receipt orders only readers on its capture/replay stream&quot;</span>
+        <span class="p">)</span>
+
+
 <div class="viewcode-block" id="MjwarpBackend">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">MjwarpBackend</span><span class="p">(</span><span class="n">SimBackend</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Independent CUDA backend exposed through the host NumPy profile.</span>
 
@@ -798,6 +835,11 @@
 
     <span class="n">_fixed_variant_plan</span><span class="p">:</span> <span class="n">FixedVariantPlan</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">_fixed_variant_realization</span><span class="p">:</span> <span class="n">FixedVariantRealization</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># External-capture state defaults; the constructor overrides them. They are</span>
+    <span class="c1"># declared here so constructor-free instances (contract tests built with</span>
+    <span class="c1"># ``__new__``) take the ordinary, non-capturing, eagerly validated path.</span>
+    <span class="n">_external_capture</span><span class="p">:</span> <span class="n">ExternalGraphCapture</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_defer_tensor_validation</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
 
     <span class="c1"># Host DR mirrors bound by ``_bind_dr_host_mirrors`` on the cold path</span>
     <span class="c1"># (declared here because that helper assigns them by name in a loop).</span>
@@ -812,6 +854,7 @@
     <span class="n">_actuator_target_dofs</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
     <span class="n">_actuator_gain_scale_compatible</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
     <span class="n">_tracked_sensor_slots</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span>
+    <span class="n">_physics_step_tensor_views</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">MjwarpPhysicsStepTensorDataView</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
     <span class="n">_cuda_graph_enabled</span><span class="p">:</span> <span class="nb">bool</span>
     <span class="n">_step_graph</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
     <span class="n">_forward_graph</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
@@ -822,7 +865,7 @@
     <span class="n">_device_xfrc_pending</span><span class="p">:</span> <span class="nb">bool</span>
 
 <div class="viewcode-block" id="MjwarpBackend.__init__">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.__init__">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.__init__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">scene</span><span class="p">:</span> <span class="n">SceneCfg</span><span class="p">,</span>
@@ -836,6 +879,7 @@
         <span class="n">add_body_sensors</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">tracked_body_names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">validate_tensor_finite</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">defer_tensor_validation</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="o">**</span><span class="n">unexpected_kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_composed_scene</span> <span class="o">=</span> <span class="kc">None</span>
@@ -870,6 +914,7 @@
                 <span class="n">add_body_sensors</span><span class="o">=</span><span class="n">add_body_sensors</span><span class="p">,</span>
                 <span class="n">tracked_body_names</span><span class="o">=</span><span class="n">tracked_body_names</span><span class="p">,</span>
                 <span class="n">validate_tensor_finite</span><span class="o">=</span><span class="n">validate_tensor_finite</span><span class="p">,</span>
+                <span class="n">defer_tensor_validation</span><span class="o">=</span><span class="n">defer_tensor_validation</span><span class="p">,</span>
                 <span class="o">**</span><span class="n">unexpected_kwargs</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_composed_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -894,6 +939,7 @@
         <span class="n">add_body_sensors</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">tracked_body_names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">validate_tensor_finite</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">defer_tensor_validation</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="o">**</span><span class="n">unexpected_kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">require_scene_composition_support</span><span class="p">(</span><span class="n">scene</span><span class="p">,</span> <span class="s2">&quot;mjwarp&quot;</span><span class="p">)</span>
@@ -904,6 +950,11 @@
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
                 <span class="s2">&quot;MjwarpBackend validate_tensor_finite must be bool, got &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">validate_tensor_finite</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">defer_tensor_validation</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="s2">&quot;MjwarpBackend defer_tensor_validation must be bool, got &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">defer_tensor_validation</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span><span class="n">num_envs</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;num_envs must be a positive integer, got </span><span class="si">{</span><span class="n">num_envs</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -974,7 +1025,16 @@
         <span class="c1"># a fixed boundary) may disable this check to keep stepping</span>
         <span class="c1"># asynchronous; structural checks and reset-path value rules remain.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_tensor_finite</span> <span class="o">=</span> <span class="n">validate_tensor_finite</span>
+        <span class="c1"># Deferred mode (or an active external capture) latches tensor value</span>
+        <span class="c1"># verdicts into fixed-address device flags instead of reading them on</span>
+        <span class="c1"># the host; ``flush_tensor_validation`` publishes them with one read.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_defer_tensor_validation</span> <span class="o">=</span> <span class="n">defer_tensor_validation</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_verdicts</span> <span class="o">=</span> <span class="n">DeviceVerdicts</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span><span class="p">:</span> <span class="n">ExternalGraphCapture</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span> <span class="o">=</span> <span class="n">scene_context</span><span class="o">.</span><span class="n">tracked_body_names</span>
+        <span class="c1"># Device column indices per requested tracked-body order. Built once per</span>
+        <span class="c1"># order so per-step view reads do not upload a host list (a host sync).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_column_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_sensor_slots</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_sensor_names</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state_torch_views</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
@@ -1327,7 +1387,7 @@
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;MJWarp backend is closed&quot;</span><span class="p">)</span>
 
 <div class="viewcode-block" id="MjwarpBackend.get_scene_layout">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_scene_layout">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_scene_layout">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_scene_layout</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CompiledSceneLayout</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_layout</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -1336,7 +1396,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_ray_scene_description">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_ray_scene_description">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_ray_scene_description">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_ray_scene_description</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">body_names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RaySceneDescription</span><span class="p">:</span>
@@ -1345,7 +1405,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_ray_collision_description">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_ray_collision_description">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_ray_collision_description">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_ray_collision_description</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">body_names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RayCollisionDescription</span><span class="p">:</span>
@@ -1358,7 +1418,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_ray_geometry_state">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_ray_geometry_state">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_ray_geometry_state">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_ray_geometry_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RayGeometryState</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return per-world geometry state on the public ray geom axis.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
@@ -1440,7 +1500,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_ray_site_frames">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_ray_site_frames">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_ray_site_frames">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_ray_site_frames</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">site_names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return detached public site-to-body frames.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
@@ -1448,13 +1508,13 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_entity_names">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_entity_names">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_entity_names">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_entity_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
         <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">entity</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_scene_layout</span><span class="p">()</span><span class="o">.</span><span class="n">entities</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_entity_default_state">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_entity_default_state">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_entity_default_state">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_entity_default_state</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">entity</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
@@ -1497,7 +1557,7 @@
         <span class="k">return</span> <span class="n">result</span>
 
 <div class="viewcode-block" id="MjwarpBackend.get_entity_state">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_entity_state">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_entity_state">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_entity_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entity</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
         <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_host_cache_stale&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_sync_host_cache</span><span class="p">()</span>
@@ -1592,6 +1652,8 @@
             <span class="c1"># Forward may update warmstart; retain unselected channels exactly</span>
             <span class="c1"># and the explicitly cleared selected warmstart for the next step.</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">qacc_warmstart</span><span class="p">,</span> <span class="n">plan</span><span class="o">.</span><span class="n">channels</span><span class="p">[</span><span class="s2">&quot;qacc_warmstart&quot;</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">view</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_physics_step_tensor_views</span><span class="p">:</span>
+                <span class="n">view</span><span class="o">.</span><span class="n">_reset_host_rows</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_synchronize</span><span class="p">()</span>
             <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;reset_forward_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
             <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
@@ -1650,7 +1712,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="n">name</span><span class="p">),</span> <span class="n">mirror</span><span class="p">)</span>
 
 <div class="viewcode-block" id="MjwarpBackend.reset_entities">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.reset_entities">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.reset_entities">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">reset_entities</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">SceneResetRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_sync_host_cache</span><span class="p">()</span>
         <span class="n">layout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_scene_layout</span><span class="p">()</span>
@@ -1740,7 +1802,7 @@
         <span class="p">)</span>
 
 <div class="viewcode-block" id="MjwarpBackend.cleanup_scene_assets">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.cleanup_scene_assets">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.cleanup_scene_assets">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">cleanup_scene_assets</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">cleanup_scene_assets</span><span class="p">()</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_entity_constructing&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
@@ -1751,7 +1813,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.close">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.close">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.close">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_entity_closed</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="c1"># Warp storage is stream-aware; release the contact decode scratch</span>
@@ -2303,6 +2365,10 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">host_array</span><span class="p">,</span> <span class="n">device_array</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_synchronize</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GraphCaptureError</span><span class="p">(</span>
+                <span class="s2">&quot;mjwarp host synchronization is not allowed inside an external CUDA graph capture&quot;</span>
+            <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">synchronize_device</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_refresh_tracked_body_state_device</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -2375,7 +2441,7 @@
         <span class="n">sensordata</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="s2">&quot;sensordata&quot;</span><span class="p">)</span>
         <span class="n">sensordata</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">selected</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">&amp;</span> <span class="n">dynamic_sensor_columns</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:],</span> <span class="mf">0.0</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_clear_body_pair_contact_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_clear_body_pair_contact_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">publish_host</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Clear only selected rows without touching completed false rows.&quot;&quot;&quot;</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
@@ -2391,8 +2457,9 @@
             <span class="n">view</span><span class="o">.</span><span class="n">position_w</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">expanded</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
             <span class="n">view</span><span class="o">.</span><span class="n">force_w</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">expanded</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_publish_body_pair_contact_batches</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contacts_stale</span> <span class="o">=</span> <span class="kc">False</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contacts_allow_decode</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="n">publish_host</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contacts_stale</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contacts_allow_decode</span> <span class="o">=</span> <span class="kc">False</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_refresh_tracked_body_state_device_only</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Refresh tracked body sensors without a host-cache transfer.</span>
@@ -2519,13 +2586,22 @@
             <span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">()):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp tensor </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be contiguous&quot;</span><span class="p">)</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;mjwarp tensor </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must contain finite values&quot;</span>
         <span class="k">if</span> <span class="p">(</span>
             <span class="n">check_finite</span>
             <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_tensor_finite</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_validation_deferred</span>
+            <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_verdicts</span><span class="o">.</span><span class="n">record</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">:finite&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(),</span> <span class="n">message</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">check_finite</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_tensor_finite</span>
+            <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_validation_deferred</span>
             <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span>
             <span class="ow">and</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
         <span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp tensor </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must contain finite values&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">value</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_torch_rows_flag</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rows</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
@@ -2606,6 +2682,15 @@
         <span class="n">live</span> <span class="o">=</span> <span class="p">[</span><span class="n">entry</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">entries</span> <span class="k">if</span> <span class="n">entry</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">numel</span><span class="p">()]</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">live</span><span class="p">:</span>
             <span class="k">return</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_validation_deferred</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">rule</span><span class="p">,</span> <span class="n">_value</span><span class="p">,</span> <span class="n">flag</span> <span class="ow">in</span> <span class="n">live</span><span class="p">:</span>
+                <span class="n">message</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_torch_rule_error</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">rule</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">rule</span> <span class="o">!=</span> <span class="s2">&quot;bool&quot;</span>
+                    <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;mjwarp tensor </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is invalid&quot;</span>
+                <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_verdicts</span><span class="o">.</span><span class="n">record</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">rule</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flag</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+            <span class="k">return</span>
         <span class="n">aggregate</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">flag</span><span class="o">.</span><span class="n">reshape</span><span class="p">(())</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">flag</span> <span class="ow">in</span> <span class="n">live</span><span class="p">])</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
         <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">aggregate</span><span class="p">):</span>
             <span class="k">return</span>
@@ -2638,6 +2723,17 @@
         <span class="n">device</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="s2">&quot;device&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;completion requires the ordered Torch stream device&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_completion_sequence</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">return</span> <span class="n">_CapturedStepCompletionToken</span><span class="p">(</span>
+                <span class="n">CompletionToken</span><span class="p">(</span>
+                    <span class="n">contract_version</span><span class="o">=</span><span class="n">COMPLETION_CONTRACT_VERSION</span><span class="p">,</span>
+                    <span class="n">operation</span><span class="o">=</span><span class="s2">&quot;step&quot;</span><span class="p">,</span>
+                    <span class="n">sequence</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_completion_sequence</span><span class="p">,</span>
+                    <span class="n">producer_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_completion_producer_id</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="n">stream</span><span class="p">,</span>
+            <span class="p">)</span>
         <span class="n">event</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
         <span class="n">event</span><span class="o">.</span><span class="n">record</span><span class="p">(</span><span class="n">stream</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_completion_sequence</span> <span class="o">+=</span> <span class="mi">1</span>
@@ -2771,19 +2867,38 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_disable_reason</span> <span class="o">=</span> <span class="kc">None</span>
 
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_replay_backend_graphs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether backend-owned graphs may be launched now.</span>
+
+<span class="sd">        A Torch-owned capture cannot contain a nested Warp graph launch, so an</span>
+<span class="sd">        active external capture emits the underlying MJWarp kernels directly</span>
+<span class="sd">        onto the bridged capture stream instead.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span> <span class="ow">is</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_tensor_validation_deferred</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_tensor_validation</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_execute_device_steps</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nsteps</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Advance fixed-shape device state through graph replay or eager calls.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_graph</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nsteps</span><span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">capture_launch</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_step_graph</span><span class="p">)</span>
-            <span class="k">return</span>
         <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nsteps</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">view</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_physics_step_tensor_views</span><span class="p">:</span>
+                <span class="n">view</span><span class="o">.</span><span class="n">before_step</span><span class="p">()</span>
+            <span class="c1"># Under an external capture the step kernels go directly onto the</span>
+            <span class="c1"># bridged capture stream; a nested Warp graph launch is not allowed.</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_replay_backend_graphs</span><span class="p">:</span>
+                <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_graph</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">capture_launch</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_step_graph</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">view</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_physics_step_tensor_views</span><span class="p">:</span>
+                <span class="n">view</span><span class="o">.</span><span class="n">after_step</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_execute_device_reset</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Clear selected device rows before the host state upload.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_replay_backend_graphs</span><span class="p">:</span>
             <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_graph</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">capture_launch</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_reset_graph</span><span class="p">)</span>
             <span class="k">return</span>
@@ -2795,7 +2910,7 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_execute_device_forward</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Refresh kinematics after the host state upload.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_replay_backend_graphs</span><span class="p">:</span>
             <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_forward_graph</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">capture_launch</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_forward_graph</span><span class="p">)</span>
             <span class="k">return</span>
@@ -2803,7 +2918,7 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_can_use_reset_scratch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_rows</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
         <span class="k">return</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_cuda_graph_enabled</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_replay_backend_graphs</span>
             <span class="ow">and</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">num_rows</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_capacity</span>
             <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_reset_graph</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -2877,19 +2992,19 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_dof_vel</span>
 
 <div class="viewcode-block" id="MjwarpBackend.get_actuator_ctrl_range">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_actuator_ctrl_range">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_actuator_ctrl_range">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_actuator_ctrl_range</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_ctrl_range</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_actuator_names">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_actuator_names">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_actuator_names">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_actuator_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_names</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_actuator_joint_names">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_actuator_joint_names">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_actuator_joint_names">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_actuator_joint_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
         <span class="n">supported_transmissions</span> <span class="o">=</span> <span class="p">{</span>
             <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_mujoco</span><span class="o">.</span><span class="n">mjtTrn</span><span class="o">.</span><span class="n">mjTRN_JOINT</span><span class="p">),</span>
@@ -2927,13 +3042,13 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_scene_model_file">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_scene_model_file">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_scene_model_file">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_scene_model_file</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene_model_file</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_keyframe_qpos">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_keyframe_qpos">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_keyframe_qpos">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_keyframe_qpos</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_keyframe_qpos</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
@@ -2943,19 +3058,19 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_default_qpos">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_default_qpos">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_default_qpos">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_default_qpos</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">qpos0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_default_dof_pos">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_default_dof_pos">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_default_dof_pos">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_default_dof_pos</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">qpos0</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_qpos_dim</span> <span class="p">:],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_init_qvel">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_init_qvel">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_init_qvel">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_init_qvel</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_nv</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span></div>
 
@@ -2989,13 +3104,13 @@
         <span class="k">return</span> <span class="n">result</span>
 
 <div class="viewcode-block" id="MjwarpBackend.get_tensor_execution">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_tensor_execution">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_tensor_execution">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_tensor_execution</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorExecution</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">DEVICE_RESIDENT</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_tensor_capabilities">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_tensor_capabilities">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_tensor_capabilities">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_tensor_capabilities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TensorLifecycleCapabilities</span><span class="p">:</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.packed_reset</span><span class="w"> </span><span class="kn">import</span> <span class="n">PACKED_RESET_MODEL_FIELDS</span>
 
@@ -3022,13 +3137,104 @@
             <span class="n">selected_reset_publication</span><span class="o">=</span><span class="n">SelectedResetPublication</span><span class="o">.</span><span class="n">AUTHORITATIVE_VIEWS</span><span class="p">,</span>
             <span class="n">tracked_body_views</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">batched_body_pair_contacts</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">physics_step_data</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">mask_selected_reset</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">mask_selected_reset_full_refresh</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">external_graph_capture</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="p">)</span></div>
 
 
+<div class="viewcode-block" id="MjwarpBackend.torch_graph_capture_scope">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.torch_graph_capture_scope">[docs]</a>
+    <span class="nd">@contextmanager</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">torch_graph_capture_scope</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">torch_stream</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">capture_error_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;global&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="n">ExternalGraphCapture</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Record MJWarp tensor stepping and mask reset into a Torch CUDA graph.</span>
+
+<span class="sd">        See :meth:`SimBackend.torch_graph_capture_scope`. The active Torch</span>
+<span class="sd">        stream (the capture stream inside ``torch.cuda.graph``) is bridged to</span>
+<span class="sd">        Warp with ``wp.stream_from_torch``, made current with</span>
+<span class="sd">        ``wp.ScopedStream``, and registered with Warp as an *external* capture</span>
+<span class="sd">        so MJWarp&#39;s temporary allocations and frees become graph memory nodes</span>
+<span class="sd">        instead of capture-invalidating calls. ``capture_error_mode`` must be</span>
+<span class="sd">        the mode the Torch capture was opened with (``torch.cuda.graph``</span>
+<span class="sd">        defaults to ``&quot;global&quot;``). Backend-owned graphs are bypassed so their</span>
+<span class="sd">        MJWarp kernels are recorded directly, and tensor value checks latch</span>
+<span class="sd">        into :meth:`tensor_validation_verdicts`. ``step_tensor`` and</span>
+<span class="sd">        ``set_state_tensor_mask`` are capturable once each has run eagerly.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">modes</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;global&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">CaptureMode</span><span class="o">.</span><span class="n">GLOBAL</span><span class="p">,</span>
+            <span class="s2">&quot;thread_local&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">CaptureMode</span><span class="o">.</span><span class="n">THREAD_LOCAL</span><span class="p">,</span>
+            <span class="s2">&quot;relaxed&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">CaptureMode</span><span class="o">.</span><span class="n">RELAXED</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="n">capture_error_mode</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">modes</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;capture_error_mode must be one of </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">modes</span><span class="p">)</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">capture_error_mode</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GraphCaptureError</span><span class="p">(</span><span class="s2">&quot;mjwarp external graph capture scopes cannot nest&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_fn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GraphCaptureError</span><span class="p">(</span><span class="s2">&quot;mjwarp host pre-step control cannot be graph captured&quot;</span><span class="p">)</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="s2">&quot;qpos&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">device</span>
+        <span class="n">stream</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">device</span><span class="p">)</span> <span class="k">if</span> <span class="n">torch_stream</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">torch_stream</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">Stream</span><span class="p">)</span> <span class="ow">or</span> <span class="n">stream</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">device</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp capture stream must be a torch.cuda.Stream on </span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">warp_stream</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">stream_from_torch</span><span class="p">(</span><span class="n">stream</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">warp_stream</span><span class="o">.</span><span class="n">is_capturing</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GraphCaptureError</span><span class="p">(</span>
+                <span class="s2">&quot;mjwarp torch_graph_capture_scope must run inside an active Torch CUDA graph &quot;</span>
+                <span class="s2">&quot;capture on its stream (for example within torch.cuda.graph)&quot;</span>
+            <span class="p">)</span>
+        <span class="n">capture</span> <span class="o">=</span> <span class="n">ExternalGraphCapture</span><span class="p">(</span><span class="n">torch_stream</span><span class="o">=</span><span class="n">stream</span><span class="p">,</span> <span class="n">backend_stream</span><span class="o">=</span><span class="n">warp_stream</span><span class="p">)</span>
+        <span class="n">warp_capture</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">ScopedCapture</span><span class="p">(</span>
+            <span class="n">stream</span><span class="o">=</span><span class="n">warp_stream</span><span class="p">,</span>
+            <span class="n">external</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">capture_mode</span><span class="o">=</span><span class="n">modes</span><span class="p">[</span><span class="n">capture_error_mode</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span> <span class="o">=</span> <span class="n">capture</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">closing_capture</span><span class="p">(</span><span class="n">capture</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">ScopedDevice</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">get_device</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">device</span><span class="o">.</span><span class="n">index</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_warp</span><span class="o">.</span><span class="n">ScopedStream</span><span class="p">(</span><span class="n">warp_stream</span><span class="p">,</span> <span class="n">sync_enter</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">warp_capture</span><span class="p">:</span>
+                <span class="k">yield</span> <span class="n">capture</span>
+            <span class="c1"># Warp&#39;s handle owns the deferred frees of capture-time temporaries;</span>
+            <span class="c1"># it must live as long as the owner&#39;s graph.</span>
+            <span class="n">capture</span><span class="o">.</span><span class="n">backend_graph</span> <span class="o">=</span> <span class="n">warp_capture</span><span class="o">.</span><span class="n">graph</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="MjwarpBackend.tensor_validation_verdicts">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.tensor_validation_verdicts">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">tensor_validation_verdicts</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DeviceVerdicts</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_tensor_validation</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tensor_verdicts</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_verdicts</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_host_transition</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">transition</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="kc">None</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply a host-state update; under external capture, also record it.&quot;&quot;&quot;</span>
+        <span class="n">capture</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span>
+        <span class="k">if</span> <span class="n">capture</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">transition</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">capture</span><span class="o">.</span><span class="n">record_host_transition</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp.</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">transition</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_replay_guard</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">guard</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">capture</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span>
+        <span class="k">if</span> <span class="n">capture</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">capture</span><span class="o">.</span><span class="n">record_replay_guard</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mjwarp.</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">guard</span><span class="p">)</span>
+
 <div class="viewcode-block" id="MjwarpBackend.bind_packed_reset">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.bind_packed_reset">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.bind_packed_reset">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">bind_packed_reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Begin a device-resident transaction with one scatter commit boundary.&quot;&quot;&quot;</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.packed_reset</span><span class="w"> </span><span class="kn">import</span> <span class="n">PackedResetTransaction</span>
@@ -3036,20 +3242,51 @@
         <span class="k">return</span> <span class="n">PackedResetTransaction</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span></div>
 
 
+<div class="viewcode-block" id="MjwarpBackend.bind_physics_step_tensor_data">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.bind_physics_step_tensor_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">bind_physics_step_tensor_data</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">joint_names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
+        <span class="n">body_names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
+        <span class="n">history_length</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+        <span class="n">device</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PhysicsStepTensorDataView</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind stable aliases sampled on the backend&#39;s native Warp stream.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.physics_step_tensor_data</span><span class="w"> </span><span class="kn">import</span> <span class="n">MjwarpPhysicsStepTensorDataView</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
+        <span class="n">reference</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="s2">&quot;qvel&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">requested</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">requested</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span> <span class="ow">and</span> <span class="n">requested</span><span class="o">.</span><span class="n">index</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">requested</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_device</span><span class="p">())</span>
+            <span class="k">if</span> <span class="n">requested</span> <span class="o">!=</span> <span class="n">reference</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;mjwarp physics-step tensor data must live on </span><span class="si">{</span><span class="n">reference</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">, &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;requested </span><span class="si">{</span><span class="n">requested</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+        <span class="n">view</span> <span class="o">=</span> <span class="n">MjwarpPhysicsStepTensorDataView</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">joint_names</span><span class="p">,</span> <span class="n">body_names</span><span class="p">,</span> <span class="n">history_length</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_physics_step_tensor_views</span> <span class="o">+=</span> <span class="p">(</span><span class="n">view</span><span class="p">,)</span>
+        <span class="k">return</span> <span class="n">view</span></div>
+
+
 <div class="viewcode-block" id="MjwarpBackend.get_public_state_widths">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_public_state_widths">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_public_state_widths">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_public_state_widths</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PublicStateWidths</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">PublicStateWidths</span><span class="p">(</span><span class="n">nq</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_nq</span><span class="p">,</span> <span class="n">nv</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_nv</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_sensor_names">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_sensor_names">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_sensor_names">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_sensor_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
         <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_sensor_slots</span><span class="p">))</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_sensor_inventory">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_sensor_inventory">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_sensor_inventory">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_sensor_inventory</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SensorDescriptor</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
         <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span>
             <span class="n">SensorDescriptor</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="n">width</span><span class="p">)</span>
@@ -3058,7 +3295,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_tensor_runtime_diagnostics">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_tensor_runtime_diagnostics">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_tensor_runtime_diagnostics">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_tensor_runtime_diagnostics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">TensorRuntimeDiagnostic</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Expose whether fixed-address MJWarp graph replay is active.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="p">{</span>
@@ -3081,7 +3318,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_state_views">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_state_views">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_state_views">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_state_views</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">fields</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
@@ -3123,7 +3360,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_sensor_view">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_sensor_view">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_sensor_view">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_sensor_view</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return a live named-sensor view without exposing sensor offsets.&quot;&quot;&quot;</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
@@ -3491,7 +3728,7 @@
                 <span class="n">batch</span><span class="o">.</span><span class="n">force_w</span><span class="p">[:,</span> <span class="n">slot</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">view</span><span class="o">.</span><span class="n">force_w</span><span class="p">)</span>
 
 <div class="viewcode-block" id="MjwarpBackend.bind_body_pair_contact_views">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.bind_body_pair_contact_views">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.bind_body_pair_contact_views">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">bind_body_pair_contact_views</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">device</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BodyPairContactBatch</span><span class="p">:</span>
@@ -3562,7 +3799,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.refresh_body_pair_contact_views">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.refresh_body_pair_contact_views">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.refresh_body_pair_contact_views">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">refresh_body_pair_contact_views</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
         <span class="n">requested</span> <span class="o">=</span> <span class="p">(</span>
@@ -3593,7 +3830,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_tracked_body_views">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_tracked_body_views">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_tracked_body_views">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_tracked_body_views</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">body_names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -3658,11 +3895,15 @@
                 <span class="sa">f</span><span class="s2">&quot;tracked-body views requested bodies missing from the tracked namespace: &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2">; available=</span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">declared</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
-        <span class="n">index</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">position</span> <span class="k">for</span> <span class="n">position</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">declared</span><span class="p">)}</span>
-        <span class="k">return</span> <span class="n">names</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">index</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">reference</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_column_cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">names</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">columns</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">columns</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="n">reference</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">position</span> <span class="k">for</span> <span class="n">position</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">declared</span><span class="p">)}</span>
+            <span class="n">columns</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">index</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">reference</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_column_cache</span><span class="p">[</span><span class="n">names</span><span class="p">]</span> <span class="o">=</span> <span class="n">columns</span>
+        <span class="k">return</span> <span class="n">names</span><span class="p">,</span> <span class="n">columns</span>
 
 <div class="viewcode-block" id="MjwarpBackend.get_root_state_layout">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_root_state_layout">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_root_state_layout">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_root_state_layout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root_body_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RootStateLayout</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entity_layout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">entity_name</span><span class="p">,</span> <span class="n">separator</span><span class="p">,</span> <span class="n">local_name</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">root_body_name</span><span class="p">)</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
@@ -3681,7 +3922,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_body_ids">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_ids">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_ids">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="n">resolved</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">:</span>
@@ -3693,7 +3934,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_geom_id">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_id">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_id">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_geom_ids</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
@@ -3702,7 +3943,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_geom_size">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_size">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_size">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_size</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="n">geom_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_geom_id</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_realization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -3712,7 +3953,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_default_geom_sizes">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_default_geom_sizes">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_default_geom_sizes">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_default_geom_sizes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_realization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_require_fresh_dr_mirror</span><span class="p">(</span><span class="s2">&quot;geom_size&quot;</span><span class="p">)</span>
@@ -3721,31 +3962,31 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_geom_solref">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_solref">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_solref">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_solref</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">geom_solref</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_geom_solimp">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_solimp">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_solimp">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_solimp</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">geom_solimp</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_dof_damping">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_dof_damping">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_dof_damping">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_dof_damping</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">dof_damping</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_dof_frictionloss">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_dof_frictionloss">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_dof_frictionloss">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_dof_frictionloss</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">dof_frictionloss</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.bind_mocap_pose">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.bind_mocap_pose">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.bind_mocap_pose">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">bind_mocap_pose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">body_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MocapPoseBinding</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">body_name</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">body_name</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;mjwarp mocap body_name must be a non-empty string&quot;</span><span class="p">)</span>
@@ -3791,7 +4032,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span> <span class="o">=</span> <span class="kc">True</span>
 
 <div class="viewcode-block" id="MjwarpBackend.get_body_subtree_ids">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_subtree_ids">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_subtree_ids">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_subtree_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root_body_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="n">root</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">root_body_id</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">root</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">root</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nbody</span><span class="p">:</span>
@@ -3809,7 +4050,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_geom_names">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_names">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_names">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
         <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">ngeom</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">geom_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geom_ids</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
@@ -3818,13 +4059,13 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_geom_body_ids">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_body_ids">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_body_ids">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_body_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">geom_bodyid</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_geom_contact_masks">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_contact_masks">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_contact_masks">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_contact_masks</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
         <span class="k">return</span> <span class="p">(</span>
             <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">geom_contype</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
@@ -3833,19 +4074,19 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_geom_friction">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_friction">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_geom_friction">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_geom_friction</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">geom_friction</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_gravity">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_gravity">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_gravity">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_gravity</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">opt</span><span class="o">.</span><span class="n">gravity</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_body_mass">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_mass">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_mass">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_mass</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_realization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_require_fresh_dr_mirror</span><span class="p">(</span><span class="s2">&quot;body_mass&quot;</span><span class="p">)</span>
@@ -3854,7 +4095,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_body_ipos">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_ipos">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_body_ipos">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_body_ipos</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">env_ids</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="c1"># Always the canonical default table, in every mode; per-env</span>
@@ -3866,19 +4107,19 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_dof_armature">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_dof_armature">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_dof_armature">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_dof_armature</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">dof_armature</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_motion_body_ids">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_motion_body_ids">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_motion_body_ids">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_motion_body_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_body_ids</span><span class="p">(</span><span class="n">names</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_joint_range">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_joint_range">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_joint_range">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_joint_range</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">names</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_joint_range</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_joint_range</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
@@ -3909,7 +4150,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_site_ids">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_site_ids">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_site_ids">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_site_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="n">resolved</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">:</span>
@@ -3921,7 +4162,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_joint_dof_indices">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_joint_dof_indices">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_joint_dof_indices">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_joint_dof_indices</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve named joint qvel coordinates on the cold metadata path.&quot;&quot;&quot;</span>
 
@@ -3936,7 +4177,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_joint_dof_pos_indices">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_joint_dof_pos_indices">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_joint_dof_pos_indices">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_joint_dof_pos_indices</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve named single-DoF qpos coordinates excluding the free root.&quot;&quot;&quot;</span>
 
@@ -3957,7 +4198,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_joint_dof_vel_indices">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_joint_dof_vel_indices">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_joint_dof_vel_indices">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_joint_dof_vel_indices</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve named joint qvel coordinates excluding the free root.&quot;&quot;&quot;</span>
 
@@ -3965,7 +4206,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_joint_state_qpos_indices">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_joint_state_qpos_indices">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_joint_state_qpos_indices">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_joint_state_qpos_indices</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve named joints to full reset qpos columns.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">get_joint_dof_pos_indices</span><span class="p">(</span><span class="n">names</span><span class="p">)</span>
@@ -3973,7 +4214,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_joint_state_qvel_indices">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_joint_state_qvel_indices">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_joint_state_qvel_indices">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_joint_state_qvel_indices</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve named joints to full reset qvel columns.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">get_joint_dof_vel_indices</span><span class="p">(</span><span class="n">names</span><span class="p">)</span>
@@ -4034,7 +4275,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_actuator_gain_scale_compatible</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">compatible</span><span class="p">)</span>
 
 <div class="viewcode-block" id="MjwarpBackend.get_actuator_gains">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_actuator_gains">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_actuator_gains">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_actuator_gains</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Expose immutable model defaults; this does not advertise gain DR support.&quot;&quot;&quot;</span>
         <span class="n">kp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">actuator_gainprm</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
@@ -4043,7 +4284,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.set_actuator_gain_scale">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.set_actuator_gain_scale">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.set_actuator_gain_scale">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_actuator_gain_scale</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">actuator_ids</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
@@ -4138,7 +4379,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_stable_device_xfrc_view</span><span class="p">()</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_persistent_body_f</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
 <div class="viewcode-block" id="MjwarpBackend.set_generalized_force_tensor">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.set_generalized_force_tensor">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.set_generalized_force_tensor">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_generalized_force_tensor</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
@@ -4384,7 +4625,7 @@
         <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="n">timings</span><span class="p">}</span>
 
 <div class="viewcode-block" id="MjwarpBackend.step_tensor">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.step_tensor">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.step_tensor">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">step_tensor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctrl</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">nsteps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Advance MJWarp physics without a control or state host transfer.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
@@ -4410,6 +4651,8 @@
         <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
         <span class="n">ctrl_stream</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_torch_execution_stream</span><span class="p">(</span><span class="n">ctrl_view</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="c1"># Captured work is specialized on the wrench channel state below.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_replay_guard</span><span class="p">(</span><span class="s2">&quot;step_tensor.wrench&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_captured_step_wrench_guard</span><span class="p">)</span>
         <span class="n">ctrl_view</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">ctrl_tensor</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="c1"># Resolve native body-force control at every public step boundary: the</span>
         <span class="c1"># resident channel and any one-shot interval wrench compose without</span>
@@ -4440,17 +4683,12 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_entity_faulted</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">raise</span>
         <span class="n">completion</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_completion</span><span class="p">(</span><span class="n">stream</span><span class="o">=</span><span class="n">ctrl_stream</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_time_cache</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">nsteps</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sim_dt</span><span class="p">)</span>
         <span class="c1"># Stepping remains phase-split exactly as in #85: qpos/qvel and the</span>
         <span class="c1"># tracked-body kinematics describe the step boundary, while authored</span>
         <span class="c1"># acceleration/contact sensors describe the last completed substep.  A</span>
         <span class="c1"># public sensor read therefore publishes native contact aggregates but</span>
         <span class="c1"># never re-runs the kinematic sensor pass over that stale phase state.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_authored_sensor_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contacts_stale</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contacts_allow_decode</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_transition</span><span class="p">(</span><span class="s2">&quot;step_tensor&quot;</span><span class="p">,</span> <span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_after_tensor_step_host</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">nsteps</span><span class="p">)))</span>
         <span class="n">physics_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="k">return</span> <span class="p">{</span>
             <span class="s2">&quot;completion&quot;</span><span class="p">:</span> <span class="n">completion</span><span class="p">,</span>
@@ -4462,6 +4700,20 @@
             <span class="p">},</span>
         <span class="p">}</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_captured_step_wrench_guard</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;an interval wrench or push is staged; captured steps never apply it&quot;</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_after_tensor_step_host</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nsteps</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Host bookkeeping of one tensor step (re-applied after graph replay).&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_time_cache</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">(</span><span class="n">nsteps</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sim_dt</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_authored_sensor_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contacts_stale</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contacts_allow_decode</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span> <span class="o">=</span> <span class="kc">True</span>
 
     <span class="c1"># All backends report the same set_state key set for column stability;</span>
     <span class="c1"># sub-keys that don&#39;t apply to the mjwarp host profile report 0.0.</span>
@@ -4549,7 +4801,7 @@
         <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;timing&quot;</span><span class="p">:</span> <span class="n">timing</span><span class="p">}</span>
 
 <div class="viewcode-block" id="MjwarpBackend.set_state_tensor">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.set_state_tensor">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.set_state_tensor">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_state_tensor</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">env_indices</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
@@ -4691,6 +4943,8 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_clear_dynamic_sensor_rows</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contact_views</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_clear_body_pair_contact_rows</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">view</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_physics_step_tensor_views</span><span class="p">:</span>
+                <span class="n">view</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_entity_faulted</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">raise</span>
@@ -4707,7 +4961,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.set_state_tensor_mask">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.set_state_tensor_mask">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.set_state_tensor_mask">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_state_tensor_mask</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">reset_mask</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
@@ -4770,6 +5024,11 @@
         <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
             <span class="k">if</span> <span class="n">randomization</span><span class="o">.</span><span class="n">geom_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">GraphCaptureError</span><span class="p">(</span>
+                        <span class="s2">&quot;mjwarp geom_size mask reset randomization uses a host fallback &quot;</span>
+                        <span class="s2">&quot;and cannot be graph captured&quot;</span>
+                    <span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_apply_masked_device_reset_host_fallback</span><span class="p">(</span><span class="n">mask_tensor</span><span class="p">,</span> <span class="n">randomization</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_fused</span><span class="p">(</span><span class="n">validation</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
@@ -4814,23 +5073,24 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_joint_f</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">persistent_joint_f</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_body_f</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">persistent_body_f</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_upload_persistent_body_force</span><span class="p">()</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
 
             <span class="c1"># The default publication keeps derived tracked-body state lazy while</span>
             <span class="c1"># qpos/qvel/time remain authoritative. It must not materialize rows</span>
             <span class="c1"># or use selected-row scratch graphs. Full refresh eagerly forwards</span>
             <span class="c1"># the complete batch instead.</span>
             <span class="n">sensor_refresh_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_authored_sensor_state_dirty</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">if</span> <span class="n">full_refresh</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_execute_device_forward</span><span class="p">()</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_authored_sensor_state_dirty</span> <span class="o">=</span> <span class="kc">False</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_clear_dynamic_sensor_rows</span><span class="p">(</span><span class="n">mask_tensor</span><span class="p">)</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contact_views</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_clear_body_pair_contact_rows</span><span class="p">(</span><span class="n">mask_tensor</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_clear_body_pair_contact_rows</span><span class="p">(</span><span class="n">mask_tensor</span><span class="p">,</span> <span class="n">publish_host</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_host_transition</span><span class="p">(</span>
+                <span class="s2">&quot;set_state_tensor_mask&quot;</span><span class="p">,</span>
+                <span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_after_mask_reset_host</span><span class="p">,</span> <span class="nb">bool</span><span class="p">(</span><span class="n">full_refresh</span><span class="p">)),</span>
+            <span class="p">)</span>
             <span class="n">sensor_refresh_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">sensor_refresh_started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+            <span class="k">for</span> <span class="n">view</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_physics_step_tensor_views</span><span class="p">:</span>
+                <span class="n">view</span><span class="o">.</span><span class="n">_reset_mask</span><span class="p">(</span><span class="n">mask_tensor</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_entity_faulted</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">raise</span>
@@ -4846,8 +5106,17 @@
         <span class="p">}</span></div>
 
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_after_mask_reset_host</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_refresh</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Host bookkeeping of one mask reset (re-applied after graph replay).&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">full_refresh</span> <span class="ow">and</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_authored_sensor_state_dirty</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">full_refresh</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contact_views</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contacts_stale</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contacts_allow_decode</span> <span class="o">=</span> <span class="kc">False</span>
+
 <div class="viewcode-block" id="MjwarpBackend.get_reset_term_default">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_reset_term_default">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_reset_term_default">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_reset_term_default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return canonical or fixed-variant authoritative reset defaults.&quot;&quot;&quot;</span>
 
@@ -4894,7 +5163,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_dr_capabilities">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_dr_capabilities">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_dr_capabilities">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_dr_capabilities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DomainRandomizationCapabilities</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Advertise the per-world model mutation set validated by effect tests.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">DomainRandomizationCapabilities</span><span class="p">(</span>
@@ -5201,6 +5470,7 @@
 
         <span class="c1"># Fail closed on any invalid field before the first device mutation.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_fused</span><span class="p">(</span><span class="n">checks</span><span class="p">)</span>
+        <span class="n">stale_mirrors</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
 
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">staged</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -5213,7 +5483,7 @@
                     <span class="n">target</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_model_torch_view</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_dr_mirror_stale</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+            <span class="n">stale_mirrors</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">kp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">kd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="c1"># Mirror the NumPy kp/kd semantics: gainprm[..., 0] = kp,</span>
             <span class="c1"># biasprm[..., 1] = -kp, biasprm[..., 2] = -kd.</span>
@@ -5228,20 +5498,27 @@
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">gainprm</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">gain</span><span class="p">)</span>
                 <span class="n">bias</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="n">kp</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_dr_mirror_stale</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;actuator_gainprm&quot;</span><span class="p">)</span>
+                <span class="n">stale_mirrors</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;actuator_gainprm&quot;</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">kd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">bias</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="n">kd</span>
             <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">biasprm</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">bias</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">biasprm</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">bias</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_dr_mirror_stale</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;actuator_biasprm&quot;</span><span class="p">)</span>
+            <span class="n">stale_mirrors</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;actuator_biasprm&quot;</span><span class="p">)</span>
         <span class="c1"># Torch writes run on the caller&#39;s stream; order them ahead of the</span>
         <span class="c1"># Warp derived-constant refresh and the reset-graph replay.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_transition</span><span class="p">(</span>
+            <span class="s2">&quot;reset_randomization.mirrors&quot;</span><span class="p">,</span>
+            <span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_dr_mirror_stale</span><span class="o">.</span><span class="n">update</span><span class="p">,</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">stale_mirrors</span><span class="p">)),</span>
+        <span class="p">)</span>
         <span class="n">values</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">staged</span><span class="o">.</span><span class="n">values</span><span class="p">()),</span> <span class="n">kp</span> <span class="k">if</span> <span class="n">kp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">kd</span><span class="p">)</span>
         <span class="k">assert</span> <span class="n">values</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="n">device</span> <span class="o">=</span> <span class="n">values</span><span class="o">.</span><span class="n">device</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Inside an external capture Torch and Warp already share the</span>
+            <span class="c1"># bridged capture stream, so stream order is the dependency.</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
         <span class="c1"># Refresh levels mirror the host ModelUpdates contract: 2 for</span>
         <span class="c1"># mass/COM/inertial-orientation rows (set_const), 1 for inertia or</span>
         <span class="c1"># armature rows (set_const_0), 0 otherwise.</span>
@@ -5428,7 +5705,7 @@
         <span class="k">return</span> <span class="n">device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">&quot;cpu&quot;</span>
 
 <div class="viewcode-block" id="MjwarpBackend.apply_interval_randomization">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.apply_interval_randomization">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.apply_interval_randomization">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">apply_interval_randomization</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">plan</span><span class="p">:</span> <span class="n">IntervalRandomizationPlan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
             <span class="k">return</span>
@@ -5502,7 +5779,7 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interval_term_handler_cache</span>
 
 <div class="viewcode-block" id="MjwarpBackend.push_robots">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.push_robots">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.push_robots">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">push_robots</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force_range</span><span class="p">:</span> <span class="n">TensorIntervalPayload</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Stage caller-owned device push forces for the next tensor step.</span>
 
@@ -5593,7 +5870,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span> <span class="o">=</span> <span class="kc">True</span>
 
 <div class="viewcode-block" id="MjwarpBackend.apply_body_force">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.apply_body_force">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.apply_body_force">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">apply_body_force</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
@@ -5832,14 +6109,14 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span> <span class="o">=</span> <span class="kc">True</span>
 
 <div class="viewcode-block" id="MjwarpBackend.materialize">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.materialize">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.materialize">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Resources are fully materialized during the constructor cold path.&quot;&quot;&quot;</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_play_capabilities">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_play_capabilities">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_play_capabilities">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_play_capabilities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PlayCapabilities</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">PlayCapabilities</span><span class="p">(</span>
             <span class="n">supports_physics_state_playback</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -5852,7 +6129,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.resolve_play_render_plan">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.resolve_play_render_plan">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.resolve_play_render_plan">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">resolve_play_render_plan</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
@@ -5901,7 +6178,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.run_playback">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.run_playback">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.run_playback">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">run_playback</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
@@ -5942,14 +6219,14 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_physics_state_layout">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_physics_state_layout">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_physics_state_layout">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_physics_state_layout</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PhysicsStateLayout</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the snapshot layout, including the mocap tail when present.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">PhysicsStateLayout</span><span class="p">(</span><span class="n">nq</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_nq</span><span class="p">,</span> <span class="n">nv</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_nv</span><span class="p">,</span> <span class="n">nmocap</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_nmocap</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_physics_state">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_physics_state">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_physics_state">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_physics_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_sync_host_cache</span><span class="p">()</span>
@@ -5970,7 +6247,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_playback_mocap_state">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_playback_mocap_state">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_playback_mocap_state">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_playback_mocap_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return copied mocap pose arrays for detached visual playback.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
@@ -5981,7 +6258,7 @@
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_playback_model">
-<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_playback_model">[docs]</a>
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_playback_model">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_playback_model</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_realization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>

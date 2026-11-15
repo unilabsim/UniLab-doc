@@ -238,6 +238,7 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/5-resume_and_checkpoints.html">Resume And Checkpoints</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/6-docker.html">Docker</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/7-tensor_runtime_production.html">Tensor Runtime Production Guide</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/8-sync_free_autoreset.html">Sync-Free Autoreset and Reset CUDA Graph</a></li>
 </ul>
 </li>
 <li class="toctree-l3 has-children"><a class="reference internal" href="../../../en/2-user_guide/2-algorithms/0-index.html">Algorithms</a><input aria-label="Toggle navigation of Algorithms" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -554,12 +555,15 @@
     <span class="n">TensorExecution</span><span class="p">,</span>
     <span class="n">torch_device_matches</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.graph_capture</span><span class="w"> </span><span class="kn">import</span> <span class="n">DeviceVerdicts</span><span class="p">,</span> <span class="n">ExternalGraphCapture</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.autoreset_graph</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoresetGraph</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.backend_timing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">RESET_DONE_DETAIL_TIMING_KEYS</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABEnv</span><span class="p">,</span> <span class="n">EnvCfg</span><span class="p">,</span> <span class="n">EnvPlayCapabilities</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.cpu_runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">apply_cpu_confinement</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.reset_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">ResetSelection</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.scene</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneCfg</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.dtype_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_global_dtype</span>
 
@@ -616,6 +620,17 @@
 <span class="sd">    rewards fail closed.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
+    <span class="c1"># Fixed-shape step defaults; ``_configure_fixed_shape_step`` overrides them</span>
+    <span class="c1"># in the constructor. Declared on the class so constructor-free instances</span>
+    <span class="c1"># (unit-test shells built with ``__new__``) take the ordinary step path.</span>
+    <span class="n">_masked_autoreset</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">_persistent_step_buffers</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">_autoreset_reset_active</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">_reset_selection</span><span class="p">:</span> <span class="n">ResetSelection</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_active_graph_capture</span><span class="p">:</span> <span class="n">ExternalGraphCapture</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_autoreset_graph</span><span class="p">:</span> <span class="n">AutoresetGraph</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_published_state</span><span class="p">:</span> <span class="n">TorchEnvState</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
 <div class="viewcode-block" id="TorchEnv.__init__">
 <a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.__init__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
@@ -658,8 +673,80 @@
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">interval</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">interval</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">interval</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;finite_validation_interval must be a positive integer&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_finite_validation_interval</span> <span class="o">=</span> <span class="n">interval</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
+        <span class="c1"># Named deferred fail-closed checks (``require``); published together</span>
+        <span class="c1"># with ``_finite_verdict`` by the single read in poll_finite_validation.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_verdicts</span> <span class="o">=</span> <span class="n">DeviceVerdicts</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_configure_fixed_shape_step</span><span class="p">(</span><span class="n">cfg</span><span class="p">)</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_configure_fixed_shape_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cfg</span><span class="p">:</span> <span class="n">EnvCfg</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve the opt-in sync-free / graph-capturable step switches.</span>
+
+<span class="sd">        - ``masked_autoreset``: autoreset runs every step as a fixed-shape</span>
+<span class="sd">          ``reset(ResetSelection)`` under the device done mask (no ``any()``</span>
+<span class="sd">          gate, no ``nonzero``); requires deferred finite validation.</span>
+<span class="sd">        - ``persistent_step_buffers``: the working step carriers (observations,</span>
+<span class="sd">          reward, terminated, truncated) are allocated once and updated with</span>
+<span class="sd">          ``copy_``; consumers receive a ring of ``published_buffer_depth``</span>
+<span class="sd">          persistent slots (``0`` publishes the working carriers themselves).</span>
+<span class="sd">        - ``autoreset_cuda_graph``: the masked autoreset segment is captured into</span>
+<span class="sd">          one CUDA graph after ``autoreset_graph_warmup`` eager executions and</span>
+<span class="sd">          replayed afterwards; requires both switches above, a CUDA device and</span>
+<span class="sd">          a backend declaring ``external_graph_capture``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">flag</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be bool, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">value</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">bounded_int</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">minimum</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">value</span> <span class="o">&lt;</span> <span class="n">minimum</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be an integer &gt;= </span><span class="si">{</span><span class="n">minimum</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">value</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span> <span class="o">=</span> <span class="n">flag</span><span class="p">(</span><span class="s2">&quot;masked_autoreset&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_step_buffers</span> <span class="o">=</span> <span class="n">flag</span><span class="p">(</span><span class="s2">&quot;persistent_step_buffers&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_cuda_graph</span> <span class="o">=</span> <span class="n">flag</span><span class="p">(</span><span class="s2">&quot;autoreset_cuda_graph&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_published_buffer_depth</span> <span class="o">=</span> <span class="n">bounded_int</span><span class="p">(</span><span class="s2">&quot;published_buffer_depth&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph_warmup</span> <span class="o">=</span> <span class="n">bounded_int</span><span class="p">(</span><span class="s2">&quot;autoreset_graph_warmup&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">capture_mode</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;autoreset_graph_capture_mode&quot;</span><span class="p">,</span> <span class="s2">&quot;thread_local&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">capture_mode</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;global&quot;</span><span class="p">,</span> <span class="s2">&quot;thread_local&quot;</span><span class="p">,</span> <span class="s2">&quot;relaxed&quot;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;autoreset_graph_capture_mode must be &#39;global&#39;, &#39;thread_local&#39; or &#39;relaxed&#39;; &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">capture_mode</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph_capture_mode</span> <span class="o">=</span> <span class="n">capture_mode</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;masked_autoreset requires defer_finite_validation: its fail-closed checks &quot;</span>
+                <span class="s2">&quot;are published at the deferred validation boundary&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_cuda_graph</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_step_buffers</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;autoreset_cuda_graph requires masked_autoreset and persistent_step_buffers&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;autoreset_cuda_graph requires a CUDA env device, got </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_selection</span><span class="p">:</span> <span class="n">ResetSelection</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">ResetSelection</span><span class="o">.</span><span class="n">allocate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+        <span class="c1"># Device mirror of ``step_counter`` for reset participants that record</span>
+        <span class="c1"># the trigger step inside a fixed-shape (and possibly captured) reset.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_step_counter_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_active_graph_capture</span><span class="p">:</span> <span class="n">ExternalGraphCapture</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph</span><span class="p">:</span> <span class="n">AutoresetGraph</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_publication_ring</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">TorchEnvState</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_publication_cursor</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span><span class="p">:</span> <span class="n">TorchEnvState</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">device</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
@@ -716,7 +803,72 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">TorchEnvState</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The latest published transition.</span>
+
+<span class="sd">        With ``persistent_step_buffers`` this is a publication slot whose</span>
+<span class="sd">        tensors stay unchanged for ``published_buffer_depth - 1`` further</span>
+<span class="sd">        steps (or, at depth 0, the working carriers that the next step</span>
+<span class="sd">        overwrites in place).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">masked_autoreset</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">persistent_step_buffers</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_step_buffers</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">step_counter_tensor</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;0-d int64 device mirror of ``step_counter`` (fixed address).&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_counter_tensor</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">autoreset_graph</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AutoresetGraph</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph</span>
+
+<div class="viewcode-block" id="TorchEnv.require">
+<a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.require">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">require</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ok</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fail-closed check of a 0-d bool device verdict.</span>
+
+<span class="sd">        With deferred finite validation the verdict is AND-ed into the named</span>
+<span class="sd">        persistent flag ``name`` (no host read, CUDA-graph safe) and published</span>
+<span class="sd">        at the next ``poll_finite_validation`` boundary, which raises</span>
+<span class="sd">        ``ValueError(message)``. Otherwise it is read now and raises at once.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_verdicts</span><span class="o">.</span><span class="n">record</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">ok</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">ok</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="TorchEnv.record_host_transition">
+<a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.record_host_transition">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">record_host_transition</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">transition</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="kc">None</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run a host-state update and replay it after autoreset graph replays.</span>
+
+<span class="sd">        See ``unilab.base.host_transitions``. Outside a capture this simply</span>
+<span class="sd">        runs ``transition``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">capture</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_graph_capture</span>
+        <span class="k">if</span> <span class="n">capture</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">transition</span><span class="p">()</span>
+            <span class="k">return</span>
+        <span class="n">capture</span><span class="o">.</span><span class="n">record_host_transition</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;env.</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">transition</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="TorchEnv.reset_selection_blockers">
+<a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.reset_selection_blockers">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset_selection_blockers</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Reset participants that cannot take a ``ResetSelection``.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__qualname__</span><span class="si">}</span><span class="s2"> does not implement a ResetSelection reset&quot;</span><span class="p">]</span></div>
+
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">obs_groups_spec</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
@@ -761,11 +913,26 @@
             <span class="n">info</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="n">initial_steps</span><span class="p">},</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_initial_episode_steps</span> <span class="o">=</span> <span class="n">initial_steps</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span><span class="p">:</span>
+            <span class="n">blockers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset_selection_blockers</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">blockers</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                    <span class="s2">&quot;masked_autoreset needs every reset participant to accept a &quot;</span>
+                    <span class="s2">&quot;ResetSelection; unsupported: &quot;</span> <span class="o">+</span> <span class="s2">&quot;; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">blockers</span><span class="p">)</span>
+                <span class="p">)</span>
         <span class="c1"># terminated is statically all-ones here; the bootstrap reset must not</span>
-        <span class="c1"># re-read the done mask from the device.</span>
+        <span class="c1"># re-read the done mask from the device. The bootstrap is a cold path</span>
+        <span class="c1"># and always uses explicit row ids.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_envs</span><span class="p">(</span><span class="n">done_active</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_clear_step_final_observation</span><span class="p">()</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span></div>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_cuda_graph</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_autoreset_graph</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_step_buffers</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_allocate_publication_ring</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_publish_step_state</span><span class="p">()</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span>
+        <span class="k">assert</span> <span class="n">state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">state</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_initial_episode_steps</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
@@ -876,6 +1043,8 @@
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_step_counter_tensor</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span><span class="p">)</span>
         <span class="n">truncated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_truncated</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="o">.</span><span class="n">logical_or_</span><span class="p">(</span><span class="n">truncated</span><span class="p">)</span>
 
@@ -887,21 +1056,31 @@
         <span class="c1"># synchronization point after an event-backed asynchronous backend</span>
         <span class="c1"># step, so its wait belongs to the backend step phase rather than to</span>
         <span class="c1"># reset bookkeeping.</span>
-        <span class="n">did_reset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset</span> <span class="ow">and</span> <span class="nb">bool</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">terminated</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">())</span>
+        <span class="c1"># The fixed-shape autoreset has no gate: it runs every step under the</span>
+        <span class="c1"># device done mask, so nothing here reads the device.</span>
+        <span class="n">did_reset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset</span> <span class="ow">and</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span> <span class="ow">or</span> <span class="nb">bool</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">terminated</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">())</span>
+        <span class="p">)</span>
         <span class="n">step_core_ms</span> <span class="o">+=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">step_core_cpu_ms</span> <span class="o">+=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
 
         <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">did_reset</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_envs</span><span class="p">(</span><span class="n">done_active</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_run_masked_autoreset</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_envs</span><span class="p">(</span><span class="n">done_active</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="n">reset_done_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">reset_done_cpu_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">poll_finite_validation</span><span class="p">()</span>
 
         <span class="n">timing</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;timing&quot;</span><span class="p">,</span> <span class="p">{})</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">did_reset</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">did_reset</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span><span class="p">:</span>
+            <span class="c1"># The fixed-shape path has no host row count or per-phase split.</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_clear_reset_done_detail_timing</span><span class="p">(</span><span class="n">timing</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">did_reset</span><span class="p">:</span>
+                <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;reset_done_reset_call_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">reset_done_ms</span>
         <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;env_step_total_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;action_validate_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">action_validate_ms</span>
         <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;apply_action_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">apply_action_ms</span>
@@ -926,7 +1105,11 @@
             <span class="n">completion</span> <span class="o">=</span> <span class="n">backend_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;completion&quot;</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">completion</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;completion&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">completion</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span></div>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_step_buffers</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_publish_step_state</span><span class="p">()</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span>
+        <span class="k">assert</span> <span class="n">state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">state</span></div>
 
 
     <span class="nd">@property</span>
@@ -1317,6 +1500,111 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_clear_reset_done_detail_timing</span><span class="p">(</span><span class="n">timing</span><span class="p">)</span>
         <span class="n">timing</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">detail_timing</span><span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_run_masked_autoreset</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Execute the fixed-shape autoreset, eagerly or by graph replay.&quot;&quot;&quot;</span>
+        <span class="n">graph</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph</span>
+        <span class="k">if</span> <span class="n">graph</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">graph</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset_body</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_masked_autoreset_body</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fixed-shape autoreset: device work plus declared host transitions.</span>
+
+<span class="sd">        Every tensor written here has a fixed address (persistent working</span>
+<span class="sd">        carriers, the persistent ``ResetSelection`` mask, final-observation</span>
+<span class="sd">        scratch), nothing reads the device from the host, and host state that</span>
+<span class="sd">        the rest of the step changes is updated only through</span>
+<span class="sd">        ``record_host_transition``. That makes the body capturable as one CUDA</span>
+<span class="sd">        graph (``autoreset_cuda_graph``) with no eager epilogue.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">selection</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_selection</span>
+        <span class="k">assert</span> <span class="n">selection</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span>
+        <span class="n">done</span> <span class="o">=</span> <span class="n">selection</span><span class="o">.</span><span class="n">mask</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">logical_or</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">terminated</span><span class="p">,</span> <span class="n">state</span><span class="o">.</span><span class="n">truncated</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">done</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_count</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">done</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">done</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">final_observation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_final_observation_scratch</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">final_observation</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
+        <span class="c1"># step() clears final_observation before update_state on every step.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">record_host_transition</span><span class="p">(</span><span class="s2">&quot;final_observation&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_publish_final_observation</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_reset_active</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_scattered_reset_obs</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">new_obs</span><span class="p">,</span> <span class="n">reset_info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">selection</span><span class="p">)</span>  <span class="c1"># type: ignore[arg-type]</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_reset_active</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_scattered_reset_obs</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_reset_observation_mask</span><span class="p">(</span><span class="n">new_obs</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">new_obs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">done</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">values</span><span class="p">,</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="p">[</span><span class="n">name</span><span class="p">]))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_scatter_reset_info_mask</span><span class="p">(</span><span class="n">reset_info</span><span class="p">,</span> <span class="n">done</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_publish_final_observation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">final_observation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_final_observation_scratch</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_autoreset_graph</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AutoresetGraph</span><span class="p">:</span>
+        <span class="n">capabilities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">get_tensor_capabilities</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">capabilities</span><span class="p">,</span> <span class="s2">&quot;external_graph_capture&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;autoreset_cuda_graph requires backend &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">backend_type</span><span class="si">}</span><span class="s2">&#39; to &quot;</span>
+                <span class="s2">&quot;declare the external_graph_capture tensor capability&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">AutoresetGraph</span><span class="p">(</span>
+            <span class="n">backend</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="p">,</span>
+            <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">,</span>
+            <span class="n">body</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset_body</span><span class="p">,</span>
+            <span class="n">bind_capture</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_bind_graph_capture</span><span class="p">,</span>
+            <span class="n">generators</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_graph_generators</span><span class="p">(),</span>
+            <span class="n">warmup</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph_warmup</span><span class="p">,</span>
+            <span class="n">capture_error_mode</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph_capture_mode</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_bind_graph_capture</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">capture</span><span class="p">:</span> <span class="n">ExternalGraphCapture</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_active_graph_capture</span> <span class="o">=</span> <span class="n">capture</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_graph_generators</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;CUDA generators consumed by the autoreset segment (besides the default).&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_allocate_publication_ring</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_publication_ring</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_published_buffer_depth</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_publication_ring</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">TorchEnvState</span><span class="p">(</span>
+                <span class="n">obs</span><span class="o">=</span><span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">items</span><span class="p">()},</span>
+                <span class="n">reward</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">reward</span><span class="p">),</span>
+                <span class="n">terminated</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">terminated</span><span class="p">),</span>
+                <span class="n">truncated</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">truncated</span><span class="p">),</span>
+                <span class="n">info</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_published_buffer_depth</span><span class="p">)</span>
+        <span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_publish_step_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish the working carriers into the next persistent ring slot.&quot;&quot;&quot;</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span>
+        <span class="k">assert</span> <span class="n">state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_published_buffer_depth</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span> <span class="o">=</span> <span class="n">state</span>
+            <span class="k">return</span>
+        <span class="n">slot</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_publication_ring</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_publication_cursor</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_publication_cursor</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_publication_cursor</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_published_buffer_depth</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">slot</span><span class="o">.</span><span class="n">obs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="n">slot</span><span class="o">.</span><span class="n">reward</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">reward</span><span class="p">)</span>
+        <span class="n">slot</span><span class="o">.</span><span class="n">terminated</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">terminated</span><span class="p">)</span>
+        <span class="n">slot</span><span class="o">.</span><span class="n">truncated</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">truncated</span><span class="p">)</span>
+        <span class="n">slot</span><span class="o">.</span><span class="n">info</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">info</span>
+        <span class="n">slot</span><span class="o">.</span><span class="n">final_observation</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">final_observation</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span> <span class="o">=</span> <span class="n">slot</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_reset_observation_mask</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obs</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">(</span><span class="n">obs</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">obs_groups_spec</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;TorchEnv mask reset observations do not match obs_groups_spec&quot;</span><span class="p">)</span>
@@ -1664,10 +1952,15 @@
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">bad_verdict</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
                 <span class="n">guard_bad</span> <span class="o">=</span> <span class="n">bad_verdict</span>
                 <span class="n">verdicts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">logical_not</span><span class="p">(</span><span class="n">bad_verdict</span><span class="p">))</span>
+        <span class="n">named_sets</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_named_verdict_sets</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">named</span> <span class="ow">in</span> <span class="n">named_sets</span><span class="p">:</span>
+            <span class="n">verdicts</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">named</span><span class="o">.</span><span class="n">device_flags</span><span class="p">())</span>
 
         <span class="n">valid</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">verdicts</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
         <span class="k">if</span> <span class="n">valid</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">named</span> <span class="ow">in</span> <span class="n">named_sets</span><span class="p">:</span>
+                <span class="n">named</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
             <span class="k">for</span> <span class="n">manager</span> <span class="ow">in</span> <span class="n">managers</span><span class="p">:</span>
                 <span class="n">reset</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">manager</span><span class="p">,</span> <span class="s2">&quot;reset_finite_verdict&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
                 <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">reset</span><span class="p">):</span>
@@ -1679,6 +1972,9 @@
             <span class="k">return</span> <span class="kc">True</span>
 
         <span class="c1"># Detailed scans and diagnostics are reserved for the abnormal path.</span>
+        <span class="k">for</span> <span class="n">named</span> <span class="ow">in</span> <span class="n">named_sets</span><span class="p">:</span>
+            <span class="c1"># Raises ValueError naming every failed fail-closed check.</span>
+            <span class="n">named</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
         <span class="n">base_valid</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">guard_bad</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -1698,6 +1994,16 @@
             <span class="k">return</span> <span class="kc">True</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;TorchEnv deferred finite validation detected NaN or Inf&quot;</span><span class="p">)</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_named_verdict_sets</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">DeviceVerdicts</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Env-owned and backend-owned named verdicts, for the single poll read.&quot;&quot;&quot;</span>
+        <span class="n">sets</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_verdicts</span><span class="p">]</span>
+        <span class="n">backend_verdicts</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="p">,</span> <span class="s2">&quot;tensor_validation_verdicts&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">backend_verdicts</span><span class="p">):</span>
+            <span class="n">backend_set</span> <span class="o">=</span> <span class="n">backend_verdicts</span><span class="p">()</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend_set</span><span class="p">,</span> <span class="n">DeviceVerdicts</span><span class="p">):</span>
+                <span class="n">sets</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">backend_set</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">named</span> <span class="k">for</span> <span class="n">named</span> <span class="ow">in</span> <span class="n">sets</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">named</span><span class="p">)]</span>
 
 <div class="viewcode-block" id="TorchEnv.set_nan_guard">
 <a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.tasks.locomotion.g1.manager_terms.TorchEnv.set_nan_guard">[docs]</a>

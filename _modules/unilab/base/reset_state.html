@@ -238,6 +238,7 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/5-resume_and_checkpoints.html">Resume And Checkpoints</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/6-docker.html">Docker</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/7-tensor_runtime_production.html">Tensor Runtime Production Guide</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/8-sync_free_autoreset.html">Sync-Free Autoreset and Reset CUDA Graph</a></li>
 </ul>
 </li>
 <li class="toctree-l3 has-children"><a class="reference internal" href="../../../en/2-user_guide/2-algorithms/0-index.html">Algorithms</a><input aria-label="Toggle navigation of Algorithms" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -534,7 +535,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Iterator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Iterator</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">contextlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">contextmanager</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">cast</span>
 
@@ -627,6 +628,7 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span> <span class="o">=</span> <span class="n">backend</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_deferred_mask_require</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_selected_default_qpos</span> <span class="o">=</span> <span class="n">default_qpos</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">scene_layout</span> <span class="o">=</span> <span class="n">scene_layout</span>
         <span class="k">if</span> <span class="n">scene_layout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span>
@@ -698,6 +700,24 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">active</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether a reset lifecycle currently owns the transaction.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active</span>
+
+<div class="viewcode-block" id="ResetStateTransaction.set_deferred_mask_checks">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.set_deferred_mask_checks">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_deferred_mask_checks</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">require</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Route fixed-width mask consistency checks through ``require``.</span>
+
+<span class="sd">        ``require(ok, name, message)`` latches a 0-d bool device verdict that</span>
+<span class="sd">        the owning environment publishes at its single host boundary. While</span>
+<span class="sd">        installed, the transaction never reads a mask on the host: equality and</span>
+<span class="sd">        containment checks become deferred verdicts, and the empty-mask</span>
+<span class="sd">        short-circuit is skipped (a masked commit of zero rows is a no-op).</span>
+<span class="sd">        The environment installs it only for fixed-shape (``ResetSelection``)</span>
+<span class="sd">        autoresets; ``None`` restores the eager checks.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_deferred_mask_require</span> <span class="o">=</span> <span class="n">require</span></div>
+
 
 <div class="viewcode-block" id="ResetStateTransaction.set_finite_verdict_sink">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.set_finite_verdict_sink">[docs]</a>
@@ -1757,7 +1777,11 @@
                     <span class="s2">&quot;the active mask&quot;</span>
                 <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_record_tensor_write_mask</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">equal</span><span class="p">(</span><span class="n">active_mask</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">):</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_same_mask</span><span class="p">(</span>
+            <span class="n">active_mask</span><span class="p">,</span>
+            <span class="n">reset_mask</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; attempted default reset outside the active mask&quot;</span><span class="p">,</span>
+        <span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; attempted default reset outside the active mask&quot;</span>
             <span class="p">)</span>
@@ -1863,7 +1887,12 @@
                     <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; attempted joint-state mutation outside &quot;</span>
                     <span class="s2">&quot;the active mask&quot;</span>
                 <span class="p">)</span>
-        <span class="k">elif</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">equal</span><span class="p">(</span><span class="n">active_mask</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">):</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_same_mask</span><span class="p">(</span>
+            <span class="n">active_mask</span><span class="p">,</span>
+            <span class="n">reset_mask</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; attempted joint-state mutation outside &quot;</span>
+            <span class="s2">&quot;the active mask&quot;</span><span class="p">,</span>
+        <span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; attempted joint-state mutation outside &quot;</span>
                 <span class="s2">&quot;the active mask&quot;</span>
@@ -2050,7 +2079,11 @@
                     <span class="sa">f</span><span class="s2">&quot;ManagerBased tensor mask </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> attempted a write outside &quot;</span>
                     <span class="s2">&quot;the active mask&quot;</span>
                 <span class="p">)</span>
-        <span class="k">elif</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">equal</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active_mask</span><span class="p">):</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_same_mask</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active_mask</span><span class="p">,</span>
+            <span class="n">reset_mask</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;ManagerBased tensor mask </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> must use the transaction mask&quot;</span><span class="p">,</span>
+        <span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ManagerBased tensor mask </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> must use the transaction mask&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_requesting_terms</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">capability</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_active_mask</span>
@@ -2065,12 +2098,38 @@
             <span class="k">return</span> <span class="n">reset_mask</span> <span class="o">&amp;</span> <span class="n">active_mask</span>
         <span class="k">return</span> <span class="n">reset_mask</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_same_mask</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">active_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether ``reset_mask`` equals the transaction mask (deferred if installed).&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">reset_mask</span> <span class="ow">is</span> <span class="n">active_mask</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="n">require</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_deferred_mask_require</span>
+        <span class="k">if</span> <span class="n">require</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">require</span><span class="p">(</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="n">reset_mask</span><span class="p">,</span> <span class="n">active_mask</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(),</span>
+                <span class="s2">&quot;reset_state.transaction_mask&quot;</span><span class="p">,</span>
+                <span class="n">message</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">equal</span><span class="p">(</span><span class="n">active_mask</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">))</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_tensor_mask_has_outside_rows</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">active_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">require</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_deferred_mask_require</span>
+        <span class="k">if</span> <span class="n">require</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">require</span><span class="p">(</span>
+                <span class="o">~</span><span class="p">(</span><span class="n">reset_mask</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">active_mask</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">(),</span>
+                <span class="s2">&quot;reset_state.outside_rows&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;ManagerBased tensor mask write outside the active mask&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
         <span class="k">return</span> <span class="nb">bool</span><span class="p">((</span><span class="n">reset_mask</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">active_mask</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">())</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_mask_is_empty</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reset_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_deferred_mask_require</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Fixed-shape mode: masked writes and the masked backend commit are</span>
+            <span class="c1"># no-ops for unselected rows, so emptiness is never decided on host.</span>
+            <span class="k">return</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mask_count</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">reset_mask</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
         <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_mask_count</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
 
@@ -3140,7 +3199,11 @@
             <span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">values</span><span class="o">.</span><span class="n">is_floating_point</span><span class="p">():</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> must be floating&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
+        <span class="n">sink</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict_sink</span>
+        <span class="k">if</span> <span class="n">sink</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Deferred mode: latch on the env carrier; its poll boundary raises.</span>
+            <span class="n">sink</span><span class="o">.</span><span class="n">logical_and_</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;EventManager term &#39;</span><span class="si">{</span><span class="n">term_name</span><span class="si">}</span><span class="s2">&#39; </span><span class="si">{</span><span class="n">capability</span><span class="si">}</span><span class="s2"> contains NaN or Inf&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">values</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
 

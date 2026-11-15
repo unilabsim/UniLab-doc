@@ -238,6 +238,7 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/5-resume_and_checkpoints.html">Resume And Checkpoints</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/6-docker.html">Docker</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/7-tensor_runtime_production.html">Tensor Runtime Production Guide</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/8-sync_free_autoreset.html">Sync-Free Autoreset and Reset CUDA Graph</a></li>
 </ul>
 </li>
 <li class="toctree-l3 has-children"><a class="reference internal" href="../../../en/2-user_guide/2-algorithms/0-index.html">Algorithms</a><input aria-label="Toggle navigation of Algorithms" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -533,11 +534,13 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">cast</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">ClassVar</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">cast</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prettytable</span><span class="w"> </span><span class="kn">import</span> <span class="n">PrettyTable</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.host_transitions</span><span class="w"> </span><span class="kn">import</span> <span class="n">record_host_transition</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.reset_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">ResetSelection</span><span class="p">,</span> <span class="n">selection_blockers</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.reset_selectors</span><span class="w"> </span><span class="kn">import</span> <span class="n">ResetMaskBuffer</span><span class="p">,</span> <span class="n">resolve_reset_env_ids</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.managers.manager_base</span><span class="w"> </span><span class="kn">import</span> <span class="n">ManagerBase</span><span class="p">,</span> <span class="n">ManagerTermBase</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.managers.rng</span><span class="w"> </span><span class="kn">import</span> <span class="n">ManagerRng</span>
@@ -582,6 +585,13 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">CommandTerm</span><span class="p">(</span><span class="n">ManagerTermBase</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Base class for command terms.&quot;&quot;&quot;</span>
 
+    <span class="n">supports_reset_selection</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether the whole reset lifecycle (``reset``, ``_resample_command``,</span>
+<span class="sd">    ``refresh_reset``, ``post_compute_reset``) accepts a ``ResetSelection``:</span>
+<span class="sd">    full-width masked updates with no host read of the reset mask. The base</span>
+<span class="sd">    ``reset``/``_resample`` already are; a concrete term opts in once its own</span>
+<span class="sd">    hooks are.&quot;&quot;&quot;</span>
+
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cfg</span><span class="p">:</span> <span class="n">CommandTermCfg</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">ManagerBasedRlEnv</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">cfg</span> <span class="o">=</span> <span class="n">cfg</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
@@ -615,10 +625,14 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="n">ResetSelection</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">publish_metrics</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">ResetSelection</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_deferred_validation_enabled</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;CommandTerm &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; ResetSelection requires defer_finite_validation&quot;</span>
+            <span class="p">)</span>
         <span class="n">reset_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_mask_buffer</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span>
             <span class="n">env_ids</span><span class="p">,</span>
             <span class="n">owner</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;CommandTerm &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; reset&quot;</span><span class="p">,</span>
@@ -660,7 +674,11 @@
                                 <span class="n">pending</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
                                 <span class="bp">self</span><span class="o">.</span><span class="n">_pending_metric_sums</span><span class="p">[</span><span class="n">metric_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">pending</span>
                             <span class="n">pending</span><span class="o">.</span><span class="n">add_</span><span class="p">(</span><span class="n">selected</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
-                        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_metric_dirty</span> <span class="o">=</span> <span class="kc">True</span>
+                        <span class="n">record_host_transition</span><span class="p">(</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">,</span>
+                            <span class="sa">f</span><span class="s2">&quot;command.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.pending_metrics_dirty&quot;</span><span class="p">,</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">_mark_metrics_dirty</span><span class="p">,</span>
+                        <span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">reduced</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span>
                         <span class="p">(</span>
@@ -702,6 +720,9 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_deferred_validation_enabled</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
         <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">,</span> <span class="s2">&quot;defer_finite_validation&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_mark_metrics_dirty</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_metric_dirty</span> <span class="o">=</span> <span class="kc">True</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">publish_pending_reset_metrics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Drain completed episodes only at the environment&#39;s host boundary.&quot;&quot;&quot;</span>
@@ -980,7 +1001,20 @@
             <span class="n">terms</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">name</span><span class="p">,</span> <span class="n">command</span><span class="p">[</span><span class="n">env_idx</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()))</span>
         <span class="k">return</span> <span class="n">terms</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+    <span class="n">supports_reset_selection</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset_selection_blockers</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="n">blockers</span> <span class="o">=</span> <span class="n">selection_blockers</span><span class="p">(</span><span class="s2">&quot;CommandManager&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_terms</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_terms</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_env</span><span class="p">,</span> <span class="s2">&quot;defer_finite_validation&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)):</span>
+            <span class="n">blockers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="s2">&quot;CommandManager: reset metrics are read on the host unless &quot;</span>
+                <span class="s2">&quot;defer_finite_validation is enabled&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">blockers</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="n">ResetSelection</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Reset command terms for the selected environment rows.</span>
 
 <span class="sd">        Every term consumes the public ``env_ids`` row selector; the packed</span>
@@ -1140,6 +1174,11 @@
 
 <span class="k">class</span><span class="w"> </span><span class="nc">NullCommandManager</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Placeholder for absent command manager that safely no-ops all operations.&quot;&quot;&quot;</span>
+
+    <span class="n">supports_reset_selection</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset_selection_blockers</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[]</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">active_terms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>

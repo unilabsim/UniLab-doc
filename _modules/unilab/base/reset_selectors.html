@@ -238,6 +238,7 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/5-resume_and_checkpoints.html">Resume And Checkpoints</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/6-docker.html">Docker</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/7-tensor_runtime_production.html">Tensor Runtime Production Guide</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../en/2-user_guide/1-training/8-sync_free_autoreset.html">Sync-Free Autoreset and Reset CUDA Graph</a></li>
 </ul>
 </li>
 <li class="toctree-l3 has-children"><a class="reference internal" href="../../../en/2-user_guide/2-algorithms/0-index.html">Algorithms</a><input aria-label="Toggle navigation of Algorithms" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
@@ -538,7 +539,11 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">overload</span>
+
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.reset_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">ResetSelection</span>
 
 
 <div class="viewcode-block" id="ResetMaskBuffer">
@@ -571,8 +576,15 @@
 
 <div class="viewcode-block" id="ResetMaskBuffer.scatter">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_selectors.ResetMaskBuffer.html#unilab.base.reset_selectors.ResetMaskBuffer.scatter">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">scatter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Rewrite the buffer from row indices and return the aliased mask.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">scatter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="n">ResetSelection</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Rewrite the buffer from row indices and return the aliased mask.</span>
+
+<span class="sd">        A ``ResetSelection`` is copied without scattering (fixed shape, no</span>
+<span class="sd">        host read).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">ResetSelection</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mask</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">env_ids</span><span class="o">.</span><span class="n">mask</span><span class="p">)</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mask</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mask</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">numel</span><span class="p">():</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_mask</span><span class="p">[</span><span class="n">env_ids</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_mask</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)]</span> <span class="o">=</span> <span class="kc">True</span>
@@ -581,7 +593,9 @@
 
 <div class="viewcode-block" id="ResetMaskBuffer.resolve">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_selectors.ResetMaskBuffer.html#unilab.base.reset_selectors.ResetMaskBuffer.resolve">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">resolve</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">selector</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">owner</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resolve</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">selector</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="n">ResetSelection</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">owner</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve a public reset selector like ``resolve_reset_mask``.</span>
 
 <span class="sd">        Every selector is normalized to ``env_ids`` and scattered into this</span>
@@ -595,21 +609,52 @@
 
 
 
-<div class="viewcode-block" id="resolve_reset_env_ids">
-<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_selectors.resolve_reset_env_ids.html#unilab.base.reset_selectors.resolve_reset_env_ids">[docs]</a>
+<span class="nd">@overload</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_reset_env_ids</span><span class="p">(</span>
+    <span class="n">selector</span><span class="p">:</span> <span class="n">ResetSelection</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+    <span class="n">owner</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ResetSelection</span><span class="p">:</span> <span class="o">...</span>
+
+
+<span class="nd">@overload</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">resolve_reset_env_ids</span><span class="p">(</span>
     <span class="n">selector</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
     <span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
     <span class="n">owner</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span> <span class="o">...</span>
+
+
+<div class="viewcode-block" id="resolve_reset_env_ids">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_selectors.resolve_reset_env_ids.html#unilab.base.reset_selectors.resolve_reset_env_ids">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_reset_env_ids</span><span class="p">(</span>
+    <span class="n">selector</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="n">ResetSelection</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+    <span class="n">owner</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="n">ResetSelection</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Normalize a public reset selector to an int64 row-index tensor.</span>
 
 <span class="sd">    ``None`` selects every row; a slice selects ``arange(num_envs)[slice]``; an</span>
 <span class="sd">    integer tensor is validated and moved onto ``device``. Fixed-width bool</span>
 <span class="sd">    masks are rejected: the v1.4 mask form was removed in v1.5.</span>
+
+<span class="sd">    A ``ResetSelection`` is returned unchanged after a host-only structural</span>
+<span class="sd">    check: it is the fixed-shape selector of selection-capable participants</span>
+<span class="sd">    (see ``unilab.base.reset_selection``), valid by construction.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">selector</span><span class="p">,</span> <span class="n">ResetSelection</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">selector</span><span class="o">.</span><span class="n">num_envs</span> <span class="o">!=</span> <span class="n">num_envs</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">_same_device</span><span class="p">(</span><span class="n">selector</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">owner</span><span class="si">}</span><span class="s2"> ResetSelection covers </span><span class="si">{</span><span class="n">selector</span><span class="o">.</span><span class="n">num_envs</span><span class="si">}</span><span class="s2"> rows on &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">selector</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">; expected </span><span class="si">{</span><span class="n">num_envs</span><span class="si">}</span><span class="s2"> rows on </span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">selector</span>
     <span class="k">if</span> <span class="n">selector</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">selector</span><span class="p">,</span> <span class="nb">slice</span><span class="p">):</span>
@@ -637,6 +682,13 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_same_device</span><span class="p">(</span><span class="n">left</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">right</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="n">right</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">right</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">left</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="n">right</span><span class="o">.</span><span class="n">type</span> <span class="ow">and</span> <span class="p">(</span>
+        <span class="n">left</span><span class="o">.</span><span class="n">index</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">right</span><span class="o">.</span><span class="n">index</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">left</span><span class="o">.</span><span class="n">index</span> <span class="o">==</span> <span class="n">right</span><span class="o">.</span><span class="n">index</span>
+    <span class="p">)</span>
+
+
 <div class="viewcode-block" id="reset_env_ids_mask">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_selectors.reset_env_ids_mask.html#unilab.base.reset_selectors.reset_env_ids_mask">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">reset_env_ids_mask</span><span class="p">(</span>
@@ -653,7 +705,7 @@
 <div class="viewcode-block" id="resolve_reset_mask">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_selectors.resolve_reset_mask.html#unilab.base.reset_selectors.resolve_reset_mask">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">resolve_reset_mask</span><span class="p">(</span>
-    <span class="n">selector</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">selector</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">slice</span> <span class="o">|</span> <span class="n">ResetSelection</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
     <span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
@@ -662,9 +714,11 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve a public reset selector to the internal fixed-width bool mask.</span>
 
 <span class="sd">    The selector is normalized to ``env_ids`` and scattered into a freshly</span>
-<span class="sd">    allocated mask.</span>
+<span class="sd">    allocated mask; a ``ResetSelection`` contributes a copy of its mask.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">env_ids</span> <span class="o">=</span> <span class="n">resolve_reset_env_ids</span><span class="p">(</span><span class="n">selector</span><span class="p">,</span> <span class="n">num_envs</span><span class="o">=</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">owner</span><span class="o">=</span><span class="n">owner</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">ResetSelection</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">env_ids</span><span class="o">.</span><span class="n">mask</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
     <span class="k">return</span> <span class="n">reset_env_ids_mask</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">num_envs</span><span class="o">=</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span></div>
 
 
