@@ -570,20 +570,22 @@ daemon，训练会在 environment/learner/collector 构造前 fail closed，并�
 <td><p><code class="docutils literal notranslate"><span class="pre">/tmp/uni-cumps/&lt;name&gt;/log</span></code> (mode <code class="docutils literal notranslate"><span class="pre">0700</span></code>)</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">env</span></code>/<code class="docutils literal notranslate"><span class="pre">stop</span></code> 目标</p></td>
-<td><p>唯一 live 的 UniLab-recorded daemon</p></td>
+<td><p>唯一 live 的 UniLab-recorded daemon；可用 <code class="docutils literal notranslate"><span class="pre">--name</span></code> 或 <code class="docutils literal notranslate"><span class="pre">--gpus</span></code> 显式选择</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 <p>如果可见 GPU 多于一张，<code class="docutils literal notranslate"><span class="pre">start</span></code> 与 <code class="docutils literal notranslate"><span class="pre">doctor</span></code> 必须显式传
-<code class="docutils literal notranslate"><span class="pre">--gpus</span> <span class="pre">&lt;index-or-uuid&gt;</span></code>。需要稳定 label 或服务自有路径的部署仍可显式覆盖：</p>
+<code class="docutils literal notranslate"><span class="pre">--gpus</span> <span class="pre">&lt;index-or-uuid&gt;</span></code>；<code class="docutils literal notranslate"><span class="pre">stop</span></code> 接受相同的选择器来停止覆盖该 GPU 的已记录
+daemon。需要稳定 label 或服务自有路径的部署仍可显式覆盖：</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>start<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--gpus<span class="w"> </span>&lt;gpu-index-or-uuid&gt;<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--name<span class="w"> </span>&lt;daemon-name&gt;<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--pipe-dir<span class="w"> </span>/absolute/path/mps/pipe<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--log-dir<span class="w"> </span>/absolute/path/mps/log
 <span class="nb">eval</span><span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>env<span class="w"> </span>--name<span class="w"> </span>&lt;daemon-name&gt;<span class="k">)</span><span class="s2">&quot;</span>
-uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>stop<span class="w"> </span>--name<span class="w"> </span>&lt;daemon-name&gt;
+uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>stop<span class="w"> </span>--name<span class="w"> </span>&lt;daemon-name&gt;<span class="w">     </span><span class="c1"># 或：stop --gpus &lt;gpu-index-or-uuid&gt;</span>
+uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> </span>stop<span class="w"> </span>--all<span class="w">                    </span><span class="c1"># 停止当前用户所有已记录 daemon</span>
 </pre></div>
 </div>
 <p>只读 status 无参数即可使用：</p>
@@ -591,10 +593,15 @@ uv<span class="w"> </span>run<span class="w"> </span>uni-cumps<span class="w"> <
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">status</span></code> 与 <code class="docutils literal notranslate"><span class="pre">doctor</span></code> 是只读诊断。<code class="docutils literal notranslate"><span class="pre">start</span></code> 创建 user-owned daemon，并在当前用户的
-UniLab cache 中写入 record。<code class="docutils literal notranslate"><span class="pre">stop</span></code> 只接受 record 中的 ownership evidence：UID、
-host、control PID 与 Linux process start-time；它绝不会向 unmanaged pipe 发送
-<code class="docutils literal notranslate"><span class="pre">quit</span></code>。<code class="docutils literal notranslate"><span class="pre">env</span></code> 输出给 launcher 或显式 shell 集成使用的环境变量，不修改 UniLab
-父进程环境。</p>
+UniLab cache（<code class="docutils literal notranslate"><span class="pre">~/.cache/unilab/cuda-mps/</span></code>）中写入 record。<code class="docutils literal notranslate"><span class="pre">stop</span></code> 只接受 record
+中的 ownership evidence：UID、host、control PID 与 Linux process start-time；它
+绝不会向 unmanaged pipe 发送 <code class="docutils literal notranslate"><span class="pre">quit</span></code>。<code class="docutils literal notranslate"><span class="pre">env</span></code> 输出给 launcher 或显式 shell 集成使用
+的环境变量，不修改 UniLab 父进程环境。stop 选择失败时，错误信息会给出下一步
+（<code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">run</span> <span class="pre">uni-cumps</span> <span class="pre">status</span></code> 列出所有已记录 daemon 及其 GPU）。</p>
+<p>如果 control daemon 比它的 record 活得更久——例如 UniLab cache 被清理之后——
+UniLab 无法再停止它。此时需要手动恢复：通过它记录的 pipe 目录发送 <code class="docutils literal notranslate"><span class="pre">quit</span></code>，例如
+<code class="docutils literal notranslate"><span class="pre">echo</span> <span class="pre">quit</span> <span class="pre">|</span> <span class="pre">CUDA_MPS_PIPE_DIRECTORY=/tmp/uni-cumps/&lt;name&gt;/pipe</span> <span class="pre">CUDA_MPS_LOG_DIRECTORY=/tmp/uni-cumps/&lt;name&gt;/log</span> <span class="pre">nvidia-cuda-mps-control</span></code>，
+然后删除对应的 runtime 目录。</p>
 <p>daemon 不是某个训练 run 的独占资源，可以服务多个 client。stale record 会在复用前
 被 quarantine；stop 后保留日志。</p>
 </section>
