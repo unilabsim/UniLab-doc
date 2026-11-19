@@ -523,6 +523,68 @@ FAQ 扩写为分组故障查询页（安装与平台 / 配置与 CLI / 训练与
 <section id="changed">
 <h3>Changed / 变更<a class="headerlink" href="#changed" title="Link to this heading">¶</a></h3>
 <ul class="simple">
+<li><p>Collapse the fixed-shape autoreset switch chain into the single public
+switch <code class="docutils literal notranslate"><span class="pre">env.autoreset_cuda_graph</span></code>: enabling it now implies masked autoreset,
+persistent step buffers and deferred finite validation. The intermediate
+switches (<code class="docutils literal notranslate"><span class="pre">env.masked_autoreset</span></code>, <code class="docutils literal notranslate"><span class="pre">env.persistent_step_buffers</span></code>,
+<code class="docutils literal notranslate"><span class="pre">env.defer_finite_validation</span></code> / <code class="docutils literal notranslate"><span class="pre">training.defer_finite_validation</span></code>),
+<code class="docutils literal notranslate"><span class="pre">env.published_buffer_depth</span></code> and <code class="docutils literal notranslate"><span class="pre">env.autoreset_graph_warmup</span></code> are removed
+from the public config surface (they are derived or internal constants);
+supplying a deleted key fails closed with a clear config error. Behavior of
+the graph capture protocol, <code class="docutils literal notranslate"><span class="pre">ResetSelection</span></code> negotiation and the eager
+fallback path is unchanged
+(<a class="reference external" href="https://github.com/Motphys/UniLab/issues/2617">#2617</a>)。
+收敛 fixed-shape autoreset 开关链为单一公共开关 <code class="docutils literal notranslate"><span class="pre">env.autoreset_cuda_graph</span></code>：
+启用它即隐含 masked autoreset、持久 step buffer 与推迟有限值校验。中间层
+开关（<code class="docutils literal notranslate"><span class="pre">env.masked_autoreset</span></code>、<code class="docutils literal notranslate"><span class="pre">env.persistent_step_buffers</span></code>、
+<code class="docutils literal notranslate"><span class="pre">env.defer_finite_validation</span></code> / <code class="docutils literal notranslate"><span class="pre">training.defer_finite_validation</span></code>）、
+<code class="docutils literal notranslate"><span class="pre">env.published_buffer_depth</span></code> 与 <code class="docutils literal notranslate"><span class="pre">env.autoreset_graph_warmup</span></code> 从公共配置面
+删除（改为内部派生值或常量）；传入已删除的键会以明确的配置错误 fail
+closed。graph 捕获协议、<code class="docutils literal notranslate"><span class="pre">ResetSelection</span></code> 协商与 eager fallback 路径行为
+不变（<a class="reference external" href="https://github.com/Motphys/UniLab/issues/2617">#2617</a>）。</p></li>
+<li><p>Collapse the three deferred finite-validation switches into the single
+env-owned validation strictness concept: <code class="docutils literal notranslate"><span class="pre">env.finite_validation_mode</span></code>
+(<code class="docutils literal notranslate"><span class="pre">&quot;strict&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;deferred&quot;</span></code>, default <code class="docutils literal notranslate"><span class="pre">&quot;deferred&quot;</span></code>) together with
+<code class="docutils literal notranslate"><span class="pre">env.finite_validation_interval</span></code>. The env’s deferred finite validation, the
+NaN guard defer mode (an attached guard follows the env), and the MJWarp
+backend options are all derived from it (strict keeps the backend’s
+immediate per-call operand check; deferred latches its fail-closed checks
+into device verdicts published at the env poll). The removed
+<code class="docutils literal notranslate"><span class="pre">training.finite_validation_interval</span></code> pass-through,
+<code class="docutils literal notranslate"><span class="pre">training.nan_guard.defer_validation</span></code> and the backend switches
+<code class="docutils literal notranslate"><span class="pre">env.mjwarp_validate_tensor_finite</span></code> / <code class="docutils literal notranslate"><span class="pre">env.mjwarp_defer_tensor_validation</span></code>
+fail closed with a clear config error naming the replacement. Judgment
+semantics and the verdict carriers are unchanged
+(<a class="reference external" href="https://github.com/Motphys/UniLab/issues/2618">#2618</a>)。
+收敛三处”推迟有限性校验”开关为 env 持有的单一校验严格度概念：
+<code class="docutils literal notranslate"><span class="pre">env.finite_validation_mode</span></code>（<code class="docutils literal notranslate"><span class="pre">&quot;strict&quot;</span></code> 或 <code class="docutils literal notranslate"><span class="pre">&quot;deferred&quot;</span></code>，默认
+<code class="docutils literal notranslate"><span class="pre">&quot;deferred&quot;</span></code>）与 <code class="docutils literal notranslate"><span class="pre">env.finite_validation_interval</span></code>。env 的推迟有限性校验、
+NaN guard 的 defer 模式（挂载的 guard 跟随 env）与 MJWarp 后端选项均由其
+派生（strict 保持后端逐调用算子检查立即生效；deferred 将 fail-closed 检查
+锁存为设备 verdict，由 env 在轮询边界发布）。删除的
+<code class="docutils literal notranslate"><span class="pre">training.finite_validation_interval</span></code> 透传、<code class="docutils literal notranslate"><span class="pre">training.nan_guard.defer_validation</span></code>
+与后端开关 <code class="docutils literal notranslate"><span class="pre">env.mjwarp_validate_tensor_finite</span></code> /
+<code class="docutils literal notranslate"><span class="pre">env.mjwarp_defer_tensor_validation</span></code> 会以指明替代键的明确配置错误 fail
+closed。判定语义与 verdict 载体不变
+（<a class="reference external" href="https://github.com/Motphys/UniLab/issues/2618">#2618</a>）。</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">env.autoreset_cuda_graph</span></code> now defaults to <code class="docutils literal notranslate"><span class="pre">true</span></code>: task configs that do not
+mention the switch run the fixed-shape autoreset path (masked full-width
+reset, persistent step buffers, deferred finite validation, and — on CUDA —
+autoreset segment CUDA graph capture). Unsupported combinations keep failing
+closed at startup with the switch or backend named (a non-CUDA env device,
+reset participants that do not accept a <code class="docutils literal notranslate"><span class="pre">ResetSelection</span></code>, or a backend
+without the <code class="docutils literal notranslate"><span class="pre">external_graph_capture</span></code> capability); there is no silent eager
+fallback. Set <code class="docutils literal notranslate"><span class="pre">env.autoreset_cuda_graph=false</span></code> explicitly to opt out — the
+escape hatch for debugging or when a graph-related problem is suspected
+(<a class="reference external" href="https://github.com/Motphys/UniLab/issues/2621">#2621</a>)。
+<code class="docutils literal notranslate"><span class="pre">env.autoreset_cuda_graph</span></code> 默认值翻转为 <code class="docutils literal notranslate"><span class="pre">true</span></code>：任务配置不写该开关时即运行
+fixed-shape autoreset 路径（masked 全宽 reset、持久 step buffer、推迟有限值
+校验，CUDA 下捕获 autoreset 段 CUDA graph）。不支持的组合仍在启动时按名 fail
+closed（非 CUDA env 设备、不接受 <code class="docutils literal notranslate"><span class="pre">ResetSelection</span></code> 的 reset 参与者、或未声明
+<code class="docutils literal notranslate"><span class="pre">external_graph_capture</span></code> 能力的后端）；不做静默 eager 回退。显式设置
+<code class="docutils literal notranslate"><span class="pre">env.autoreset_cuda_graph=false</span></code> 即可退出——用于调试或疑似 graph 相关问题时的
+回退逃生口
+（<a class="reference external" href="https://github.com/Motphys/UniLab/issues/2621">#2621</a>）。</p></li>
 <li><p>High-traffic public interfaces — the Manager protocols in
 <code class="docutils literal notranslate"><span class="pre">unilab.managers.types</span></code>, <code class="docutils literal notranslate"><span class="pre">TorchEnv</span></code>, the reset-state transaction, the MDP
 observation/action/curriculum/ray terms, and the PPO/APPO/SAC/FlashSAC
@@ -571,6 +633,26 @@ orphan-daemon recovery.
 status → start → train → stop 完整生命周期，包括 orphan daemon 的手动恢复
 路径。
 (<a class="reference external" href="https://github.com/Motphys/UniLab/issues/2610">#2610</a>).</p></li>
+</ul>
+</section>
+<section id="removed">
+<h3>Removed / 移除<a class="headerlink" href="#removed" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>The public reset selector no longer accepts a Python <code class="docutils literal notranslate"><span class="pre">slice</span></code>: the slice
+branch is removed from <code class="docutils literal notranslate"><span class="pre">resolve_reset_env_ids</span></code> / <code class="docutils literal notranslate"><span class="pre">resolve_reset_mask</span></code> /
+<code class="docutils literal notranslate"><span class="pre">ResetMaskBuffer.resolve</span></code> and from the <code class="docutils literal notranslate"><span class="pre">fill_rows_</span></code> / <code class="docutils literal notranslate"><span class="pre">assign_rows_</span></code>
+signatures. Passing a slice now raises <code class="docutils literal notranslate"><span class="pre">TypeError</span></code>; pass explicit row
+indices instead (e.g. <code class="docutils literal notranslate"><span class="pre">torch.arange(num_envs)[slice]</span></code>) or <code class="docutils literal notranslate"><span class="pre">None</span></code> for all
+rows. The remaining forms are <code class="docutils literal notranslate"><span class="pre">None</span></code>, a 1-D integer row-index tensor, and
+the internal <code class="docutils literal notranslate"><span class="pre">ResetSelection</span></code> protocol; no deprecation alias is kept
+(<a class="reference external" href="https://github.com/Motphys/UniLab/issues/2619">#2619</a>).
+公共 reset 选择器不再接受 Python <code class="docutils literal notranslate"><span class="pre">slice</span></code>：<code class="docutils literal notranslate"><span class="pre">resolve_reset_env_ids</span></code> /
+<code class="docutils literal notranslate"><span class="pre">resolve_reset_mask</span></code> / <code class="docutils literal notranslate"><span class="pre">ResetMaskBuffer.resolve</span></code> 的 slice 分支与
+<code class="docutils literal notranslate"><span class="pre">fill_rows_</span></code> / <code class="docutils literal notranslate"><span class="pre">assign_rows_</span></code> 签名中的 slice 形式均已删除。传入 slice
+现在抛 <code class="docutils literal notranslate"><span class="pre">TypeError</span></code>；请改用显式行索引（如 <code class="docutils literal notranslate"><span class="pre">torch.arange(num_envs)[slice]</span></code>）
+或用 <code class="docutils literal notranslate"><span class="pre">None</span></code> 表示全部行。保留形式为 <code class="docutils literal notranslate"><span class="pre">None</span></code>、一维整数行索引张量与内部
+<code class="docutils literal notranslate"><span class="pre">ResetSelection</span></code> 协议；不留 deprecation 别名
+（<a class="reference external" href="https://github.com/Motphys/UniLab/issues/2619">#2619</a>）。</p></li>
 </ul>
 </section>
 </section>
@@ -2560,6 +2642,7 @@ no UniLab runtime code and declared no dependencies.
 <li><a class="reference internal" href="#added">Added / 新增</a></li>
 <li><a class="reference internal" href="#changed">Changed / 变更</a></li>
 <li><a class="reference internal" href="#fixed">Fixed / 修复</a></li>
+<li><a class="reference internal" href="#removed">Removed / 移除</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#id1">1.5.11 (2026-11-16)</a><ul>

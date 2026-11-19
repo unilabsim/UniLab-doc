@@ -451,9 +451,10 @@
 mask on the host (<code class="docutils literal notranslate"><span class="pre">any()</span></code>), builds <code class="docutils literal notranslate"><span class="pre">env_ids</span></code> with <code class="docutils literal notranslate"><span class="pre">nonzero</span></code>, and launches reset
 kernels whose shape depends on the number of reset rows. Each of these steps
 synchronizes the host with the GPU.</p>
-<p>An opt-in fixed-shape path removes these synchronizations, and on CUDA it can
-replay the whole reset segment as one CUDA graph. Every switch defaults to
-<code class="docutils literal notranslate"><span class="pre">False</span></code>, so tasks that do not opt in keep the selected-row behavior unchanged.</p>
+<p>A fixed-shape path removes these synchronizations, and on CUDA it can
+replay the whole reset segment as one CUDA graph. The path is controlled by a
+single public switch, <code class="docutils literal notranslate"><span class="pre">env.autoreset_cuda_graph</span></code>, which defaults to <code class="docutils literal notranslate"><span class="pre">true</span></code>;
+tasks that opt out with an explicit <code class="docutils literal notranslate"><span class="pre">false</span></code> keep the selected-row behavior.</p>
 <p>Implementation: <code class="docutils literal notranslate"><span class="pre">src/unilab/base/torch_env.py</span></code>,
 <code class="docutils literal notranslate"><span class="pre">src/unilab/base/reset_selection.py</span></code>, <code class="docutils literal notranslate"><span class="pre">src/unilab/base/autoreset_graph.py</span></code>,
 <code class="docutils literal notranslate"><span class="pre">src/unilab/base/host_transitions.py</span></code>. Tests:
@@ -466,8 +467,6 @@ replay the whole reset segment as one CUDA graph. Every switch defaults to
 <code class="docutils literal notranslate"><span class="pre">ResetSelection</span></code> (see “Opting terms into <code class="docutils literal notranslate"><span class="pre">ResetSelection</span></code>” below).
 The G1 motion-tracking terms (<code class="docutils literal notranslate"><span class="pre">MotionCommand</span></code>, <code class="docutils literal notranslate"><span class="pre">JointPositionAction</span></code>, the
 motion body rewards and the anchor/body height terminations) already opt in.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">training.defer_finite_validation=true</span></code>, the default in every shipped
-algorithm config.</p></li>
 <li><p>For the CUDA graph: a CUDA env device, and a backend that declares the
 <code class="docutils literal notranslate"><span class="pre">external_graph_capture</span></code> capability and implements
 <code class="docutils literal notranslate"><span class="pre">torch_graph_capture_scope</span></code>. MJWarp does both from <code class="docutils literal notranslate"><span class="pre">unisim-core</span></code> 2.7.2, the
@@ -476,14 +475,18 @@ pinned version.</p></li>
 </section>
 <section id="configuration-flags">
 <h2>Configuration flags<a class="headerlink" href="#configuration-flags" title="Link to this heading">¶</a></h2>
-<p>All flags are fields of <code class="docutils literal notranslate"><span class="pre">ManagerBasedRlEnvCfg</span></code> (or of the base <code class="docutils literal notranslate"><span class="pre">EnvCfg</span></code> for the
-backend flag). They live in the <code class="docutils literal notranslate"><span class="pre">env</span></code> section of the owner YAML. They are not
-present in the shipped owner YAMLs, so set them with <code class="docutils literal notranslate"><span class="pre">++</span></code> from the command line:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>flashsac<span class="w"> </span>--task<span class="w"> </span>g1_motion_tracking<span class="w"> </span>--sim<span class="w"> </span>mjwarp<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>++env.masked_autoreset<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>++env.persistent_step_buffers<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>++env.autoreset_cuda_graph<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>++env.mjwarp_defer_tensor_validation<span class="o">=</span><span class="nb">true</span>
+<p><code class="docutils literal notranslate"><span class="pre">env.autoreset_cuda_graph</span></code> is the single public switch and defaults to
+<code class="docutils literal notranslate"><span class="pre">true</span></code>. It implies the whole fixed-shape chain; the intermediate switches
+(<code class="docutils literal notranslate"><span class="pre">masked_autoreset</span></code>, <code class="docutils literal notranslate"><span class="pre">persistent_step_buffers</span></code>), the publication ring depth and
+the graph warmup are internal — derived from this switch or owned as constants
+by <code class="docutils literal notranslate"><span class="pre">TorchEnv</span></code> — and are no longer configuration keys. Supplying a deleted key
+fails closed with a config error. The fixed-shape chain also requires the
+deferred finite validation mode: <code class="docutils literal notranslate"><span class="pre">finite_validation_mode='deferred'</span></code> is the
+default, and <code class="docutils literal notranslate"><span class="pre">autoreset_cuda_graph=true</span></code> with <code class="docutils literal notranslate"><span class="pre">finite_validation_mode='strict'</span></code>
+fails closed at env construction. Set the switch to <code class="docutils literal notranslate"><span class="pre">false</span></code> explicitly to opt
+out; that escape hatch is the fallback for debugging or when a graph-related
+problem is suspected (the run then uses the selected-row eager path).</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>train<span class="w"> </span>--algo<span class="w"> </span>flashsac<span class="w"> </span>--task<span class="w"> </span>g1_motion_tracking<span class="w"> </span>--sim<span class="w"> </span>mjwarp
 </pre></div>
 </div>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -495,44 +498,36 @@ present in the shipped owner YAMLs, so set them with <code class="docutils liter
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">masked_autoreset</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p></td>
-<td><p>Runs the autoreset on every step as a full-width <code class="docutils literal notranslate"><span class="pre">reset(ResetSelection)</span></code> under the device done mask, with no <code class="docutils literal notranslate"><span class="pre">any()</span></code> gate and no <code class="docutils literal notranslate"><span class="pre">nonzero</span></code>. Requires <code class="docutils literal notranslate"><span class="pre">defer_finite_validation</span></code>.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">persistent_step_buffers</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p></td>
-<td><p>Allocates the observation, reward, terminated and truncated carriers once and updates them with <code class="docutils literal notranslate"><span class="pre">copy_</span></code>. Consumers receive one of <code class="docutils literal notranslate"><span class="pre">published_buffer_depth</span></code> persistent publication slots.</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">published_buffer_depth</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">2</span></code></p></td>
-<td><p>Size of the publication ring. A published state stays valid for <code class="docutils literal notranslate"><span class="pre">published_buffer_depth</span> <span class="pre">-</span> <span class="pre">1</span></code> further steps. <code class="docutils literal notranslate"><span class="pre">0</span></code> publishes the working carriers themselves, which the next step overwrites.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">autoreset_cuda_graph</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p></td>
-<td><p>Captures the masked autoreset segment, including the backend reset, into one <code class="docutils literal notranslate"><span class="pre">torch.cuda.graph</span></code> and replays it afterwards. Requires <code class="docutils literal notranslate"><span class="pre">masked_autoreset</span></code>, <code class="docutils literal notranslate"><span class="pre">persistent_step_buffers</span></code>, a CUDA device and a backend with external graph capture.</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">autoreset_graph_warmup</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">2</span></code></p></td>
-<td><p>Eager executions before capture, so that lazily allocated buffers exist outside the graph.</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">autoreset_cuda_graph</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">True</span></code></p></td>
+<td><p>Runs the autoreset on every step as a full-width <code class="docutils literal notranslate"><span class="pre">reset(ResetSelection)</span></code> under the device done mask (no <code class="docutils literal notranslate"><span class="pre">any()</span></code> gate, no <code class="docutils literal notranslate"><span class="pre">nonzero</span></code>), keeps the observation, reward, terminated and truncated carriers persistent, defers every fail-closed finite check to the poll boundary, and — on CUDA — captures the masked autoreset segment, including the backend reset, into one <code class="docutils literal notranslate"><span class="pre">torch.cuda.graph</span></code> and replays it afterwards. Requires a CUDA device, a backend with external graph capture, and <code class="docutils literal notranslate"><span class="pre">finite_validation_mode='deferred'</span></code>.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">autoreset_graph_capture_mode</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">&quot;thread_local&quot;</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">torch.cuda.graph</span></code> capture error mode: <code class="docutils literal notranslate"><span class="pre">&quot;global&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;thread_local&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;relaxed&quot;</span></code>.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">mjwarp_defer_tensor_validation</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p></td>
-<td><p>Latches MJWarp’s fail-closed operand and reset-mask checks into device verdicts instead of reading each one on the host. The env publishes them at its deferred-validation poll. Inside a graph capture MJWarp always defers. The flag also removes the host reads from the eager steps outside the captured segment. UniLab forwards it only when it is <code class="docutils literal notranslate"><span class="pre">True</span></code>.</p></td>
-</tr>
 </tbody>
 </table>
 </div>
-<p>Invalid combinations fail when the config is validated: for example,
-<code class="docutils literal notranslate"><span class="pre">autoreset_cuda_graph</span></code> without <code class="docutils literal notranslate"><span class="pre">masked_autoreset</span></code> and <code class="docutils literal notranslate"><span class="pre">persistent_step_buffers</span></code>,
-or <code class="docutils literal notranslate"><span class="pre">masked_autoreset</span></code> without <code class="docutils literal notranslate"><span class="pre">defer_finite_validation</span></code>.</p>
+<p>The MJWarp backend options follow the env’s single validation strictness
+(<code class="docutils literal notranslate"><span class="pre">env.finite_validation_mode</span></code>, issue #2618): deferred mode latches MJWarp’s
+fail-closed operand and reset-mask checks into device verdicts (the removed
+<code class="docutils literal notranslate"><span class="pre">mjwarp_defer_tensor_validation</span></code> switch) that the env publishes at its
+deferred-validation poll, and also removes the host reads from the eager steps
+outside the captured segment; strict mode keeps MJWarp’s per-call operand check
+immediate (<code class="docutils literal notranslate"><span class="pre">mjwarp_validate_tensor_finite</span></code>). Inside a graph capture MJWarp
+always defers.</p>
+<p>A published state stays valid for one further step (the ring holds two
+persistent slots, which the off-policy double-buffer contract needs); the
+capture happens after two eager warmup executions so that lazily allocated
+buffers exist outside the graph.</p>
+<p>Invalid combinations fail when the environment is constructed: for example,
+<code class="docutils literal notranslate"><span class="pre">autoreset_cuda_graph</span></code> on a non-CUDA device, or a backend without the
+<code class="docutils literal notranslate"><span class="pre">external_graph_capture</span></code> capability.</p>
 </section>
 <section id="behavior-notes">
 <h2>Behavior notes<a class="headerlink" href="#behavior-notes" title="Link to this heading">¶</a></h2>
-<p><strong>RNG draw order.</strong> With <code class="docutils literal notranslate"><span class="pre">masked_autoreset</span></code> the reset lifecycle runs on every
+<p><strong>RNG draw order.</strong> On the fixed-shape path the reset lifecycle runs on every
 step; an all-false mask leaves the state unchanged. Full-width samplers, such as
 the <code class="docutils literal notranslate"><span class="pre">MotionCommand</span></code> resample or the reset-event interval times, therefore draw
 from the Manager RNG on steps where no row is done. With the same seed,
@@ -545,14 +540,13 @@ on done rows.</p>
 latched on the device. This covers finite checks, <code class="docutils literal notranslate"><span class="pre">TorchEnv.require</span></code> verdicts,
 reset-mask containment and MJWarp/packed-reset verdicts.
 <code class="docutils literal notranslate"><span class="pre">poll_finite_validation</span></code> reads all of them together every
-<code class="docutils literal notranslate"><span class="pre">training.finite_validation_interval</span></code> steps (32 in the shipped configs). A
+<code class="docutils literal notranslate"><span class="pre">env.finite_validation_interval</span></code> steps (32 in the shipped configs). A
 failure is therefore raised at the next poll, up to <code class="docutils literal notranslate"><span class="pre">interval</span> <span class="pre">-</span> <span class="pre">1</span></code> steps after
 the faulty step. Packed-reset failures name the poll step
 (<code class="docutils literal notranslate"><span class="pre">first</span> <span class="pre">detected</span> <span class="pre">at</span> <span class="pre">poll</span> <span class="pre">boundary,</span> <span class="pre">step</span> <span class="pre">N</span></code>). To localize a fault, rerun with
-<code class="docutils literal notranslate"><span class="pre">training.finite_validation_interval=1</span></code>; the masked path still requires
-<code class="docutils literal notranslate"><span class="pre">training.defer_finite_validation=true</span></code>.</p>
-<p><strong>Stale diagnostic counters.</strong> In masked mode the env has no host-side reset row
-count or per-phase split. Consequences:</p>
+<code class="docutils literal notranslate"><span class="pre">env.finite_validation_interval=1</span></code> so every step is a poll boundary.</p>
+<p><strong>Stale diagnostic counters.</strong> On the fixed-shape path the env has no
+host-side reset row count or per-phase split. Consequences:</p>
 <ul class="simple">
 <li><p>The per-reset detail keys in <code class="docutils literal notranslate"><span class="pre">info[&quot;timing&quot;]</span></code>
 (<code class="docutils literal notranslate"><span class="pre">RESET_DONE_DETAIL_TIMING_KEYS</span></code> in <code class="docutils literal notranslate"><span class="pre">src/unilab/base/backend_timing.py</span></code>, for
@@ -592,7 +586,7 @@ terms, class observation terms, stateful event terms) set
 calls a factory <code class="docutils literal notranslate"><span class="pre">values(n)</span></code> that returns <code class="docutils literal notranslate"><span class="pre">n</span></code> rows (<code class="docutils literal notranslate"><span class="pre">num_envs</span></code> rows under a
 selection).</p></li>
 </ul>
-<p>Both accept row ids, <code class="docutils literal notranslate"><span class="pre">None</span></code>, a slice or a selection.</p>
+<p>Both accept row ids, <code class="docutils literal notranslate"><span class="pre">None</span></code>, or a selection.</p>
 </li>
 <li><p>Do not read the mask on the host (<code class="docutils literal notranslate"><span class="pre">bool(mask.any())</span></code>, <code class="docutils literal notranslate"><span class="pre">.item()</span></code>,
 <code class="docutils literal notranslate"><span class="pre">nonzero</span></code>) inside <code class="docutils literal notranslate"><span class="pre">reset</span></code>; that reintroduces the synchronization.</p></li>
@@ -628,7 +622,7 @@ class-based terms. Stateless function terms need no declaration.</p></li>
 </ul>
 <section id="debugging-reset-selection-blockers">
 <h3>Debugging <code class="docutils literal notranslate"><span class="pre">reset_selection_blockers</span></code><a class="headerlink" href="#debugging-reset-selection-blockers" title="Link to this heading">¶</a></h3>
-<p>With <code class="docutils literal notranslate"><span class="pre">masked_autoreset</span></code>, <code class="docutils literal notranslate"><span class="pre">init_state</span></code> calls
+<p>With the fixed-shape path, <code class="docutils literal notranslate"><span class="pre">init_state</span></code> calls
 <code class="docutils literal notranslate"><span class="pre">ManagerBasedRlEnv.reset_selection_blockers()</span></code>. It collects one entry per
 unsupported participant from every manager and raises:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>NotImplementedError: masked_autoreset needs every reset participant to accept a
@@ -637,10 +631,10 @@ ResetSelection; unsupported: EventManager: &lt;term name&gt; (&lt;function name&
 </div>
 <p>Each entry has the form <code class="docutils literal notranslate"><span class="pre">&lt;Manager&gt;:</span> <span class="pre">&lt;term</span> <span class="pre">name&gt;</span> <span class="pre">(&lt;function</span> <span class="pre">or</span> <span class="pre">class</span> <span class="pre">name&gt;)</span></code>. A
 manager that cannot take a selection for a structural reason reports a sentence
-instead. One example is <code class="docutils literal notranslate"><span class="pre">TerminationManager:</span> <span class="pre">episode</span> <span class="pre">counts</span> <span class="pre">are</span> <span class="pre">read</span> <span class="pre">on</span> <span class="pre">the</span> <span class="pre">host</span> <span class="pre">unless</span> <span class="pre">defer_finite_validation</span> <span class="pre">is</span> <span class="pre">enabled</span></code>.</p>
+instead. One example is <code class="docutils literal notranslate"><span class="pre">TerminationManager:</span> <span class="pre">episode</span> <span class="pre">counts</span> <span class="pre">are</span> <span class="pre">read</span> <span class="pre">on</span> <span class="pre">the</span> <span class="pre">host</span> <span class="pre">unless</span> <span class="pre">finite_validation_mode='deferred'</span></code>.</p>
 <p>To list blockers without starting a training run, construct the env with the
 flag off and call the method:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">env</span><span class="o">.</span><span class="n">reset_selection_blockers</span><span class="p">()</span>  <span class="c1"># [] when the task can enable masked_autoreset</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">env</span><span class="o">.</span><span class="n">reset_selection_blockers</span><span class="p">()</span>  <span class="c1"># [] when the task can enable the fixed-shape path</span>
 </pre></div>
 </div>
 <p>Then convert, replace or remove each named term. Reset-randomization events are

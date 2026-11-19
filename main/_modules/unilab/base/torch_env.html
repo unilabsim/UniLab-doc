@@ -574,9 +574,7 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">abc</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Mapping</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="kn">import</span> <span class="n">PathLike</span>
@@ -603,6 +601,7 @@
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABEnv</span><span class="p">,</span> <span class="n">EnvCfg</span><span class="p">,</span> <span class="n">EnvPlayCapabilities</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.cpu_runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">apply_cpu_confinement</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.phase_timer</span><span class="w"> </span><span class="kn">import</span> <span class="n">PhaseTimer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.reset_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">ResetSelection</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.base.scene</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneCfg</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.dtype_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_global_dtype</span>
@@ -638,16 +637,19 @@
 
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_cpu_time</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-    <span class="n">process</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">times</span><span class="p">()</span>
-    <span class="k">return</span> <span class="n">process</span><span class="o">.</span><span class="n">user</span> <span class="o">+</span> <span class="n">process</span><span class="o">.</span><span class="n">system</span>
-
-
 <span class="c1"># Backends whose ``step_tensor`` publishes an event-backed asynchronous step</span>
 <span class="c1"># receipt (a unisim ``CompletionToken`` carried in ``info[&quot;completion&quot;]``).</span>
 <span class="c1"># Event-backed Genesis and MJWarp CUDA paths publish a receipt per step;</span>
 <span class="c1"># synchronous host-bridge producers publish none.</span>
 <span class="n">_EVENT_BACKED_STEP_RECEIPT_BACKENDS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">&quot;genesis&quot;</span><span class="p">,</span> <span class="s2">&quot;mjwarp&quot;</span><span class="p">})</span>
+
+<span class="c1"># Internal fixed-shape step tuning constants (not user configuration; see</span>
+<span class="c1"># ``TorchEnv._configure_fixed_shape_step``). The publication ring depth serves</span>
+<span class="c1"># the off-policy double-buffer contract (a published obs_t stays stable while</span>
+<span class="c1"># the next step writes obs_tp1); the warmup gives lazily allocated buffers</span>
+<span class="c1"># eager executions before the CUDA graph capture.</span>
+<span class="n">_PUBLISHED_BUFFER_DEPTH</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="n">_AUTORESET_GRAPH_WARMUP</span> <span class="o">=</span> <span class="mi">2</span>
 
 
 <div class="viewcode-block" id="TorchEnv">
@@ -692,8 +694,9 @@
 <span class="sd">                ``cuda`` device is resolved to the current device index.</span>
 
 <span class="sd">        Raises:</span>
-<span class="sd">            ValueError: If ``finite_validation_interval`` is not a positive</span>
-<span class="sd">                integer.</span>
+<span class="sd">            ValueError: If ``finite_validation_mode`` is not ``&#39;strict&#39;`` or</span>
+<span class="sd">                ``&#39;deferred&#39;``, or ``finite_validation_interval`` is not a</span>
+<span class="sd">                positive integer.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">apply_cpu_confinement</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">cpu_ids</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span> <span class="o">=</span> <span class="n">cfg</span>
@@ -722,7 +725,14 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_rgb_array_renderer_ready</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="p">:</span> <span class="s2">&quot;NanGuard | None&quot;</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span><span class="p">:</span> <span class="n">CompletionToken</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;defer_finite_validation&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">))</span>
+        <span class="c1"># ``finite_validation_mode`` is the single public validation</span>
+        <span class="c1"># strictness switch; it is declared on ``ManagerBasedRlEnvCfg`` and</span>
+        <span class="c1"># soft-read here so plain ``EnvCfg`` subclasses keep the deferred</span>
+        <span class="c1"># default.</span>
+        <span class="n">mode</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;finite_validation_mode&quot;</span><span class="p">,</span> <span class="s2">&quot;deferred&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">mode</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;strict&quot;</span><span class="p">,</span> <span class="s2">&quot;deferred&quot;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;finite_validation_mode must be &#39;strict&#39; or &#39;deferred&#39;, got </span><span class="si">{</span><span class="n">mode</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span> <span class="o">=</span> <span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;deferred&quot;</span>
         <span class="n">interval</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;finite_validation_interval&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">interval</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">interval</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">interval</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;finite_validation_interval must be a positive integer&quot;</span><span class="p">)</span>
@@ -735,19 +745,28 @@
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_configure_fixed_shape_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cfg</span><span class="p">:</span> <span class="n">EnvCfg</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve the opt-in sync-free / graph-capturable step switches.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve the sync-free / graph-capturable step switch.</span>
 
-<span class="sd">        - ``masked_autoreset``: autoreset runs every step as a fixed-shape</span>
-<span class="sd">          ``reset(ResetSelection)`` under the device done mask (no ``any()``</span>
-<span class="sd">          gate, no ``nonzero``); requires deferred finite validation.</span>
-<span class="sd">        - ``persistent_step_buffers``: the working step carriers (observations,</span>
-<span class="sd">          reward, terminated, truncated) are allocated once and updated with</span>
-<span class="sd">          ``copy_``; consumers receive a ring of ``published_buffer_depth``</span>
-<span class="sd">          persistent slots (``0`` publishes the working carriers themselves).</span>
-<span class="sd">        - ``autoreset_cuda_graph``: the masked autoreset segment is captured into</span>
-<span class="sd">          one CUDA graph after ``autoreset_graph_warmup`` eager executions and</span>
-<span class="sd">          replayed afterwards; requires both switches above, a CUDA device and</span>
-<span class="sd">          a backend declaring ``external_graph_capture``.</span>
+<span class="sd">        ``autoreset_cuda_graph`` is the single public switch (default ``true``</span>
+<span class="sd">        on the public ``ManagerBasedRlEnvCfg``). Enabling it</span>
+<span class="sd">        implies the whole fixed-shape chain: ``masked_autoreset`` (the</span>
+<span class="sd">        autoreset runs every step as a fixed-shape ``reset(ResetSelection)``</span>
+<span class="sd">        under the device done mask — no ``any()`` gate, no ``nonzero``),</span>
+<span class="sd">        ``persistent_step_buffers`` (the working step carriers — observations,</span>
+<span class="sd">        reward, terminated, truncated — are allocated once, updated with</span>
+<span class="sd">        ``copy_``, and published through a ring of persistent slots), and</span>
+<span class="sd">        deferred finite validation (fail-closed checks publish at the poll</span>
+<span class="sd">        boundary). On CUDA the masked autoreset segment is captured into one</span>
+<span class="sd">        CUDA graph after ``_AUTORESET_GRAPH_WARMUP`` eager executions and</span>
+<span class="sd">        replayed afterwards; this requires a backend declaring</span>
+<span class="sd">        ``external_graph_capture``.</span>
+
+<span class="sd">        The intermediate chain values are no longer public configuration.</span>
+<span class="sd">        They are still read here through a soft ``getattr`` protocol so tests</span>
+<span class="sd">        can inject a middle state (masked autoreset without graph capture or</span>
+<span class="sd">        ring depth ``0`` / warmup ``1``) by setting attributes on their own</span>
+<span class="sd">        stub configs; the Hydra materialization path fails closed on these</span>
+<span class="sd">        undeclared keys.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">flag</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
@@ -762,11 +781,19 @@
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be an integer &gt;= </span><span class="si">{</span><span class="n">minimum</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">value</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span> <span class="o">=</span> <span class="n">flag</span><span class="p">(</span><span class="s2">&quot;masked_autoreset&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_step_buffers</span> <span class="o">=</span> <span class="n">flag</span><span class="p">(</span><span class="s2">&quot;persistent_step_buffers&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_cuda_graph</span> <span class="o">=</span> <span class="n">flag</span><span class="p">(</span><span class="s2">&quot;autoreset_cuda_graph&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_published_buffer_depth</span> <span class="o">=</span> <span class="n">bounded_int</span><span class="p">(</span><span class="s2">&quot;published_buffer_depth&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph_warmup</span> <span class="o">=</span> <span class="n">bounded_int</span><span class="p">(</span><span class="s2">&quot;autoreset_graph_warmup&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="c1"># ``autoreset_cuda_graph`` implies the chain; the soft reads below are</span>
+        <span class="c1"># the documented test-only injection for intermediate states.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_cuda_graph</span> <span class="ow">or</span> <span class="n">flag</span><span class="p">(</span><span class="s2">&quot;masked_autoreset&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_step_buffers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_cuda_graph</span> <span class="ow">or</span> <span class="n">flag</span><span class="p">(</span>
+            <span class="s2">&quot;persistent_step_buffers&quot;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_published_buffer_depth</span> <span class="o">=</span> <span class="n">bounded_int</span><span class="p">(</span>
+            <span class="s2">&quot;published_buffer_depth&quot;</span><span class="p">,</span> <span class="n">_PUBLISHED_BUFFER_DEPTH</span><span class="p">,</span> <span class="mi">0</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph_warmup</span> <span class="o">=</span> <span class="n">bounded_int</span><span class="p">(</span>
+            <span class="s2">&quot;autoreset_graph_warmup&quot;</span><span class="p">,</span> <span class="n">_AUTORESET_GRAPH_WARMUP</span><span class="p">,</span> <span class="mi">1</span>
+        <span class="p">)</span>
         <span class="n">capture_mode</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="s2">&quot;autoreset_graph_capture_mode&quot;</span><span class="p">,</span> <span class="s2">&quot;thread_local&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">capture_mode</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;global&quot;</span><span class="p">,</span> <span class="s2">&quot;thread_local&quot;</span><span class="p">,</span> <span class="s2">&quot;relaxed&quot;</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
@@ -776,18 +803,11 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph_capture_mode</span> <span class="o">=</span> <span class="n">capture_mode</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;masked_autoreset requires defer_finite_validation: its fail-closed checks &quot;</span>
-                <span class="s2">&quot;are published at the deferred validation boundary&quot;</span>
+                <span class="s2">&quot;masked_autoreset requires finite_validation_mode=&#39;deferred&#39;: its &quot;</span>
+                <span class="s2">&quot;fail-closed checks are published at the deferred validation boundary&quot;</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_cuda_graph</span><span class="p">:</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_step_buffers</span><span class="p">):</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="s2">&quot;autoreset_cuda_graph requires masked_autoreset and persistent_step_buffers&quot;</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;autoreset_cuda_graph requires a CUDA env device, got </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="si">}</span><span class="s2">&quot;</span>
-                <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_cuda_graph</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;autoreset_cuda_graph requires a CUDA env device, got </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_selection</span><span class="p">:</span> <span class="n">ResetSelection</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">ResetSelection</span><span class="o">.</span><span class="n">allocate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span>
@@ -1032,41 +1052,33 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            The updated ``TorchEnvState``.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="n">cpu_started</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
-        <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_action_contract</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_record_action_finite</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
-        <span class="n">action_validate_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="n">timer</span> <span class="o">=</span> <span class="n">PhaseTimer</span><span class="p">()</span>
+        <span class="k">with</span> <span class="n">timer</span><span class="o">.</span><span class="n">phase</span><span class="p">(</span><span class="s2">&quot;action_validate&quot;</span><span class="p">,</span> <span class="n">cpu</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_action_contract</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_record_action_finite</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_bind_tensor_runtime</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">init_state</span><span class="p">()</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
 
-        <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
-        <span class="c1"># Action terms publish into one device-resident control verdict. Clear</span>
-        <span class="c1"># both publication carriers before each new action is processed.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_control_finite_valid</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_control_finite_check</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="n">ctrl</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_action</span><span class="p">(</span><span class="n">actions</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
-        <span class="n">guard_defer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">guard_defer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">defer_validation</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_control_with_nan_guard</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="n">defer</span><span class="o">=</span><span class="n">guard_defer</span><span class="p">)</span>
-        <span class="n">apply_action_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-        <span class="n">apply_action_cpu_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="k">with</span> <span class="n">timer</span><span class="o">.</span><span class="n">phase</span><span class="p">(</span><span class="s2">&quot;apply_action&quot;</span><span class="p">):</span>
+            <span class="c1"># Action terms publish into one device-resident control verdict. Clear</span>
+            <span class="c1"># both publication carriers before each new action is processed.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_control_finite_valid</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pending_control_finite_check</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">ctrl</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_action</span><span class="p">(</span><span class="n">actions</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
+            <span class="c1"># The attached NanGuard follows the env&#39;s validation strictness</span>
+            <span class="c1"># (set_nan_guard derives its defer mode), so the env mode decides.</span>
+            <span class="n">guard_defer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_control_with_nan_guard</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="n">defer</span><span class="o">=</span><span class="n">guard_defer</span><span class="p">)</span>
 
-        <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="c1"># A receipt describes only the transition being published. Remove the</span>
-        <span class="c1"># previous one before the backend call so unsupported or failed steps</span>
-        <span class="c1"># cannot expose stale completion metadata.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;completion&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="n">backend_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">advance_physics</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span>
-        <span class="n">step_core_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-        <span class="n">step_core_cpu_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="k">with</span> <span class="n">timer</span><span class="o">.</span><span class="n">phase</span><span class="p">(</span><span class="s2">&quot;step_core&quot;</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="c1"># A receipt describes only the transition being published. Remove the</span>
+            <span class="c1"># previous one before the backend call so unsupported or failed steps</span>
+            <span class="c1"># cannot expose stale completion metadata.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;completion&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">backend_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">advance_physics</span><span class="p">(</span><span class="n">ctrl</span><span class="p">)</span>
         <span class="n">pending_completion</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend_step_completion</span><span class="p">(</span><span class="n">backend_result</span><span class="p">)</span>
         <span class="c1"># Publish the receipt before update_state so public transition consumers</span>
         <span class="c1"># can only read it after the update boundary succeeds.</span>
@@ -1077,9 +1089,8 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_clear_step_final_observation</span><span class="p">()</span>
 
-            <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-            <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">update_state</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
+            <span class="k">with</span> <span class="n">timer</span><span class="o">.</span><span class="n">phase</span><span class="p">(</span><span class="s2">&quot;update_state&quot;</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">update_state</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
         <span class="k">finally</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_pending_backend_step_completion</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -1094,29 +1105,14 @@
             <span class="p">)</span>
             <span class="k">if</span> <span class="n">nan_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">nan_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_nan_guard_model_file</span><span class="p">(),</span> <span class="n">transition_step</span><span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">defer_validation</span><span class="p">:</span>
-                <span class="n">deferred_nan_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">poll</span><span class="p">(</span><span class="n">step</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">deferred_nan_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span>
-                        <span class="n">deferred_nan_ids</span><span class="p">,</span>
-                        <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_nan_guard_model_file</span><span class="p">(),</span>
-                        <span class="n">transition_step</span><span class="p">,</span>
-                    <span class="p">)</span>
-                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                        <span class="s2">&quot;NanGuard detected NaN or Inf for environments &quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">deferred_nan_ids</span><span class="p">[:</span><span class="mi">10</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
-                    <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_state</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
-        <span class="n">update_state_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-        <span class="n">update_state_cpu_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">produces_completion_receipts</span><span class="p">:</span>
             <span class="c1"># An event-backed asynchronous step drains its device work at the</span>
             <span class="c1"># first update-state host read; re-attribute that measured window</span>
             <span class="c1"># to the backend step phase so update_state reports manager work.</span>
             <span class="n">drain_ms</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect_step_core_drain_ms</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">drain_ms</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
-                <span class="n">step_core_ms</span> <span class="o">+=</span> <span class="n">drain_ms</span>
-                <span class="n">update_state_ms</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">update_state_ms</span> <span class="o">-</span> <span class="n">drain_ms</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+                <span class="n">timer</span><span class="o">.</span><span class="n">move_wall</span><span class="p">(</span><span class="s2">&quot;update_state&quot;</span><span class="p">,</span> <span class="s2">&quot;step_core&quot;</span><span class="p">,</span> <span class="n">drain_ms</span><span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span> <span class="o">+=</span> <span class="mi">1</span>
@@ -1125,8 +1121,6 @@
         <span class="n">truncated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_truncated</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="o">.</span><span class="n">logical_or_</span><span class="p">(</span><span class="n">truncated</span><span class="p">)</span>
 
-        <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
         <span class="c1"># Preserve the semantic autoreset gate: an empty done mask must not</span>
         <span class="c1"># consume reset RNG or publish a terminal carrier. When update_state</span>
         <span class="c1"># made no host read of the step outputs, this gate is the first</span>
@@ -1135,21 +1129,18 @@
         <span class="c1"># reset bookkeeping.</span>
         <span class="c1"># The fixed-shape autoreset has no gate: it runs every step under the</span>
         <span class="c1"># device done mask, so nothing here reads the device.</span>
-        <span class="n">did_reset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset</span> <span class="ow">and</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span> <span class="ow">or</span> <span class="nb">bool</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">terminated</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">())</span>
-        <span class="p">)</span>
-        <span class="n">step_core_ms</span> <span class="o">+=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-        <span class="n">step_core_cpu_ms</span> <span class="o">+=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="k">with</span> <span class="n">timer</span><span class="o">.</span><span class="n">phase</span><span class="p">(</span><span class="s2">&quot;step_core&quot;</span><span class="p">):</span>
+            <span class="n">did_reset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset</span> <span class="ow">and</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span>
+                <span class="ow">or</span> <span class="nb">bool</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">terminated</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">())</span>
+            <span class="p">)</span>
 
-        <span class="n">phase</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="n">phase_cpu</span> <span class="o">=</span> <span class="n">_cpu_time</span><span class="p">()</span>
-        <span class="k">if</span> <span class="n">did_reset</span><span class="p">:</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_run_masked_autoreset</span><span class="p">()</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_envs</span><span class="p">(</span><span class="n">done_active</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="n">reset_done_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-        <span class="n">reset_done_cpu_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">phase_cpu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="k">with</span> <span class="n">timer</span><span class="o">.</span><span class="n">phase</span><span class="p">(</span><span class="s2">&quot;reset_done&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">did_reset</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_run_masked_autoreset</span><span class="p">()</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_envs</span><span class="p">(</span><span class="n">done_active</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">poll_finite_validation</span><span class="p">()</span>
 
         <span class="n">timing</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;timing&quot;</span><span class="p">,</span> <span class="p">{})</span>
@@ -1157,25 +1148,10 @@
             <span class="c1"># The fixed-shape path has no host row count or per-phase split.</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_clear_reset_done_detail_timing</span><span class="p">(</span><span class="n">timing</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">did_reset</span><span class="p">:</span>
-                <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;reset_done_reset_call_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">reset_done_ms</span>
-        <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;env_step_total_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-        <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;action_validate_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">action_validate_ms</span>
-        <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;apply_action_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">apply_action_ms</span>
-        <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;apply_action_cpu_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">apply_action_cpu_ms</span>
-        <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;step_core_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">step_core_ms</span>
-        <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;step_core_cpu_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">step_core_cpu_ms</span>
-        <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;update_state_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">update_state_ms</span>
-        <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;update_state_cpu_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">update_state_cpu_ms</span>
-        <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;reset_done_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">reset_done_ms</span>
-        <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;reset_done_cpu_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">reset_done_cpu_ms</span>
-        <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;env_step_other_cpu_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
-            <span class="p">(</span><span class="n">_cpu_time</span><span class="p">()</span> <span class="o">-</span> <span class="n">cpu_started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-            <span class="o">-</span> <span class="n">apply_action_cpu_ms</span>
-            <span class="o">-</span> <span class="n">step_core_cpu_ms</span>
-            <span class="o">-</span> <span class="n">update_state_cpu_ms</span>
-            <span class="o">-</span> <span class="n">reset_done_cpu_ms</span><span class="p">,</span>
-            <span class="mf">0.0</span><span class="p">,</span>
-        <span class="p">)</span>
+                <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;reset_done_reset_call_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">timer</span><span class="o">.</span><span class="n">wall_ms</span><span class="p">(</span><span class="s2">&quot;reset_done&quot;</span><span class="p">)</span>
+        <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;env_step_total_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">timer</span><span class="o">.</span><span class="n">total_wall_ms</span><span class="p">()</span>
+        <span class="n">timer</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="n">timing</span><span class="p">)</span>
+        <span class="n">timing</span><span class="p">[</span><span class="s2">&quot;env_step_other_cpu_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">timer</span><span class="o">.</span><span class="n">residual_cpu_ms</span><span class="p">()</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend_result</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
             <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">backend_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;timing&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                 <span class="n">timing</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;backend_</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
@@ -1260,11 +1236,7 @@
         <span class="k">for</span> <span class="n">substep</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">sim_substeps</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">substep</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
                 <span class="n">ctrl</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_substep_action</span><span class="p">()</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_validate_control_with_nan_guard</span><span class="p">(</span>
-                    <span class="n">ctrl</span><span class="p">,</span>
-                    <span class="n">defer</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span>
-                    <span class="ow">or</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span><span class="o">.</span><span class="n">defer_validation</span><span class="p">),</span>
-                <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_validate_control_with_nan_guard</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="n">defer</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span><span class="p">)</span>
             <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">step_tensor</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
             <span class="n">completion</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend_step_completion</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
             <span class="n">result_publishes_receipts</span> <span class="o">=</span> <span class="n">completion</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -1516,7 +1488,7 @@
 <span class="sd">        edge (backend inputs stay fixed-width masks).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="n">reset_total_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+        <span class="n">timer</span> <span class="o">=</span> <span class="n">PhaseTimer</span><span class="p">(</span><span class="n">cpu</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="n">detail_timing</span> <span class="o">=</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="mf">0.0</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">RESET_DONE_DETAIL_TIMING_KEYS</span><span class="p">}</span>
         <span class="n">done</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">terminated</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">truncated</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">done_active</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">done</span><span class="o">.</span><span class="n">any</span><span class="p">()):</span>
@@ -1525,53 +1497,43 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_done_count</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">done</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
         <span class="n">done_env_ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">done</span><span class="p">,</span> <span class="n">as_tuple</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
 
-        <span class="n">terminal_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="c1"># The nonzero above already published the done-row count to the host;</span>
         <span class="c1"># reuse it instead of reading the device counter back for timing.</span>
-        <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_count&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">done_env_ids</span><span class="o">.</span><span class="n">numel</span><span class="p">())</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">done</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-        <span class="n">final_observation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_final_observation_scratch</span><span class="p">()</span>
-        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">final_observation</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">final_observation</span> <span class="o">=</span> <span class="n">final_observation</span>
-        <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_terminal_obs_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">terminal_started</span>
-        <span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="k">with</span> <span class="n">timer</span><span class="o">.</span><span class="n">phase</span><span class="p">(</span><span class="s2">&quot;reset_done_terminal_obs&quot;</span><span class="p">):</span>
+            <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_count&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">done_env_ids</span><span class="o">.</span><span class="n">numel</span><span class="p">())</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;steps&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">masked_fill_</span><span class="p">(</span><span class="n">done</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="n">final_observation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_final_observation_scratch</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">final_observation</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">final_observation</span> <span class="o">=</span> <span class="n">final_observation</span>
 
-        <span class="n">reset_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_reset_active</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_scattered_reset_obs</span> <span class="o">=</span> <span class="kc">False</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">new_obs</span><span class="p">,</span> <span class="n">reset_info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">done_env_ids</span><span class="p">)</span>
-        <span class="k">finally</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_reset_active</span> <span class="o">=</span> <span class="kc">False</span>
-        <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_reset_call_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">reset_started</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="k">with</span> <span class="n">timer</span><span class="o">.</span><span class="n">phase</span><span class="p">(</span><span class="s2">&quot;reset_done_reset_call&quot;</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_reset_active</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_scattered_reset_obs</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">new_obs</span><span class="p">,</span> <span class="n">reset_info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">done_env_ids</span><span class="p">)</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_reset_active</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="n">collected</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect_reset_backend_timing_ms</span><span class="p">()</span>
         <span class="n">detail_timing</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
             <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">value</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">collected</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">detail_timing</span><span class="p">}</span>
         <span class="p">)</span>
 
-        <span class="n">scatter_started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_scattered_reset_obs</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_reset_observation_mask</span><span class="p">(</span><span class="n">new_obs</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">new_obs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">obs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>
-                    <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">done</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">values</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">obs</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
-                <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_scatter_reset_info_mask</span><span class="p">(</span><span class="n">reset_info</span><span class="p">,</span> <span class="n">done</span><span class="p">)</span>
-        <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_obs_scatter_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">scatter_started</span>
-        <span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
+        <span class="k">with</span> <span class="n">timer</span><span class="o">.</span><span class="n">phase</span><span class="p">(</span><span class="s2">&quot;reset_done_obs_scatter&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_scattered_reset_obs</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_validate_reset_observation_mask</span><span class="p">(</span><span class="n">new_obs</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">new_obs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">obs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>
+                        <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">done</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">values</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">obs</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
+                    <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_scatter_reset_info_mask</span><span class="p">(</span><span class="n">reset_info</span><span class="p">,</span> <span class="n">done</span><span class="p">)</span>
         <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_info_scatter_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="n">measured</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_terminal_obs_ms&quot;</span><span class="p">]</span>
-            <span class="o">+</span> <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_reset_call_ms&quot;</span><span class="p">]</span>
-            <span class="o">+</span> <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_obs_scatter_ms&quot;</span><span class="p">]</span>
-            <span class="o">+</span> <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_info_scatter_ms&quot;</span><span class="p">]</span>
-        <span class="p">)</span>
+        <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_terminal_obs_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">timer</span><span class="o">.</span><span class="n">wall_ms</span><span class="p">(</span><span class="s2">&quot;reset_done_terminal_obs&quot;</span><span class="p">)</span>
+        <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_reset_call_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">timer</span><span class="o">.</span><span class="n">wall_ms</span><span class="p">(</span><span class="s2">&quot;reset_done_reset_call&quot;</span><span class="p">)</span>
+        <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_obs_scatter_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">timer</span><span class="o">.</span><span class="n">wall_ms</span><span class="p">(</span><span class="s2">&quot;reset_done_obs_scatter&quot;</span><span class="p">)</span>
         <span class="n">detail_timing</span><span class="p">[</span><span class="s2">&quot;reset_done_internal_gap_ms&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">reset_total_started</span>
-        <span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span> <span class="o">-</span> <span class="n">measured</span>
+            <span class="n">timer</span><span class="o">.</span><span class="n">total_wall_ms</span><span class="p">()</span> <span class="o">-</span> <span class="n">timer</span><span class="o">.</span><span class="n">attributed_wall_ms</span><span class="p">()</span>
+        <span class="p">)</span>
 
         <span class="n">timing</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;timing&quot;</span><span class="p">,</span> <span class="p">{})</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_clear_reset_done_detail_timing</span><span class="p">(</span><span class="n">timing</span><span class="p">)</span>
@@ -2090,12 +2052,15 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach the owner-provided diagnostic guard.</span>
 
 <span class="sd">        Detection stays device-resident. Artifact export occurs only at the</span>
-<span class="sd">        guard&#39;s explicit abnormal-diagnostic host boundary.</span>
+<span class="sd">        guard&#39;s explicit abnormal-diagnostic host boundary. The guard&#39;s defer</span>
+<span class="sd">        mode is not owner configuration: it follows the env&#39;s single</span>
+<span class="sd">        validation strictness (``finite_validation_mode``).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">unilab.training.tensor_diagnostics</span><span class="w"> </span><span class="kn">import</span> <span class="n">NanGuard</span> <span class="k">as</span> <span class="n">_NanGuard</span>
 
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">guard</span><span class="p">,</span> <span class="n">_NanGuard</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TorchEnv nan guard must be NanGuard, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">guard</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">guard</span><span class="o">.</span><span class="n">set_defer_validation</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_defer_finite_validation</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span> <span class="o">=</span> <span class="n">guard</span></div>
 
 

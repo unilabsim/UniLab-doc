@@ -590,7 +590,12 @@
 <a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.tensor_diagnostics.NanGuardCfg.html#unilab.training.tensor_diagnostics.NanGuardCfg">[docs]</a>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">NanGuardCfg</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pickleable configuration for the tensor finite-state guard.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pickleable configuration for the tensor finite-state guard.</span>
+
+<span class="sd">    The defer mode is not part of this configuration: it is derived from the</span>
+<span class="sd">    environment&#39;s single validation strictness (``finite_validation_mode``)</span>
+<span class="sd">    when the guard is attached (``TorchEnv.set_nan_guard``).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">buffer_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span>
@@ -600,8 +605,7 @@
     <span class="c1"># profiles use 32 to avoid cloning the full physics state every step.</span>
     <span class="n">capture_interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
     <span class="c1"># Zero means the owner must invoke poll explicitly at its cycle boundary.</span>
-    <span class="n">check_interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
-    <span class="n">defer_validation</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span></div>
+    <span class="n">check_interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span></div>
 
 
 
@@ -652,6 +656,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_buffer_idx</span> <span class="o">=</span> <span class="mi">0</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_buffer_full</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_dumped</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="c1"># Derived, not configured: TorchEnv.set_nan_guard follows the env&#39;s</span>
+        <span class="c1"># single validation strictness (finite_validation_mode).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="c1"># Both latches live on the first input&#39;s device. They retain all bad</span>
         <span class="c1"># rows until a single explicit host poll closes the validation interval.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
@@ -693,7 +700,19 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">defer_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">defer_validation</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether bad rows latch on-device until an explicit poll.</span>
+
+<span class="sd">        Derived from the owning env&#39;s ``finite_validation_mode`` at attach</span>
+<span class="sd">        time; not an owner-facing configuration key.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation</span>
+
+<div class="viewcode-block" id="NanGuard.set_defer_validation">
+<a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.tensor_diagnostics.NanGuard.html#unilab.training.tensor_diagnostics.NanGuard.set_defer_validation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_defer_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set the defer mode from the env&#39;s single validation strictness.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span></div>
+
 
 <div class="viewcode-block" id="NanGuard.capture_due">
 <a class="viewcode-back" href="../../../api_reference/training/_autosummary/unilab.training.tensor_diagnostics.NanGuard.html#unilab.training.tensor_diagnostics.NanGuard.capture_due">[docs]</a>
@@ -784,7 +803,7 @@
         <span class="k">for</span> <span class="n">mask</span> <span class="ow">in</span> <span class="n">masks</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
             <span class="n">bad_rows</span><span class="o">.</span><span class="n">logical_or_</span><span class="p">(</span><span class="n">mask</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_record_bad_rows</span><span class="p">(</span><span class="n">bad_rows</span><span class="p">)</span>
-        <span class="n">should_defer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">defer_validation</span> <span class="k">if</span> <span class="n">defer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">bool</span><span class="p">(</span><span class="n">defer</span><span class="p">)</span>
+        <span class="n">should_defer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation</span> <span class="k">if</span> <span class="n">defer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">bool</span><span class="p">(</span><span class="n">defer</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">should_defer</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">poll</span><span class="p">(</span><span class="n">step</span><span class="o">=</span><span class="n">step</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="n">defer</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">)</span></div>
 
 
@@ -798,7 +817,7 @@
             <span class="k">return</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_finite_float</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="s2">&quot;ctrl&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_record_bad_rows</span><span class="p">(</span><span class="n">_bad_row_mask</span><span class="p">(</span><span class="n">ctrl</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">))</span>
-        <span class="n">should_defer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">defer_validation</span> <span class="k">if</span> <span class="n">defer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">bool</span><span class="p">(</span><span class="n">defer</span><span class="p">)</span>
+        <span class="n">should_defer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation</span> <span class="k">if</span> <span class="n">defer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">bool</span><span class="p">(</span><span class="n">defer</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">should_defer</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">poll</span><span class="p">(</span><span class="n">step</span><span class="o">=</span><span class="n">step</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="n">defer</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">)</span></div>
 
 
@@ -810,7 +829,7 @@
             <span class="k">return</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="p">(</span>
             <span class="ow">not</span> <span class="n">force</span>
-            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">defer_validation</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_defer_validation</span>
             <span class="ow">and</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">check_interval</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">step</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cfg</span><span class="o">.</span><span class="n">check_interval</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span>
         <span class="p">):</span>
             <span class="k">return</span> <span class="kc">None</span>
