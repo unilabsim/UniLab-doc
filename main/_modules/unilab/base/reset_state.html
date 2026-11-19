@@ -720,6 +720,11 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_default_kp</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_default_kd</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_randomization_defaults</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="c1"># Immutable full-width float32 default tables on the packed reset</span>
+        <span class="c1"># device, materialized once per field and reused by every</span>
+        <span class="c1"># ``write_randomization_tensor_mask`` call; cleared when the packed</span>
+        <span class="c1"># reset device is (re)declared.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_randomization_defaults</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_startup_randomization_fields</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_requesting_terms</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_commit_had_writes</span> <span class="o">=</span> <span class="kc">False</span>
@@ -869,6 +874,9 @@
             <span class="s2">&quot;PackedResetTransaction&quot;</span><span class="p">,</span> <span class="n">bind_packed_reset</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="n">resolved</span><span class="p">)</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_transaction</span><span class="o">.</span><span class="n">validation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_validation_mode</span>
+        <span class="c1"># The packed composer and its device tables are rebuilt: per-field</span>
+        <span class="c1"># tensor defaults cached for the previous declaration are stale.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_randomization_defaults</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_packed_state_default_installed</span> <span class="o">=</span> <span class="kc">False</span></div>
 
 
@@ -1797,7 +1805,16 @@
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_materialize_tensor_randomization_default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">term_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build the immutable per-env device base for one DR field on the cold path.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the immutable per-env device base for one DR field.</span>
+
+<span class="sd">        The full-width float32 table is materialized once per field and cached:</span>
+<span class="sd">        ``write_randomization_tensor_mask`` only reads ``shape[1]`` (the column</span>
+<span class="sd">        width) from it, so the cached tensor is never mutated. The cache is</span>
+<span class="sd">        cleared when the packed reset device is (re)declared.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cached</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_randomization_defaults</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cached</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">cached</span>
         <span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_packed_reset_device</span>
         <span class="k">if</span> <span class="n">device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;device tensor reset requires its selected device to be declared&quot;</span><span class="p">)</span>
@@ -1811,9 +1828,10 @@
             <span class="n">default</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_require_randomization_default</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">term_name</span><span class="p">)</span>
         <span class="k">assert</span> <span class="n">default</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="n">table</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">default</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_default_is_per_env</span><span class="p">(</span><span class="n">default</span><span class="p">,</span> <span class="n">field</span><span class="o">=</span><span class="n">field</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">table</span>
-        <span class="k">return</span> <span class="n">table</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="o">*</span><span class="n">table</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_default_is_per_env</span><span class="p">(</span><span class="n">default</span><span class="p">,</span> <span class="n">field</span><span class="o">=</span><span class="n">field</span><span class="p">):</span>
+            <span class="n">table</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="o">*</span><span class="n">table</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_randomization_defaults</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="n">table</span>
+        <span class="k">return</span> <span class="n">table</span>
 
 <div class="viewcode-block" id="ResetStateTransaction.reset_to_default">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.reset_state.ResetStateTransaction.html#unilab.base.reset_state.ResetStateTransaction.reset_to_default">[docs]</a>

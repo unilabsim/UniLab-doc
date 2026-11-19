@@ -5556,9 +5556,16 @@
         <span class="k">assert</span> <span class="n">values</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="n">device</span> <span class="o">=</span> <span class="n">values</span><span class="o">.</span><span class="n">device</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># Inside an external capture Torch and Warp already share the</span>
-            <span class="c1"># bridged capture stream, so stream order is the dependency.</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+            <span class="c1"># Order the Torch scatter writes ahead of the Warp</span>
+            <span class="c1"># derived-constant refresh without blocking the host: enqueue an</span>
+            <span class="c1"># event wait so the backend (Warp) stream observes the caller&#39;s</span>
+            <span class="c1"># Torch stream before set_const/set_const_0 launch, instead of</span>
+            <span class="c1"># draining the Torch stream with a host-blocking synchronize on</span>
+            <span class="c1"># every reset. Precedent: _upload_persistent_body_force. Inside an</span>
+            <span class="c1"># external capture Torch and Warp already share the bridged</span>
+            <span class="c1"># capture stream, so stream order is the dependency.</span>
+            <span class="n">producer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_torch_execution_stream</span><span class="p">(</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">wait_stream</span><span class="p">(</span><span class="n">producer</span><span class="p">)</span>
         <span class="c1"># Refresh levels mirror the host ModelUpdates contract: 2 for</span>
         <span class="c1"># mass/COM/inertial-orientation rows (set_const), 1 for inertia or</span>
         <span class="c1"># armature rows (set_const_0), 0 otherwise.</span>

@@ -534,6 +534,14 @@ from the Manager RNG on steps where no row is done. With the same seed,
 trajectories differ from the selected-row path. Compare the two modes
 statistically, not value by value; MJWarp is not bitwise deterministic in any
 case.</p>
+<p><strong>Reset-mode DR replay cannot be disabled.</strong> On backends that restore
+model-field defaults at reset (such as MJWarp), the built-in reset-mode domain
+randomization terms re-randomize through the packed reset transaction on every
+step of the fixed-shape path. Skipping that replay is not supported: with
+model-field writes restored to defaults, an un-replayed randomization would let
+privileged observations and physics diverge from the first step. Running the
+full reset lifecycle every step is the cost the fixed-shape path pays for its
+sync-free, graph-capturable reset.</p>
 <p><strong><code class="docutils literal notranslate"><span class="pre">final_observation</span></code>.</strong> It is published on every step and is meaningful only
 on done rows.</p>
 <p><strong>Deferred validation polling.</strong> Every fail-closed check in the reset segment is
@@ -565,6 +573,50 @@ lower bound, must be declared with
 <code class="docutils literal notranslate"><span class="pre">unilab.base.host_transitions.record_host_transition</span></code>. The graph owner
 re-applies these transitions after every replay. Undeclared host state keeps the
 value it had at capture time.</p>
+</section>
+<section id="step-output-lifetime-and-custom-carriers">
+<h2>Step-output lifetime and custom carriers<a class="headerlink" href="#step-output-lifetime-and-custom-carriers" title="Link to this heading">¶</a></h2>
+<p>With <code class="docutils literal notranslate"><span class="pre">persistent_step_buffers</span></code> (implied by <code class="docutils literal notranslate"><span class="pre">autoreset_cuda_graph</span></code>) the step
+outputs are zero-copy views into pre-allocated storage — no per-step output
+allocation:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">state.obs</span></code>, <code class="docutils literal notranslate"><span class="pre">state.reward</span></code>, <code class="docutils literal notranslate"><span class="pre">state.terminated</span></code> and <code class="docutils literal notranslate"><span class="pre">state.truncated</span></code> are
+views into the current publication-ring slot. A published state stays valid
+for one further step: the ring holds two persistent slots, which the
+off-policy double-buffer contract needs (a published <code class="docutils literal notranslate"><span class="pre">obs_t</span></code> stays stable
+while the next step writes <code class="docutils literal notranslate"><span class="pre">obs_tp1</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">state.carriers</span></code> holds task-registered custom carriers (below); the same
+ring semantics apply to them.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">state.info</span></code> is host-side state shared by reference, not ring storage:
+<code class="docutils literal notranslate"><span class="pre">info[&quot;steps&quot;]</span></code> is a device tensor, but <code class="docutils literal notranslate"><span class="pre">info[&quot;timing&quot;]</span></code>, <code class="docutils literal notranslate"><span class="pre">info[&quot;log&quot;]</span></code> and
+other entries are replaced or mutated every step. Read them before the next
+<code class="docutils literal notranslate"><span class="pre">step</span></code> returns.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">state.final_observation</span></code> aliases the env’s single working scratch. It is
+valid until the next reset segment runs (every step on the fixed-shape
+path); clone it if it must be kept longer.</p></li>
+</ul>
+<section id="registering-a-custom-step-output-carrier">
+<h3>Registering a custom step-output carrier<a class="headerlink" href="#registering-a-custom-step-output-carrier" title="Link to this heading">¶</a></h3>
+<p>Tasks that materialize per-step data — transition snapshots, custom metric
+tensors — can publish it through the same ring instead of defending against
+overwrites with per-step <code class="docutils literal notranslate"><span class="pre">detach().clone()</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">snapshot</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">env</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="n">snapshot_dim</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">env</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+<span class="n">env</span><span class="o">.</span><span class="n">register_step_carrier</span><span class="p">(</span><span class="s2">&quot;transition&quot;</span><span class="p">,</span> <span class="n">snapshot</span><span class="p">)</span>  <span class="c1"># cold path: before the first reset()</span>
+
+<span class="c1"># ... a term or manager updates `snapshot` in place during update_state ...</span>
+
+<span class="n">state</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
+<span class="n">state</span><span class="o">.</span><span class="n">carriers</span><span class="p">[</span><span class="s2">&quot;transition&quot;</span><span class="p">]</span>  <span class="c1"># ring-slot view; stable for one further step</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">register_step_carrier</span></code> fails closed: it requires the fixed-shape chain
+(<code class="docutils literal notranslate"><span class="pre">env.autoreset_cuda_graph</span></code>), must be called before the first <code class="docutils literal notranslate"><span class="pre">reset</span></code> (the
+ring is allocated there), rejects duplicate or empty names and carriers that
+are not tensors on the env device. Ring slots are allocated with
+<code class="docutils literal notranslate"><span class="pre">torch.empty_like</span></code> at the first publish, so every address involved is fixed
+from then on — the address-stability precondition for capturing the
+step-output publication in a CUDA graph (issue #2628).</p>
+</section>
 </section>
 <section id="opting-terms-into-resetselection">
 <h2>Opting terms into <code class="docutils literal notranslate"><span class="pre">ResetSelection</span></code><a class="headerlink" href="#opting-terms-into-resetselection" title="Link to this heading">¶</a></h2>
@@ -711,6 +763,10 @@ contract.</p>
 <li><a class="reference internal" href="#requirements">Requirements</a></li>
 <li><a class="reference internal" href="#configuration-flags">Configuration flags</a></li>
 <li><a class="reference internal" href="#behavior-notes">Behavior notes</a></li>
+<li><a class="reference internal" href="#step-output-lifetime-and-custom-carriers">Step-output lifetime and custom carriers</a><ul>
+<li><a class="reference internal" href="#registering-a-custom-step-output-carrier">Registering a custom step-output carrier</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#opting-terms-into-resetselection">Opting terms into <code class="docutils literal notranslate"><span class="pre">ResetSelection</span></code></a><ul>
 <li><a class="reference internal" href="#debugging-reset-selection-blockers">Debugging <code class="docutils literal notranslate"><span class="pre">reset_selection_blockers</span></code></a></li>
 </ul>

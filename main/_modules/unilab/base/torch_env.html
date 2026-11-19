@@ -618,7 +618,10 @@
 
 <span class="sd">    Terminal pre-reset observations are represented only by</span>
 <span class="sd">    ``final_observation``; ``info`` never carries duplicate</span>
-<span class="sd">    terminal-observation entries.</span>
+<span class="sd">    terminal-observation entries. ``carriers`` holds task-registered custom</span>
+<span class="sd">    step-output tensors (see ``TorchEnv.register_step_carrier``); like</span>
+<span class="sd">    ``obs``/``reward``, the published state&#39;s entries are zero-copy views</span>
+<span class="sd">    into persistent ring storage.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">obs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
@@ -627,6 +630,7 @@
     <span class="n">truncated</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
     <span class="n">info</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
     <span class="n">final_observation</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">carriers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
 
 <div class="viewcode-block" id="TorchEnvState.replace">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.torch_env.TorchEnvState.html#unilab.base.torch_env.TorchEnvState.replace">[docs]</a>
@@ -821,6 +825,10 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_publication_ring</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">TorchEnvState</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_publication_cursor</span> <span class="o">=</span> <span class="mi">0</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span><span class="p">:</span> <span class="n">TorchEnvState</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># Task-owned custom step-output carriers (issue #2628), published</span>
+        <span class="c1"># through the same ring as obs/reward/done. Registration closes at</span>
+        <span class="c1"># the first publish; the mapping then backs ``TorchEnvState.carriers``.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_step_carriers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">device</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
@@ -883,9 +891,10 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;The latest published transition.</span>
 
 <span class="sd">        With ``persistent_step_buffers`` this is a publication slot whose</span>
-<span class="sd">        tensors stay unchanged for ``published_buffer_depth - 1`` further</span>
-<span class="sd">        steps (or, at depth 0, the working carriers that the next step</span>
-<span class="sd">        overwrites in place).</span>
+<span class="sd">        tensors — observations, reward, terminated, truncated and the</span>
+<span class="sd">        registered custom ``carriers`` — stay unchanged for</span>
+<span class="sd">        ``published_buffer_depth - 1`` further steps (or, at depth 0, the</span>
+<span class="sd">        working carriers that the next step overwrites in place).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span>
@@ -938,6 +947,68 @@
             <span class="n">transition</span><span class="p">()</span>
             <span class="k">return</span>
         <span class="n">capture</span><span class="o">.</span><span class="n">record_host_transition</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;env.</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">transition</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="TorchEnv.register_step_carrier">
+<a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.base.torch_env.TorchEnv.register_step_carrier">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_step_carrier</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">carrier</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register a task-owned tensor as a persistent step-output carrier.</span>
+
+<span class="sd">        The carrier is a device tensor the task updates in place during</span>
+<span class="sd">        ``update_state`` — for example a transition snapshot or a custom</span>
+<span class="sd">        per-step metric tensor. With ``persistent_step_buffers`` (implied by</span>
+<span class="sd">        ``autoreset_cuda_graph``) the env copies it, with ``copy_``, into the</span>
+<span class="sd">        current publication-ring slot at every step boundary, so consumers of</span>
+<span class="sd">        the published state can hold the slot&#39;s tensor for</span>
+<span class="sd">        ``published_buffer_depth`` further steps without a defensive clone.</span>
+<span class="sd">        Ring slots are pre-allocated with ``torch.empty_like``, so every</span>
+<span class="sd">        address is fixed after the first publish — the address-stability</span>
+<span class="sd">        precondition for capturing the step-output publication in a CUDA</span>
+<span class="sd">        graph (issue #2628). Consumers read the published values through</span>
+<span class="sd">        ``TorchEnvState.carriers``.</span>
+
+<span class="sd">        Registration is a cold-path call. It must happen before the first</span>
+<span class="sd">        ``reset``/``step`` (which allocates the publication ring), and it</span>
+<span class="sd">        requires the fixed-shape chain. Fails closed on a duplicate or empty</span>
+<span class="sd">        name, a non-tensor carrier, a carrier that is not on the env device,</span>
+<span class="sd">        a carrier registered after the first publish, or when persistent</span>
+<span class="sd">        step buffers are disabled.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            name: Unique non-empty name under which the carrier is published</span>
+<span class="sd">                in ``TorchEnvState.carriers``.</span>
+<span class="sd">            carrier: Tensor on the env device. The task keeps ownership and</span>
+<span class="sd">                updates it in place; dtype and shape are captured by the</span>
+<span class="sd">                ring slots with ``torch.empty_like``.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            RuntimeError: If the publication ring is already allocated (the</span>
+<span class="sd">                first ``reset``/``step`` has run).</span>
+<span class="sd">            ValueError: On an empty or duplicate name, a carrier on the wrong</span>
+<span class="sd">                device, or when persistent step buffers are disabled.</span>
+<span class="sd">            TypeError: If ``carrier`` is not a ``torch.Tensor``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;register_step_carrier must be called before the first reset: &quot;</span>
+                <span class="s2">&quot;the publication ring is already allocated&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_step_buffers</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;register_step_carrier requires persistent step buffers &quot;</span>
+                <span class="s2">&quot;(enable env.autoreset_cuda_graph)&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">name</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step carrier name must be a non-empty string, got </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_carriers</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step carrier </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> is already registered&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">carrier</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step carrier </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> must be a torch.Tensor&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">carrier</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;step carrier </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> must be on </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">carrier</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_step_carriers</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">carrier</span></div>
 
 
 <div class="viewcode-block" id="TorchEnv.reset_selection_blockers">
@@ -995,6 +1066,7 @@
             <span class="n">terminated</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">),</span>
             <span class="n">truncated</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">),</span>
             <span class="n">info</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="n">initial_steps</span><span class="p">},</span>
+            <span class="n">carriers</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_step_carriers</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_initial_episode_steps</span> <span class="o">=</span> <span class="n">initial_steps</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span><span class="p">:</span>
@@ -1622,6 +1694,9 @@
                 <span class="n">terminated</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">terminated</span><span class="p">),</span>
                 <span class="n">truncated</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">truncated</span><span class="p">),</span>
                 <span class="n">info</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">,</span>
+                <span class="n">carriers</span><span class="o">=</span><span class="p">{</span>
+                    <span class="n">name</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_carriers</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                <span class="p">},</span>
             <span class="p">)</span>
             <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_published_buffer_depth</span><span class="p">)</span>
         <span class="p">]</span>
@@ -1640,6 +1715,8 @@
         <span class="n">slot</span><span class="o">.</span><span class="n">reward</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">reward</span><span class="p">)</span>
         <span class="n">slot</span><span class="o">.</span><span class="n">terminated</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">terminated</span><span class="p">)</span>
         <span class="n">slot</span><span class="o">.</span><span class="n">truncated</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">truncated</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">carriers</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">slot</span><span class="o">.</span><span class="n">carriers</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
         <span class="n">slot</span><span class="o">.</span><span class="n">info</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">info</span>
         <span class="n">slot</span><span class="o">.</span><span class="n">final_observation</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">final_observation</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span> <span class="o">=</span> <span class="n">slot</span>
