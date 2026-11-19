@@ -1,0 +1,26 @@
+# 算法
+
+算法页面描述每个内置入口运行的内容、其配置所在位置，以及用哪种命令形式来选择它。
+关于通用 flag，请参见 {doc}`../1-training/1-cli_reference`。
+
+| 算法 | 类型 | 入口 | 配置证据 |
+| --- | --- | --- | --- |
+| PPO | 同步 on-policy | `src/unilab/scripts/train_rsl_rl.py` | `src/unilab/conf/ppo/config.yaml` |
+| APPO | 异步 on-policy | `src/unilab/scripts/train_appo.py` | `src/unilab/conf/appo/config.yaml` |
+| SAC | off-policy | `src/unilab/scripts/train_sac.py` | `src/unilab/conf/sac/config.yaml` |
+| TD3 | off-policy | `src/unilab/scripts/train_td3.py` | `src/unilab/conf/td3/config.yaml` |
+| FlashSAC | off-policy | `src/unilab/scripts/train_flashsac.py` | `src/unilab/conf/flashsac/config.yaml` |
+| HIM-PPO | 高度估计器 PPO 路径 | `scripts/train_him_ppo.py` | `src/unilab/conf/ppo_him/config.yaml` |
+| HORA | teacher/student 蒸馏路径 | `scripts/train_hora_distill.py` | `src/unilab/conf/hora_distill/config.yaml` |
+
+```{toctree}
+:hidden:
+
+1-ppo
+2-appo
+3-sac
+4-td3
+5-flash_sac
+6-him_ppo
+7-hora
+```
