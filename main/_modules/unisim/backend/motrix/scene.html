@@ -565,6 +565,7 @@
           <h1>Source code for unisim.backend.motrix.scene</h1><div class="highlight"><pre>
 <span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">xml.etree.ElementTree</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ET</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Sequence</span>
@@ -732,12 +733,17 @@
     <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">mesh_variant_sets</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">geom_variant_sets</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="s2">&quot;SceneModel&quot;</span><span class="p">,</span> <span class="n">_MotrixSensorInventory</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Import an expanded source and retain its cold-path sensor inventory.&quot;&quot;&quot;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="s2">&quot;SceneModel&quot;</span><span class="p">,</span> <span class="n">_MotrixSensorInventory</span><span class="p">,</span> <span class="s2">&quot;World&quot;</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Import an expanded source and retain its cold-path sensor inventory.</span>
+
+<span class="sd">    The built ``World`` is returned alongside the model because MotrixSim 1.0.0</span>
+<span class="sd">    configures the system camera render target on the MSD world before</span>
+<span class="sd">    ``build()``; the built model is immutable.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="kn">import</span><span class="w"> </span><span class="nn">motrixsim.msd</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">msd</span>
 
-    <span class="n">world</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">model_file</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()))</span>  <span class="c1"># pyright: ignore[reportAttributeAccessIssue]</span>
+    <span class="n">world</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">model_file</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()))</span>
     <span class="n">contact_identities</span> <span class="o">=</span> <span class="n">_motrix_contact_sensor_identities</span><span class="p">(</span><span class="n">world</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">mesh_variant_sets</span> <span class="ow">or</span> <span class="n">geom_variant_sets</span><span class="p">:</span>
         <span class="n">_register_motrix_mesh_variant_sets</span><span class="p">(</span>
@@ -769,6 +775,7 @@
             <span class="n">frame_identities</span><span class="o">=</span><span class="n">frame_identities</span><span class="p">,</span>
             <span class="n">contact_identities</span><span class="o">=</span><span class="n">contact_identities</span><span class="p">,</span>
         <span class="p">),</span>
+        <span class="n">world</span><span class="p">,</span>
     <span class="p">)</span></div>
 
 
@@ -799,14 +806,25 @@
         <span class="n">world</span><span class="o">.</span><span class="n">mesh_variant_sets</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">variant_set</span>
         <span class="n">registered</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">candidates</span>
 
-    <span class="n">native_geoms</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="nb">str</span><span class="p">(</span><span class="n">geom</span><span class="o">.</span><span class="n">name</span><span class="p">):</span> <span class="n">geom</span>
-        <span class="k">for</span> <span class="n">body</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">hierarchy</span><span class="o">.</span><span class="n">bodies</span>
-        <span class="k">for</span> <span class="n">link</span> <span class="ow">in</span> <span class="n">_iter_motrix_links</span><span class="p">(</span><span class="n">body</span><span class="o">.</span><span class="n">link</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">link</span><span class="o">.</span><span class="n">geoms</span>
-        <span class="k">if</span> <span class="n">geom</span><span class="o">.</span><span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-    <span class="p">}</span>
-    <span class="n">missing</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">geom_variant_sets</span><span class="p">)</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">native_geoms</span><span class="p">))</span>
+    <span class="n">native_by_name</span><span class="p">,</span> <span class="n">native_by_link_ordinal</span> <span class="o">=</span> <span class="n">index_world_geoms_by_name_and_ordinal</span><span class="p">(</span><span class="n">world</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">resolve</span><span class="p">(</span><span class="n">geom_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="n">entity_name</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">local_name</span> <span class="o">=</span> <span class="n">geom_name</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">resolve_native_geom_handle</span><span class="p">(</span>
+            <span class="n">local_name</span><span class="p">,</span>
+            <span class="n">entity_name</span><span class="p">,</span>
+            <span class="n">native_by_name</span><span class="o">=</span><span class="n">native_by_name</span><span class="p">,</span>
+            <span class="n">native_by_link_ordinal</span><span class="o">=</span><span class="n">native_by_link_ordinal</span><span class="p">,</span>
+            <span class="n">native_geom_name</span><span class="o">=</span><span class="k">lambda</span> <span class="n">geom</span><span class="p">:</span> <span class="n">geom</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="n">resolved</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">missing</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">geom_name</span> <span class="ow">in</span> <span class="n">geom_variant_sets</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">resolved</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">geom_name</span><span class="p">)]</span> <span class="o">=</span> <span class="n">resolve</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">geom_name</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">missing</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">geom_name</span><span class="p">))</span>
     <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
         <span class="c1"># Uniform-public compilation already froze the public geom-name set.</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
@@ -815,7 +833,7 @@
     <span class="k">for</span> <span class="n">geom_name</span><span class="p">,</span> <span class="n">set_name</span> <span class="ow">in</span> <span class="n">geom_variant_sets</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">set_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">registered</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Motrix geom </span><span class="si">{</span><span class="n">geom_name</span><span class="si">!r}</span><span class="s2"> refers to absent variant set&quot;</span><span class="p">)</span>
-        <span class="n">native_geoms</span><span class="p">[</span><span class="n">geom_name</span><span class="p">]</span><span class="o">.</span><span class="n">mesh_variant_set</span> <span class="o">=</span> <span class="n">set_name</span>
+        <span class="n">resolved</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">geom_name</span><span class="p">)]</span><span class="o">.</span><span class="n">mesh_variant_set</span> <span class="o">=</span> <span class="n">set_name</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_extract_keyframes</span><span class="p">(</span><span class="n">fragment_file</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">ET</span><span class="o">.</span><span class="n">Element</span><span class="p">]:</span>
@@ -888,7 +906,7 @@
 
     <span class="n">sanitized</span> <span class="o">=</span> <span class="n">_materialize_fragment_without_keyframes</span><span class="p">(</span><span class="n">fragment_file</span><span class="p">)</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="n">fragment</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">sanitized</span><span class="p">))</span>  <span class="c1"># pyright: ignore[reportAttributeAccessIssue]</span>
+        <span class="n">fragment</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">sanitized</span><span class="p">))</span>
     <span class="k">finally</span><span class="p">:</span>
         <span class="n">remove_temporary_file</span><span class="p">(</span><span class="n">sanitized</span><span class="p">,</span> <span class="n">original</span><span class="o">=</span><span class="n">fragment_file</span><span class="p">)</span>
     <span class="n">world</span><span class="o">.</span><span class="n">attach</span><span class="p">(</span><span class="n">fragment</span><span class="p">)</span>
@@ -898,6 +916,90 @@
     <span class="k">yield</span> <span class="n">link</span>
     <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">link</span><span class="o">.</span><span class="n">children</span><span class="p">:</span>
         <span class="k">yield from</span> <span class="n">_iter_motrix_links</span><span class="p">(</span><span class="n">child</span><span class="p">)</span>
+
+
+<span class="c1"># Public-layout geom names synthesized by ``unisim.mjcf_compiler`` for geoms</span>
+<span class="c1"># without an entity-prefixed source name: ``&lt;body&gt;::geom&lt;ordinal&gt;`` where the</span>
+<span class="c1"># ordinal counts every geom of the body in MJCF definition order.  MotrixSim</span>
+<span class="c1"># preserves that definition order inside ``link.geoms`` (upstream</span>
+<span class="c1"># ``motrixsim#22``), so unnamed native geoms are addressable by</span>
+<span class="c1"># (link name, ordinal) without synthesizing SDK-side names.</span>
+<span class="n">_SYNTHESIZED_GEOM_NAME</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;^(?P&lt;body&gt;.+)::geom(?P&lt;ordinal&gt;\d+)$&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="parse_synthesized_geom_name">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.scene.parse_synthesized_geom_name.html#unisim.backend.motrix.scene.parse_synthesized_geom_name">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">parse_synthesized_geom_name</span><span class="p">(</span><span class="n">local_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return ``(body_name, ordinal)`` for a synthesized public geom name.&quot;&quot;&quot;</span>
+
+    <span class="n">match</span> <span class="o">=</span> <span class="n">_SYNTHESIZED_GEOM_NAME</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">local_name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">match</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">&quot;body&quot;</span><span class="p">),</span> <span class="nb">int</span><span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">&quot;ordinal&quot;</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_native_geom_handle">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.scene.resolve_native_geom_handle.html#unisim.backend.motrix.scene.resolve_native_geom_handle">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_native_geom_handle</span><span class="p">(</span>
+    <span class="n">local_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">entity_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">native_by_name</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="n">native_by_link_ordinal</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">]],</span>
+    <span class="n">native_geom_name</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve a public geom name to its native geom handle.</span>
+
+<span class="sd">    Named geoms resolve by exact native name first.  Names synthesized by the</span>
+<span class="sd">    public layout compiler resolve through the owning link&#39;s geom list at the</span>
+<span class="sd">    recorded ordinal, which must address an actually unnamed native geom.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">full_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entity_name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">local_name</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="n">handle</span> <span class="o">=</span> <span class="n">native_by_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">full_name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">handle</span>
+    <span class="n">parsed</span> <span class="o">=</span> <span class="n">parse_synthesized_geom_name</span><span class="p">(</span><span class="n">local_name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">parsed</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Motrix native geom </span><span class="si">{</span><span class="n">full_name</span><span class="si">!r}</span><span class="s2"> is missing&quot;</span><span class="p">)</span>
+    <span class="n">body_name</span><span class="p">,</span> <span class="n">ordinal</span> <span class="o">=</span> <span class="n">parsed</span>
+    <span class="n">link_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entity_name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">body_name</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="n">handles</span> <span class="o">=</span> <span class="n">native_by_link_ordinal</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">link_name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">handles</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">ordinal</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">handles</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Motrix native link </span><span class="si">{</span><span class="n">link_name</span><span class="si">!r}</span><span class="s2"> has no geom at ordinal </span><span class="si">{</span><span class="n">ordinal</span><span class="si">}</span><span class="s2"> &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;for synthesized geom </span><span class="si">{</span><span class="n">full_name</span><span class="si">!r}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">handle</span> <span class="o">=</span> <span class="n">handles</span><span class="p">[</span><span class="n">ordinal</span><span class="p">]</span>
+    <span class="n">observed_name</span> <span class="o">=</span> <span class="n">native_geom_name</span><span class="p">(</span><span class="n">handle</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">observed_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Motrix synthesized geom </span><span class="si">{</span><span class="n">full_name</span><span class="si">!r}</span><span class="s2"> resolved to named native geom &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">observed_name</span><span class="si">!r}</span><span class="s2">; the native geom order differs from the MJCF source&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">handle</span></div>
+
+
+
+<div class="viewcode-block" id="index_world_geoms_by_name_and_ordinal">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.motrix.scene.index_world_geoms_by_name_and_ordinal.html#unisim.backend.motrix.scene.index_world_geoms_by_name_and_ordinal">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">index_world_geoms_by_name_and_ordinal</span><span class="p">(</span>
+    <span class="n">world</span><span class="p">:</span> <span class="n">World</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">]]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Index an MSD world&#39;s geoms by name and by (link name, definition ordinal).&quot;&quot;&quot;</span>
+
+    <span class="n">native_by_name</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">native_by_link_ordinal</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">body</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">hierarchy</span><span class="o">.</span><span class="n">bodies</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">link</span> <span class="ow">in</span> <span class="n">_iter_motrix_links</span><span class="p">(</span><span class="n">body</span><span class="o">.</span><span class="n">link</span><span class="p">):</span>
+            <span class="n">handles</span> <span class="o">=</span> <span class="n">native_by_link_ordinal</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">link</span><span class="o">.</span><span class="n">name</span><span class="p">),</span> <span class="p">[])</span>
+            <span class="k">for</span> <span class="n">geom</span> <span class="ow">in</span> <span class="n">link</span><span class="o">.</span><span class="n">geoms</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">geom</span><span class="o">.</span><span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">native_by_name</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">geom</span><span class="o">.</span><span class="n">name</span><span class="p">),</span> <span class="n">geom</span><span class="p">)</span>
+                <span class="n">handles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">geom</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">native_by_name</span><span class="p">,</span> <span class="n">native_by_link_ordinal</span></div>
+
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_motrix_world_link_names</span><span class="p">(</span><span class="n">world</span><span class="p">:</span> <span class="n">World</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
@@ -955,7 +1057,7 @@
     <span class="n">fragment_files</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
     <span class="n">add_body_sensors</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;base&quot;</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="s2">&quot;SceneModel&quot;</span><span class="p">,</span> <span class="n">_MotrixSensorInventory</span><span class="p">]:</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="s2">&quot;SceneModel&quot;</span><span class="p">,</span> <span class="n">_MotrixSensorInventory</span><span class="p">,</span> <span class="s2">&quot;World&quot;</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a model and retain every public sensor identity for variant audits.&quot;&quot;&quot;</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">motrixsim.msd</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">msd</span>
 
@@ -965,7 +1067,7 @@
     <span class="p">]</span>
     <span class="n">robot_path</span> <span class="o">=</span> <span class="n">_materialize_robot_with_fragment_keyframes</span><span class="p">(</span><span class="n">model_path</span><span class="p">,</span> <span class="n">fragment_paths</span><span class="p">)</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="n">world</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">robot_path</span><span class="p">))</span>  <span class="c1"># pyright: ignore[reportAttributeAccessIssue]</span>
+        <span class="n">world</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">robot_path</span><span class="p">))</span>
         <span class="k">for</span> <span class="n">fragment_path</span> <span class="ow">in</span> <span class="n">fragment_paths</span><span class="p">:</span>
             <span class="n">_attach_motrix_scene_fragment</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">fragment_path</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">add_body_sensors</span><span class="p">:</span>
@@ -976,7 +1078,7 @@
             <span class="n">frame_identities</span><span class="o">=</span><span class="n">_motrix_frame_sensor_identities</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
             <span class="n">contact_identities</span><span class="o">=</span><span class="n">_motrix_contact_sensor_identities</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
             <span class="n">signatures</span><span class="o">=</span><span class="n">_motrix_sensor_signatures</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
-        <span class="p">)</span>
+        <span class="p">),</span> <span class="n">world</span>
     <span class="k">finally</span><span class="p">:</span>
         <span class="n">remove_temporary_file</span><span class="p">(</span><span class="n">robot_path</span><span class="p">,</span> <span class="n">original</span><span class="o">=</span><span class="n">model_path</span><span class="p">)</span></div>
 
@@ -990,11 +1092,11 @@
     <span class="n">fragment_files</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
     <span class="n">add_body_sensors</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;base&quot;</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="s2">&quot;SceneModel&quot;</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="s2">&quot;SceneModel&quot;</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="s2">&quot;World&quot;</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a Motrix model and return its validated cold-path sensor inventory.&quot;&quot;&quot;</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">motrixsim.msd</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">msd</span>
 
-    <span class="n">model</span><span class="p">,</span> <span class="n">inventory</span> <span class="o">=</span> <span class="n">materialize_scene_with_full_sensor_inventory</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">,</span> <span class="n">inventory</span><span class="p">,</span> <span class="n">world</span> <span class="o">=</span> <span class="n">materialize_scene_with_full_sensor_inventory</span><span class="p">(</span>
         <span class="n">model_file</span><span class="o">=</span><span class="n">model_file</span><span class="p">,</span>
         <span class="n">fragment_files</span><span class="o">=</span><span class="n">fragment_files</span><span class="p">,</span>
         <span class="n">add_body_sensors</span><span class="o">=</span><span class="n">add_body_sensors</span><span class="p">,</span>
@@ -1008,6 +1110,7 @@
             <span class="k">for</span> <span class="n">identity</span> <span class="ow">in</span> <span class="n">inventory</span><span class="o">.</span><span class="n">frame_identities</span>
             <span class="k">if</span> <span class="n">identity</span><span class="o">.</span><span class="n">sensor_type</span> <span class="o">==</span> <span class="n">msd</span><span class="o">.</span><span class="n">FrameSensorType</span><span class="o">.</span><span class="n">FrameQuat</span>
         <span class="p">),</span>
+        <span class="n">world</span><span class="p">,</span>
     <span class="p">)</span></div>
 
 
@@ -1043,8 +1146,13 @@
     <span class="n">add_body_sensors</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;base&quot;</span><span class="p">,</span>
     <span class="n">return_surface_sampler</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneModel</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="nb">object</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a Motrix terrain model and return its cold-path sensor inventory.&quot;&quot;&quot;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneModel</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="nb">object</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="s2">&quot;World&quot;</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a Motrix terrain model and return its cold-path sensor inventory.</span>
+
+<span class="sd">    The built ``World`` is returned alongside the model because MotrixSim 1.0.0</span>
+<span class="sd">    configures the system camera render target on the MSD world before</span>
+<span class="sd">    ``build()``; the built model is immutable.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">motrixsim.msd</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">msd</span>
 
     <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.terrain.generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">TerrainGenerator</span>
@@ -1083,7 +1191,7 @@
     <span class="p">]</span>
     <span class="n">merged_robot_path</span> <span class="o">=</span> <span class="n">_materialize_robot_with_fragment_keyframes</span><span class="p">(</span><span class="n">robot_path</span><span class="p">,</span> <span class="n">fragment_paths</span><span class="p">)</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="n">robot_world</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">merged_robot_path</span><span class="p">))</span>  <span class="c1"># pyright: ignore[reportAttributeAccessIssue]</span>
+        <span class="n">robot_world</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">merged_robot_path</span><span class="p">))</span>
         <span class="n">world</span><span class="o">.</span><span class="n">attach</span><span class="p">(</span><span class="n">robot_world</span><span class="p">)</span>
         <span class="c1"># TODO(motrixsim): remove this once msd.World.attach carries keyframes.</span>
         <span class="n">world</span><span class="o">.</span><span class="n">keyframes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">robot_world</span><span class="o">.</span><span class="n">keyframes</span><span class="p">)</span>
@@ -1103,6 +1211,7 @@
         <span class="n">sampler</span><span class="p">,</span>
         <span class="n">_motrix_sensor_names</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
         <span class="n">_motrix_frame_quat_sensor_names</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
+        <span class="n">world</span><span class="p">,</span>
     <span class="p">)</span></div>
 
 
@@ -1149,7 +1258,7 @@
     <span class="n">return_surface_sampler</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneModel</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneModel</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="nb">object</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a MotrixSim model with generated hfield terrain and attached robot.&quot;&quot;&quot;</span>
-    <span class="n">model</span><span class="p">,</span> <span class="n">origins</span><span class="p">,</span> <span class="n">sampler</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">materialize_hfield_attached_scene_with_sensor_inventory</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">,</span> <span class="n">origins</span><span class="p">,</span> <span class="n">sampler</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">materialize_hfield_attached_scene_with_sensor_inventory</span><span class="p">(</span>
         <span class="n">model_file</span><span class="o">=</span><span class="n">model_file</span><span class="p">,</span>
         <span class="n">terrain_cfg</span><span class="o">=</span><span class="n">terrain_cfg</span><span class="p">,</span>
         <span class="n">fragment_files</span><span class="o">=</span><span class="n">fragment_files</span><span class="p">,</span>
