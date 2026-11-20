@@ -217,6 +217,7 @@
   <label class="sidebar-version-label" for="version-select">Version</label>
   <select id="version-select" class="sidebar-version-select" onchange="location = this.value;">
     <option value="reset_writes.html" selected>main</option>
+    <option value="../../../../../v1.6.0/index.html" >v1.6.0</option>
     <option value="../../../../../v1.5.0/index.html" >v1.5.0</option>
     <option value="../../../../../v1.4.0/index.html" >v1.4.0</option>
     <option value="../../../../../v1.3.0/index.html" >v1.3.0</option>
@@ -566,9 +567,9 @@
 <span></span><span class="sd">&quot;&quot;&quot;Batched reset randomization through MotrixSim ``WriteProgram`` plans.</span>
 
 <span class="sd">MotrixSim 1.0.0 compiles per-object override operations (link mass/COM, geom</span>
-<span class="sd">friction, actuator gains) into one reusable write program whose buffer rows are</span>
-<span class="sd">filled with plain NumPy assignments and scattered with a single ``execute``</span>
-<span class="sd">call (upstream ``motrixsim#20``).  This module builds one program per batched</span>
+<span class="sd">friction, geom size, actuator gains) into one reusable write program whose</span>
+<span class="sd">buffer rows are filled with plain NumPy assignments and scattered with a single</span>
+<span class="sd">``execute`` call (upstream ``motrixsim#20``).  This module builds one program per batched</span>
 <span class="sd">``SceneData`` on the cold path and stages reset-randomization tables into its</span>
 <span class="sd">field views on the hot path, replacing the historical per-link / per-geom /</span>
 <span class="sd">per-actuator setter loops.</span>
@@ -589,6 +590,7 @@
 <span class="n">FIELD_MASS</span> <span class="o">=</span> <span class="s2">&quot;mass&quot;</span>
 <span class="n">FIELD_COM</span> <span class="o">=</span> <span class="s2">&quot;com&quot;</span>
 <span class="n">FIELD_FRICTION</span> <span class="o">=</span> <span class="s2">&quot;friction&quot;</span>
+<span class="n">FIELD_SIZE</span> <span class="o">=</span> <span class="s2">&quot;size&quot;</span>
 <span class="n">FIELD_KP</span> <span class="o">=</span> <span class="s2">&quot;kp&quot;</span>
 <span class="n">FIELD_KD</span> <span class="o">=</span> <span class="s2">&quot;kd&quot;</span>
 
@@ -606,10 +608,13 @@
     <span class="n">program</span><span class="p">:</span> <span class="n">Any</span>
     <span class="n">mass_link_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (L,) native link index per mass/COM buffer column</span>
     <span class="n">friction_geom_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (G,) native geom index per friction buffer column</span>
+    <span class="n">size_geom_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (S,) native geom index per size buffer column</span>
     <span class="n">gain_actuator_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (A,) native actuator index per kp/kd buffer column</span>
     <span class="n">default_mass</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (L,)</span>
     <span class="n">default_ipos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (L, 3)</span>
     <span class="n">default_friction</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (G, 3)</span>
+    <span class="n">default_size</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (S, 3)</span>
+    <span class="n">size_required</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (S, 3) bool: components the primitive requires positive</span>
     <span class="n">default_kp</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (A,)</span>
     <span class="n">default_kd</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>  <span class="c1"># (A,)</span>
 
@@ -648,11 +653,14 @@
     <span class="n">data</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
     <span class="n">links_by_id</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
     <span class="n">geom_friction_override_ids</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+    <span class="n">geom_size_override_ids</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+    <span class="n">geom_size_required</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
     <span class="n">position_actuators</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span>
     <span class="n">supports_position_actuator_gains</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
     <span class="n">default_body_mass</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
     <span class="n">default_body_ipos</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
     <span class="n">default_geom_friction</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">default_geom_size</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
     <span class="n">default_actuator_kp</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
     <span class="n">default_actuator_kd</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MotrixResetWriteProgram</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
@@ -674,6 +682,7 @@
     <span class="p">]</span>
     <span class="n">gain_actuator_ids</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">actuator</span><span class="o">.</span><span class="n">index</span><span class="p">)</span> <span class="k">for</span> <span class="n">actuator</span> <span class="ow">in</span> <span class="n">position_actuators</span><span class="p">)</span>
     <span class="n">friction_geom_ids</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">geom_id</span><span class="p">)</span> <span class="k">for</span> <span class="n">geom_id</span> <span class="ow">in</span> <span class="n">geom_friction_override_ids</span><span class="p">)</span>
+    <span class="n">size_geom_ids</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">geom_id</span><span class="p">)</span> <span class="k">for</span> <span class="n">geom_id</span> <span class="ow">in</span> <span class="n">geom_size_override_ids</span><span class="p">)</span>
 
     <span class="n">fields</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">if</span> <span class="n">eligible_link_ids</span><span class="p">:</span>
@@ -681,6 +690,8 @@
         <span class="n">fields</span><span class="p">[</span><span class="n">FIELD_COM</span><span class="p">]</span> <span class="o">=</span> <span class="n">write</span><span class="o">.</span><span class="n">LinkCenterOfMassOverride</span><span class="p">(</span><span class="n">eligible_link_ids</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">friction_geom_ids</span><span class="p">:</span>
         <span class="n">fields</span><span class="p">[</span><span class="n">FIELD_FRICTION</span><span class="p">]</span> <span class="o">=</span> <span class="n">write</span><span class="o">.</span><span class="n">GeomFrictionOverride</span><span class="p">(</span><span class="n">friction_geom_ids</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">size_geom_ids</span><span class="p">:</span>
+        <span class="n">fields</span><span class="p">[</span><span class="n">FIELD_SIZE</span><span class="p">]</span> <span class="o">=</span> <span class="n">write</span><span class="o">.</span><span class="n">GeomSizeOverride</span><span class="p">(</span><span class="n">size_geom_ids</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">supports_position_actuator_gains</span> <span class="ow">and</span> <span class="n">gain_actuator_ids</span><span class="p">:</span>
         <span class="n">fields</span><span class="p">[</span><span class="n">FIELD_KP</span><span class="p">]</span> <span class="o">=</span> <span class="n">write</span><span class="o">.</span><span class="n">ActuatorKpOverride</span><span class="p">(</span><span class="n">gain_actuator_ids</span><span class="p">)</span>
         <span class="n">fields</span><span class="p">[</span><span class="n">FIELD_KD</span><span class="p">]</span> <span class="o">=</span> <span class="n">write</span><span class="o">.</span><span class="n">ActuatorDampingOverride</span><span class="p">(</span><span class="n">gain_actuator_ids</span><span class="p">)</span>
@@ -691,15 +702,19 @@
     <span class="n">program</span> <span class="o">=</span> <span class="n">plan</span><span class="o">.</span><span class="n">allocate</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
     <span class="n">mass_link_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">eligible_link_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
     <span class="n">friction_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">friction_geom_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
+    <span class="n">size_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">size_geom_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
     <span class="n">gain_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">gain_actuator_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">MotrixResetWriteProgram</span><span class="p">(</span>
         <span class="n">program</span><span class="o">=</span><span class="n">program</span><span class="p">,</span>
         <span class="n">mass_link_ids</span><span class="o">=</span><span class="n">mass_link_ids</span><span class="p">,</span>
         <span class="n">friction_geom_ids</span><span class="o">=</span><span class="n">friction_ids</span><span class="p">,</span>
+        <span class="n">size_geom_ids</span><span class="o">=</span><span class="n">size_ids</span><span class="p">,</span>
         <span class="n">gain_actuator_ids</span><span class="o">=</span><span class="n">gain_ids</span><span class="p">,</span>
         <span class="n">default_mass</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">default_body_mass</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)[</span><span class="n">mass_link_ids</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
         <span class="n">default_ipos</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">default_body_ipos</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)[</span><span class="n">mass_link_ids</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
         <span class="n">default_friction</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">default_geom_friction</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)[</span><span class="n">friction_ids</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
+        <span class="n">default_size</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">default_geom_size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)[</span><span class="n">size_ids</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
+        <span class="n">size_required</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">geom_size_required</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)[</span><span class="n">size_ids</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
         <span class="n">default_kp</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">default_actuator_kp</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)[</span><span class="n">gain_ids</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
         <span class="n">default_kd</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">default_actuator_kd</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)[</span><span class="n">gain_ids</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
     <span class="p">)</span></div>
@@ -722,6 +737,8 @@
     <span class="n">default_body_ipos_rows</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
     <span class="n">default_geom_friction</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
     <span class="n">friction_override_ids</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+    <span class="n">default_geom_size</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">geom_size_override_ids</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
     <span class="n">supports_position_actuator_gains</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
     <span class="n">coerce_field</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -812,6 +829,39 @@
     <span class="k">elif</span> <span class="n">friction_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Motrix geom friction override is not available&quot;</span><span class="p">)</span>
 
+    <span class="n">size_field</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;geom_size&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">FIELD_SIZE</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">size_field</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">views</span><span class="p">[</span><span class="n">FIELD_SIZE</span><span class="p">][</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="n">rwp</span><span class="o">.</span><span class="n">default_size</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">geom_size</span> <span class="o">=</span> <span class="n">coerce_field</span><span class="p">(</span>
+                <span class="n">size_field</span><span class="p">,</span>
+                <span class="n">name</span><span class="o">=</span><span class="s2">&quot;geom_size&quot;</span><span class="p">,</span>
+                <span class="n">num_reset</span><span class="o">=</span><span class="n">num_reset</span><span class="p">,</span>
+                <span class="n">shaped_tail</span><span class="o">=</span><span class="p">(</span><span class="n">num_geoms</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">geom_size</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;geom_size must contain only finite values&quot;</span><span class="p">)</span>
+            <span class="n">override_ids</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">geom_id</span><span class="p">)</span> <span class="k">for</span> <span class="n">geom_id</span> <span class="ow">in</span> <span class="n">geom_size_override_ids</span><span class="p">)</span>
+            <span class="n">unsupported_ids</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">num_geoms</span><span class="p">))</span> <span class="o">-</span> <span class="n">override_ids</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">unsupported_ids</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span>
+                <span class="n">geom_size</span><span class="p">[:,</span> <span class="n">unsupported_ids</span><span class="p">,</span> <span class="p">:],</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">default_geom_size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)[</span><span class="n">unsupported_ids</span><span class="p">,</span> <span class="p">:][</span><span class="kc">None</span><span class="p">],</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;Motrix geom size override only supports primitive geoms; &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;unsupported geom ids were modified: </span><span class="si">{</span><span class="n">unsupported_ids</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="n">selected</span> <span class="o">=</span> <span class="n">geom_size</span><span class="p">[:,</span> <span class="n">rwp</span><span class="o">.</span><span class="n">size_geom_ids</span><span class="p">,</span> <span class="p">:]</span>
+            <span class="n">required</span> <span class="o">=</span> <span class="n">rwp</span><span class="o">.</span><span class="n">size_required</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">selected</span><span class="p">[:,</span> <span class="n">required</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;geom_size required components must be positive&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">selected</span><span class="p">[:,</span> <span class="o">~</span><span class="n">required</span><span class="p">]</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;geom_size unused components must stay zero&quot;</span><span class="p">)</span>
+            <span class="n">views</span><span class="p">[</span><span class="n">FIELD_SIZE</span><span class="p">][</span><span class="n">env_ids</span><span class="p">]</span> <span class="o">=</span> <span class="n">selected</span>
+    <span class="k">elif</span> <span class="n">size_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Motrix geom size override is not available&quot;</span><span class="p">)</span>
+
     <span class="k">for</span> <span class="n">field_name</span><span class="p">,</span> <span class="n">term</span> <span class="ow">in</span> <span class="p">((</span><span class="n">FIELD_KP</span><span class="p">,</span> <span class="s2">&quot;kp&quot;</span><span class="p">),</span> <span class="p">(</span><span class="n">FIELD_KD</span><span class="p">,</span> <span class="s2">&quot;kd&quot;</span><span class="p">)):</span>
         <span class="n">field_values</span> <span class="o">=</span> <span class="n">randomization</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">term</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">field_name</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
@@ -866,7 +916,7 @@
       
     </aside>
   </div>
-</div><script src="../../../../_static/documentation_options.js?v=b4c33f6f"></script>
+</div><script src="../../../../_static/documentation_options.js?v=cf6e66ff"></script>
     <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
     <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../../_static/scripts/furo.js?v=46bd48cc"></script>
