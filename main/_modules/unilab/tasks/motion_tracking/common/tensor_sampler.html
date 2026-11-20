@@ -640,7 +640,7 @@
 <div class="viewcode-block" id="MotionSampler">
 <a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.tensor_sampler.MotionSampler.html#unilab.tasks.motion_tracking.common.tensor_sampler.MotionSampler">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">MotionSampler</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Torch-native adaptive/mixed motion sampler for ``MotionCommand``.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Torch-native start/uniform/adaptive/mixed motion sampler for ``MotionCommand``.&quot;&quot;&quot;</span>
 
 <div class="viewcode-block" id="MotionSampler.__init__">
 <a class="viewcode-back" href="../../../../../api_reference/tasks/_autosummary/unilab.tasks.motion_tracking.common.tensor_sampler.MotionSampler.html#unilab.tasks.motion_tracking.common.tensor_sampler.MotionSampler.__init__">[docs]</a>
@@ -662,9 +662,9 @@
         <span class="n">initial_clip_end_frames</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">mode</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;adaptive&quot;</span><span class="p">,</span> <span class="s2">&quot;mixed&quot;</span><span class="p">}:</span>
+        <span class="k">if</span> <span class="n">mode</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;start&quot;</span><span class="p">,</span> <span class="s2">&quot;uniform&quot;</span><span class="p">,</span> <span class="s2">&quot;adaptive&quot;</span><span class="p">,</span> <span class="s2">&quot;mixed&quot;</span><span class="p">}:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;MotionSampler supports adaptive/mixed modes only, got </span><span class="si">{</span><span class="n">mode</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;MotionSampler supports start/uniform/adaptive/mixed modes only, got </span><span class="si">{</span><span class="n">mode</span><span class="si">!r}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">num_envs</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">num_frames</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">bin_count</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;MotionSampler dimensions must be positive&quot;</span><span class="p">)</span>
@@ -810,7 +810,26 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">diagnostics</span><span class="o">.</span><span class="n">record_reset_dispatch</span><span class="p">()</span>
         <span class="n">frames</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
         <span class="n">probabilities</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;adaptive&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;start&quot;</span><span class="p">:</span>
+            <span class="c1"># Deterministic clip start (mjlab ``sampling_mode=&quot;start&quot;``): every</span>
+            <span class="c1"># reset row restarts from frame 0. No RNG is consumed.</span>
+            <span class="n">frames</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_frames</span>
+            <span class="n">frames</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_publish_start_metrics</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;uniform&quot;</span><span class="p">:</span>
+            <span class="c1"># Uniform frame sampling (mjlab ``sampling_mode=&quot;uniform&quot;``): every</span>
+            <span class="c1"># reset row draws an independent uniform frame index.</span>
+            <span class="n">frames</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_frames</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span>
+                <span class="mi">0</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">num_frames</span><span class="p">,</span>
+                <span class="n">frames</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span>
+                <span class="n">out</span><span class="o">=</span><span class="n">frames</span><span class="p">,</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span>
+                <span class="n">generator</span><span class="o">=</span><span class="n">torch_rng</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_publish_uniform_metrics</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;adaptive&quot;</span><span class="p">:</span>
             <span class="n">probabilities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_adaptive_probabilities</span><span class="p">()</span>
             <span class="n">offsets</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_random_offsets</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span>
@@ -992,6 +1011,19 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_prob</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">amax</span><span class="p">(</span><span class="n">probabilities</span><span class="p">))</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_bin</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">top1_index</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_bin</span><span class="o">.</span><span class="n">div_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_publish_start_metrics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Deterministic restarts always land on frame 0: zero entropy, all mass</span>
+        <span class="c1"># on the first bin.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_entropy</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_prob</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_bin</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_publish_uniform_metrics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Uniform sampling has maximum normalized entropy and a flat bin mass.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_entropy</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_prob</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sampling_top1_bin</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_publish_mixed_metrics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">start_mass</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_ratio</span> <span class="o">+</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_ratio</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_count</span>

@@ -2049,6 +2049,7 @@
 
         <span class="n">verdicts</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="p">]</span>
         <span class="n">managers</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">manager_names</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span>
             <span class="s2">&quot;action_manager&quot;</span><span class="p">,</span>
             <span class="s2">&quot;reward_manager&quot;</span><span class="p">,</span>
@@ -2061,6 +2062,7 @@
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">verdict</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
                 <span class="n">verdicts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">verdict</span><span class="p">)</span>
                 <span class="n">managers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">manager</span><span class="p">)</span>
+                <span class="n">manager_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
 
         <span class="n">guard</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_guard</span>
         <span class="n">guard_bad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
@@ -2094,6 +2096,11 @@
             <span class="n">named</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
         <span class="n">base_valid</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_finite_verdict</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">failed_managers</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">name</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">manager</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">manager_names</span><span class="p">,</span> <span class="n">managers</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">manager</span><span class="o">.</span><span class="n">finite_verdict</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+        <span class="p">]</span>
         <span class="k">if</span> <span class="n">guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">guard_bad</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">nan_ids</span> <span class="o">=</span> <span class="n">guard</span><span class="o">.</span><span class="n">poll</span><span class="p">(</span><span class="n">step</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">step_counter</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">nan_ids</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -2109,7 +2116,14 @@
                 <span class="n">handled_nonfatal</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="k">if</span> <span class="n">handled_nonfatal</span> <span class="ow">and</span> <span class="n">base_valid</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">True</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;TorchEnv deferred finite validation detected NaN or Inf&quot;</span><span class="p">)</span></div>
+        <span class="n">sources</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">base_valid</span><span class="p">:</span>
+            <span class="n">sources</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="s2">&quot;env-internal finite checks (observations, reward, actions, control, reset)&quot;</span>
+            <span class="p">)</span>
+        <span class="n">sources</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.finite_verdict&quot;</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">failed_managers</span><span class="p">)</span>
+        <span class="n">detail</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;: </span><span class="si">{</span><span class="s1">&#39;; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">sources</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">sources</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TorchEnv deferred finite validation detected NaN or Inf</span><span class="si">{</span><span class="n">detail</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_named_verdict_sets</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">DeviceVerdicts</span><span class="p">]:</span>
