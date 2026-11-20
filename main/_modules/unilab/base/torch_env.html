@@ -618,10 +618,10 @@
 
 <span class="sd">    Terminal pre-reset observations are represented only by</span>
 <span class="sd">    ``final_observation``; ``info`` never carries duplicate</span>
-<span class="sd">    terminal-observation entries. ``carriers`` holds task-registered custom</span>
-<span class="sd">    step-output tensors (see ``TorchEnv.register_step_carrier``); like</span>
-<span class="sd">    ``obs``/``reward``, the published state&#39;s entries are zero-copy views</span>
-<span class="sd">    into persistent ring storage.</span>
+<span class="sd">    terminal-observation entries. Public ``obs``, ``reward``, ``terminated``</span>
+<span class="sd">    and ``truncated`` outputs are fresh, caller-owned tensors that later steps</span>
+<span class="sd">    do not mutate. ``info`` and ``final_observation`` retain their separate</span>
+<span class="sd">    shared/scratch lifetimes.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">obs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
@@ -630,7 +630,6 @@
     <span class="n">truncated</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
     <span class="n">info</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
     <span class="n">final_observation</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">carriers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
 
 <div class="viewcode-block" id="TorchEnvState.replace">
 <a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.torch_env.TorchEnvState.html#unilab.base.torch_env.TorchEnvState.replace">[docs]</a>
@@ -647,12 +646,7 @@
 <span class="c1"># synchronous host-bridge producers publish none.</span>
 <span class="n">_EVENT_BACKED_STEP_RECEIPT_BACKENDS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">&quot;genesis&quot;</span><span class="p">,</span> <span class="s2">&quot;mjwarp&quot;</span><span class="p">})</span>
 
-<span class="c1"># Internal fixed-shape step tuning constants (not user configuration; see</span>
-<span class="c1"># ``TorchEnv._configure_fixed_shape_step``). The publication ring depth serves</span>
-<span class="c1"># the off-policy double-buffer contract (a published obs_t stays stable while</span>
-<span class="c1"># the next step writes obs_tp1); the warmup gives lazily allocated buffers</span>
-<span class="c1"># eager executions before the CUDA graph capture.</span>
-<span class="n">_PUBLISHED_BUFFER_DEPTH</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="c1"># Give lazily allocated buffers eager executions before CUDA graph capture.</span>
 <span class="n">_AUTORESET_GRAPH_WARMUP</span> <span class="o">=</span> <span class="mi">2</span>
 
 
@@ -676,7 +670,7 @@
     <span class="n">_reset_selection</span><span class="p">:</span> <span class="n">ResetSelection</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">_active_graph_capture</span><span class="p">:</span> <span class="n">ExternalGraphCapture</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">_autoreset_graph</span><span class="p">:</span> <span class="n">AutoresetGraph</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">_published_state</span><span class="p">:</span> <span class="n">TorchEnvState</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_working_state</span><span class="p">:</span> <span class="n">TorchEnvState</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
 <div class="viewcode-block" id="TorchEnv.__init__">
 <a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.base.torch_env.TorchEnv.__init__">[docs]</a>
@@ -751,26 +745,24 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_configure_fixed_shape_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cfg</span><span class="p">:</span> <span class="n">EnvCfg</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve the sync-free / graph-capturable step switch.</span>
 
-<span class="sd">        ``autoreset_cuda_graph`` is the single public switch (default ``true``</span>
-<span class="sd">        on the public ``ManagerBasedRlEnvCfg``). Enabling it</span>
-<span class="sd">        implies the whole fixed-shape chain: ``masked_autoreset`` (the</span>
-<span class="sd">        autoreset runs every step as a fixed-shape ``reset(ResetSelection)``</span>
-<span class="sd">        under the device done mask — no ``any()`` gate, no ``nonzero``),</span>
-<span class="sd">        ``persistent_step_buffers`` (the working step carriers — observations,</span>
-<span class="sd">        reward, terminated, truncated — are allocated once, updated with</span>
-<span class="sd">        ``copy_``, and published through a ring of persistent slots), and</span>
-<span class="sd">        deferred finite validation (fail-closed checks publish at the poll</span>
-<span class="sd">        boundary). On CUDA the masked autoreset segment is captured into one</span>
-<span class="sd">        CUDA graph after ``_AUTORESET_GRAPH_WARMUP`` eager executions and</span>
-<span class="sd">        replayed afterwards; this requires a backend declaring</span>
-<span class="sd">        ``external_graph_capture``.</span>
+<span class="sd">        ``autoreset_cuda_graph`` is the single public switch (default ``false``</span>
+<span class="sd">        on the public ``ManagerBasedRlEnvCfg``). Enabling it implies the whole</span>
+<span class="sd">        fixed-shape chain: ``masked_autoreset`` (the autoreset runs every step</span>
+<span class="sd">        as a fixed-shape ``reset(ResetSelection)`` under the device done mask —</span>
+<span class="sd">        no ``any()`` gate, no ``nonzero``), ``persistent_step_buffers`` (the</span>
+<span class="sd">        internal working step carriers are allocated once and updated with</span>
+<span class="sd">        ``copy_``), and deferred finite validation (fail-closed checks publish</span>
+<span class="sd">        at the poll boundary). On CUDA the masked autoreset segment is captured</span>
+<span class="sd">        into one CUDA graph after ``_AUTORESET_GRAPH_WARMUP`` eager executions</span>
+<span class="sd">        and replayed afterwards; this requires a backend declaring</span>
+<span class="sd">        ``external_graph_capture``. Public step outputs are cloned from the</span>
+<span class="sd">        working carriers after the graph boundary and remain caller-owned.</span>
 
 <span class="sd">        The intermediate chain values are no longer public configuration.</span>
 <span class="sd">        They are still read here through a soft ``getattr`` protocol so tests</span>
 <span class="sd">        can inject a middle state (masked autoreset without graph capture or</span>
-<span class="sd">        ring depth ``0`` / warmup ``1``) by setting attributes on their own</span>
-<span class="sd">        stub configs; the Hydra materialization path fails closed on these</span>
-<span class="sd">        undeclared keys.</span>
+<span class="sd">        warmup ``1``) by setting attributes on their own stub configs; the</span>
+<span class="sd">        Hydra materialization path fails closed on these undeclared keys.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">flag</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
@@ -791,9 +783,6 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_cuda_graph</span> <span class="ow">or</span> <span class="n">flag</span><span class="p">(</span><span class="s2">&quot;masked_autoreset&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_step_buffers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_cuda_graph</span> <span class="ow">or</span> <span class="n">flag</span><span class="p">(</span>
             <span class="s2">&quot;persistent_step_buffers&quot;</span>
-        <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_published_buffer_depth</span> <span class="o">=</span> <span class="n">bounded_int</span><span class="p">(</span>
-            <span class="s2">&quot;published_buffer_depth&quot;</span><span class="p">,</span> <span class="n">_PUBLISHED_BUFFER_DEPTH</span><span class="p">,</span> <span class="mi">0</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph_warmup</span> <span class="o">=</span> <span class="n">bounded_int</span><span class="p">(</span>
             <span class="s2">&quot;autoreset_graph_warmup&quot;</span><span class="p">,</span> <span class="n">_AUTORESET_GRAPH_WARMUP</span><span class="p">,</span> <span class="mi">1</span>
@@ -822,13 +811,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_step_counter_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_active_graph_capture</span><span class="p">:</span> <span class="n">ExternalGraphCapture</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph</span><span class="p">:</span> <span class="n">AutoresetGraph</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_publication_ring</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">TorchEnvState</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_publication_cursor</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span><span class="p">:</span> <span class="n">TorchEnvState</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="c1"># Task-owned custom step-output carriers (issue #2628), published</span>
-        <span class="c1"># through the same ring as obs/reward/done. Registration closes at</span>
-        <span class="c1"># the first publish; the mapping then backs ``TorchEnvState.carriers``.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_step_carriers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_working_state</span><span class="p">:</span> <span class="n">TorchEnvState</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">device</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
@@ -888,16 +871,7 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">TorchEnvState</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;The latest published transition.</span>
-
-<span class="sd">        With ``persistent_step_buffers`` this is a publication slot whose</span>
-<span class="sd">        tensors — observations, reward, terminated, truncated and the</span>
-<span class="sd">        registered custom ``carriers`` — stay unchanged for</span>
-<span class="sd">        ``published_buffer_depth - 1`` further steps (or, at depth 0, the</span>
-<span class="sd">        working carriers that the next step overwrites in place).</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The latest transition with fresh, caller-owned public step outputs.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span>
 
     <span class="nd">@property</span>
@@ -947,68 +921,6 @@
             <span class="n">transition</span><span class="p">()</span>
             <span class="k">return</span>
         <span class="n">capture</span><span class="o">.</span><span class="n">record_host_transition</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;env.</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">transition</span><span class="p">)</span></div>
-
-
-<div class="viewcode-block" id="TorchEnv.register_step_carrier">
-<a class="viewcode-back" href="../../../api_reference/base/index.html#unilab.base.torch_env.TorchEnv.register_step_carrier">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">register_step_carrier</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">carrier</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register a task-owned tensor as a persistent step-output carrier.</span>
-
-<span class="sd">        The carrier is a device tensor the task updates in place during</span>
-<span class="sd">        ``update_state`` — for example a transition snapshot or a custom</span>
-<span class="sd">        per-step metric tensor. With ``persistent_step_buffers`` (implied by</span>
-<span class="sd">        ``autoreset_cuda_graph``) the env copies it, with ``copy_``, into the</span>
-<span class="sd">        current publication-ring slot at every step boundary, so consumers of</span>
-<span class="sd">        the published state can hold the slot&#39;s tensor for</span>
-<span class="sd">        ``published_buffer_depth`` further steps without a defensive clone.</span>
-<span class="sd">        Ring slots are pre-allocated with ``torch.empty_like``, so every</span>
-<span class="sd">        address is fixed after the first publish — the address-stability</span>
-<span class="sd">        precondition for capturing the step-output publication in a CUDA</span>
-<span class="sd">        graph (issue #2628). Consumers read the published values through</span>
-<span class="sd">        ``TorchEnvState.carriers``.</span>
-
-<span class="sd">        Registration is a cold-path call. It must happen before the first</span>
-<span class="sd">        ``reset``/``step`` (which allocates the publication ring), and it</span>
-<span class="sd">        requires the fixed-shape chain. Fails closed on a duplicate or empty</span>
-<span class="sd">        name, a non-tensor carrier, a carrier that is not on the env device,</span>
-<span class="sd">        a carrier registered after the first publish, or when persistent</span>
-<span class="sd">        step buffers are disabled.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            name: Unique non-empty name under which the carrier is published</span>
-<span class="sd">                in ``TorchEnvState.carriers``.</span>
-<span class="sd">            carrier: Tensor on the env device. The task keeps ownership and</span>
-<span class="sd">                updates it in place; dtype and shape are captured by the</span>
-<span class="sd">                ring slots with ``torch.empty_like``.</span>
-
-<span class="sd">        Raises:</span>
-<span class="sd">            RuntimeError: If the publication ring is already allocated (the</span>
-<span class="sd">                first ``reset``/``step`` has run).</span>
-<span class="sd">            ValueError: On an empty or duplicate name, a carrier on the wrong</span>
-<span class="sd">                device, or when persistent step buffers are disabled.</span>
-<span class="sd">            TypeError: If ``carrier`` is not a ``torch.Tensor``.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;register_step_carrier must be called before the first reset: &quot;</span>
-                <span class="s2">&quot;the publication ring is already allocated&quot;</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_step_buffers</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;register_step_carrier requires persistent step buffers &quot;</span>
-                <span class="s2">&quot;(enable env.autoreset_cuda_graph)&quot;</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">name</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step carrier name must be a non-empty string, got </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_carriers</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step carrier </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> is already registered&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">carrier</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step carrier </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> must be a torch.Tensor&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">carrier</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;step carrier </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> must be on </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">carrier</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_step_carriers</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">carrier</span></div>
 
 
 <div class="viewcode-block" id="TorchEnv.reset_selection_blockers">
@@ -1066,7 +978,6 @@
             <span class="n">terminated</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">),</span>
             <span class="n">truncated</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_device</span><span class="p">),</span>
             <span class="n">info</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="n">initial_steps</span><span class="p">},</span>
-            <span class="n">carriers</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_step_carriers</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_initial_episode_steps</span> <span class="o">=</span> <span class="n">initial_steps</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_masked_autoreset</span><span class="p">:</span>
@@ -1084,7 +995,6 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_cuda_graph</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_graph</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_autoreset_graph</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_step_buffers</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_allocate_publication_ring</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_publish_step_state</span><span class="p">()</span>
         <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span>
         <span class="k">assert</span> <span class="n">state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -1122,8 +1032,19 @@
 <span class="sd">                ``(num_envs, *action_space.shape)`` on the env device.</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            The updated ``TorchEnvState``.</span>
+<span class="sd">            The updated ``TorchEnvState``. Its ``obs``, ``reward``,</span>
+<span class="sd">            ``terminated`` and ``truncated`` tensors are fresh and caller-owned;</span>
+<span class="sd">            later steps do not mutate them.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">previous_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">previous_state</span>
+            <span class="k">raise</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">actions</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TorchEnvState</span><span class="p">:</span>
         <span class="n">timer</span> <span class="o">=</span> <span class="n">PhaseTimer</span><span class="p">()</span>
         <span class="k">with</span> <span class="n">timer</span><span class="o">.</span><span class="n">phase</span><span class="p">(</span><span class="s2">&quot;action_validate&quot;</span><span class="p">,</span> <span class="n">cpu</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_validate_action_contract</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>
@@ -1131,6 +1052,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_bind_tensor_runtime</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">init_state</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_activate_working_state</span><span class="p">()</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
 
         <span class="k">with</span> <span class="n">timer</span><span class="o">.</span><span class="n">phase</span><span class="p">(</span><span class="s2">&quot;apply_action&quot;</span><span class="p">):</span>
@@ -1234,8 +1156,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_publish_step_state</span><span class="p">()</span>
         <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span>
         <span class="k">assert</span> <span class="n">state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="k">return</span> <span class="n">state</span></div>
-
+        <span class="k">return</span> <span class="n">state</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">requires_substep_state_feedback</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
@@ -1682,44 +1603,41 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;CUDA generators consumed by the autoreset segment (besides the default).&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="p">[]</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_allocate_publication_ring</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_publication_ring</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_published_buffer_depth</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_activate_working_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">copy_outputs</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Select mutable state before a step or caller-driven reset.</span>
+
+<span class="sd">        This is a protected protocol for the Manager-Based owner. Fixed-address</span>
+<span class="sd">        working storage is never exposed as the latest public state. Eager steps</span>
+<span class="sd">        copy only the truncated carrier that the base lifecycle clears in place;</span>
+<span class="sd">        caller-driven resets request copies of every output they may mutate.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_persistent_step_buffers</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_working_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_working_state</span>
             <span class="k">return</span>
         <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_publication_ring</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">TorchEnvState</span><span class="p">(</span>
-                <span class="n">obs</span><span class="o">=</span><span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">items</span><span class="p">()},</span>
-                <span class="n">reward</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">reward</span><span class="p">),</span>
-                <span class="n">terminated</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">terminated</span><span class="p">),</span>
-                <span class="n">truncated</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">truncated</span><span class="p">),</span>
-                <span class="n">info</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">,</span>
-                <span class="n">carriers</span><span class="o">=</span><span class="p">{</span>
-                    <span class="n">name</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_carriers</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-                <span class="p">},</span>
-            <span class="p">)</span>
-            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_published_buffer_depth</span><span class="p">)</span>
-        <span class="p">]</span>
+        <span class="k">if</span> <span class="n">state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
+            <span class="n">obs</span><span class="o">=</span><span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+            <span class="k">if</span> <span class="n">copy_outputs</span>
+            <span class="k">else</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="p">,</span>
+            <span class="n">reward</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">reward</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span> <span class="k">if</span> <span class="n">copy_outputs</span> <span class="k">else</span> <span class="n">state</span><span class="o">.</span><span class="n">reward</span><span class="p">,</span>
+            <span class="n">terminated</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">terminated</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span> <span class="k">if</span> <span class="n">copy_outputs</span> <span class="k">else</span> <span class="n">state</span><span class="o">.</span><span class="n">terminated</span><span class="p">,</span>
+            <span class="n">truncated</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">truncated</span><span class="o">.</span><span class="n">clone</span><span class="p">(),</span>
+        <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_publish_step_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish the working carriers into the next persistent ring slot.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish fresh public outputs while retaining internal working storage.&quot;&quot;&quot;</span>
         <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span>
         <span class="k">assert</span> <span class="n">state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_published_buffer_depth</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span> <span class="o">=</span> <span class="n">state</span>
-            <span class="k">return</span>
-        <span class="n">slot</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_publication_ring</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_publication_cursor</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_publication_cursor</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_publication_cursor</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_published_buffer_depth</span>
-        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">slot</span><span class="o">.</span><span class="n">obs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
-        <span class="n">slot</span><span class="o">.</span><span class="n">reward</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">reward</span><span class="p">)</span>
-        <span class="n">slot</span><span class="o">.</span><span class="n">terminated</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">terminated</span><span class="p">)</span>
-        <span class="n">slot</span><span class="o">.</span><span class="n">truncated</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">truncated</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">carriers</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">slot</span><span class="o">.</span><span class="n">carriers</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
-        <span class="n">slot</span><span class="o">.</span><span class="n">info</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">info</span>
-        <span class="n">slot</span><span class="o">.</span><span class="n">final_observation</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">final_observation</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_published_state</span> <span class="o">=</span> <span class="n">slot</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_working_state</span> <span class="o">=</span> <span class="n">state</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
+            <span class="n">obs</span><span class="o">=</span><span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="o">.</span><span class="n">items</span><span class="p">()},</span>
+            <span class="n">reward</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">reward</span><span class="o">.</span><span class="n">clone</span><span class="p">(),</span>
+            <span class="n">terminated</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">terminated</span><span class="o">.</span><span class="n">clone</span><span class="p">(),</span>
+            <span class="n">truncated</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">truncated</span><span class="o">.</span><span class="n">clone</span><span class="p">(),</span>
+        <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_validate_reset_observation_mask</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obs</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">(</span><span class="n">obs</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">obs_groups_spec</span><span class="p">):</span>

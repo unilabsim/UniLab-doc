@@ -712,31 +712,31 @@
     <span class="c1"># fixed-shape chain publishes its fail-closed checks at the poll boundary.</span>
     <span class="n">finite_validation_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;deferred&quot;</span>
     <span class="c1"># Single public switch for the fixed-shape, host-sync-free autoreset fast</span>
-    <span class="c1"># path, on by default (issue #2621). ``true`` implies the whole chain: the</span>
+    <span class="c1"># path, off by default. ``true`` implies the whole chain: the</span>
     <span class="c1"># autoreset runs on every step as a full-width ``reset(ResetSelection)``</span>
-    <span class="c1"># under the device done mask (no ``any()`` gate, no ``nonzero``), the step</span>
-    <span class="c1"># carriers are persistent and published through a ring of fixed slots, and</span>
-    <span class="c1"># fail-closed finite checks are deferred to the poll boundary. On CUDA the</span>
-    <span class="c1"># masked autoreset segment is additionally captured into one CUDA graph and</span>
-    <span class="c1"># replayed afterwards. Every reset participant must accept a</span>
-    <span class="c1"># ``ResetSelection`` (see unilab.base.reset_selection); the env reports</span>
-    <span class="c1"># unsupported participants by name at init_state. The reset lifecycle</span>
-    <span class="c1"># runs on every step (an all-false mask is a no-op), so full-width reset</span>
-    <span class="c1"># samplers also draw RNG on steps without a done row and same-seed</span>
-    <span class="c1"># trajectories differ from the selected-row lifecycle;</span>
-    <span class="c1"># ``final_observation`` is published every step and is meaningful on done</span>
-    <span class="c1"># rows only. The intermediate chain switches (``masked_autoreset`` and</span>
-    <span class="c1"># ``persistent_step_buffers``) are internal, derived from this one; the</span>
-    <span class="c1"># publication ring depth and the graph warmup are owned as constants by</span>
+    <span class="c1"># under the device done mask (no ``any()`` gate, no ``nonzero``), internal</span>
+    <span class="c1"># working/reset carriers have fixed addresses, and fail-closed finite</span>
+    <span class="c1"># checks are deferred to the poll boundary. On CUDA the masked autoreset</span>
+    <span class="c1"># segment is additionally captured into one CUDA graph and replayed</span>
+    <span class="c1"># afterwards. Public obs/reward/done outputs are freshly published outside</span>
+    <span class="c1"># that segment and remain caller-owned across later steps. Every reset</span>
+    <span class="c1"># participant must accept a ``ResetSelection`` (see</span>
+    <span class="c1"># unilab.base.reset_selection); the env reports unsupported participants by</span>
+    <span class="c1"># name at init_state. The reset lifecycle runs on every step (an all-false</span>
+    <span class="c1"># mask is a no-op), so full-width reset samplers also draw RNG on steps</span>
+    <span class="c1"># without a done row and same-seed trajectories differ from the</span>
+    <span class="c1"># selected-row lifecycle; ``final_observation`` is published every step and</span>
+    <span class="c1"># is meaningful on done rows only. The intermediate chain switches</span>
+    <span class="c1"># (``masked_autoreset`` and ``persistent_step_buffers``) are internal,</span>
+    <span class="c1"># derived from this one; the graph warmup is owned as a constant by</span>
     <span class="c1"># ``TorchEnv``; deferred finite validation comes from</span>
     <span class="c1"># ``finite_validation_mode=&#39;deferred&#39;`` (required, validated below).</span>
     <span class="c1">#</span>
     <span class="c1"># Unsupported combinations fail closed at startup instead of silently</span>
     <span class="c1"># falling back to eager: a non-CUDA env device, or a backend without the</span>
     <span class="c1"># ``external_graph_capture`` capability. Set the switch explicitly to</span>
-    <span class="c1"># ``false`` to opt out — the escape hatch for debugging or for falling</span>
-    <span class="c1"># back when a graph-related problem is suspected.</span>
-    <span class="n">autoreset_cuda_graph</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="c1"># ``true`` to opt in; the default ``false`` keeps the eager path.</span>
+    <span class="n">autoreset_cuda_graph</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">autoreset_graph_capture_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;thread_local&quot;</span>
 
 <div class="viewcode-block" id="ManagerBasedRlEnvCfg.validate">
@@ -1986,8 +1986,8 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">persistent_step_buffers</span><span class="p">:</span>
             <span class="c1"># The working observation carriers are the env&#39;s persistent</span>
             <span class="c1"># ``obs_buf``: update_state and the masked reset write them in place.</span>
-            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">obs_buf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">obs</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_working_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">obs_buf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_working_state</span><span class="o">.</span><span class="n">obs</span>
         <span class="k">return</span> <span class="n">state</span></div>
 
 
@@ -2337,13 +2337,15 @@
         <span class="bp">self</span><span class="p">,</span> <span class="n">mapped_obs</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish fresh step outputs without aliasing mutable manager carriers.&quot;&quot;&quot;</span>
-        <span class="n">eager_obs</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="n">name</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_manager_tensor</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_dtype</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">mapped_obs</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-        <span class="p">}</span>
+        <span class="n">eager_obs</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">mapped_obs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">published</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_manager_tensor</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_dtype</span><span class="p">)</span>
+            <span class="n">eager_obs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">published</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span> <span class="k">if</span> <span class="n">published</span> <span class="ow">is</span> <span class="n">values</span> <span class="k">else</span> <span class="n">published</span>
         <span class="n">eager_reward</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_manager_tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reward_buf</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_dtype</span><span class="p">)</span>
         <span class="n">eager_terminated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_manager_tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_terminated</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
         <span class="n">eager_truncated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_manager_tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reset_time_outs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">eager_reward</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">reward_buf</span><span class="p">:</span>
+            <span class="n">eager_reward</span> <span class="o">=</span> <span class="n">eager_reward</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">eager_terminated</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset_terminated</span><span class="p">:</span>
             <span class="n">eager_terminated</span> <span class="o">=</span> <span class="n">eager_terminated</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">eager_truncated</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset_time_outs</span><span class="p">:</span>
@@ -2397,11 +2399,26 @@
 <span class="sd">        persistent device mask) when every participant supports it; the</span>
 <span class="sd">        masked autoreset uses this form.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">previous_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">previous_state</span>
+            <span class="k">raise</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_reset</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">env_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="n">ResetSelection</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
         <span class="k">if</span> <span class="n">seed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">init_state</span><span class="p">()</span>
             <span class="k">return</span> <span class="n">state</span><span class="o">.</span><span class="n">obs</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;log&quot;</span><span class="p">:</span> <span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;log&quot;</span><span class="p">,</span> <span class="p">{})}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_activate_working_state</span><span class="p">(</span><span class="n">copy_outputs</span><span class="o">=</span><span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_reset_active</span><span class="p">)</span>
         <span class="n">selection</span> <span class="o">=</span> <span class="n">env_ids</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_ids</span><span class="p">,</span> <span class="n">ResetSelection</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="n">selection</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">selection</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_selection</span><span class="p">:</span>
@@ -2565,13 +2582,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">extras</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">info</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">recorder_manager</span><span class="o">.</span><span class="n">record_post_reset</span><span class="p">(</span><span class="n">env_ids</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">persistent_step_buffers</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autoreset_reset_active</span><span class="p">:</span>
-            <span class="c1"># A caller-driven reset is its own publication boundary.</span>
+            <span class="c1"># A caller-driven reset is its own fresh-publication boundary.</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_publish_step_state</span><span class="p">()</span>
-            <span class="n">published</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span>
-            <span class="k">assert</span> <span class="n">published</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="k">return</span> <span class="n">published</span><span class="o">.</span><span class="n">obs</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;log&quot;</span><span class="p">:</span> <span class="n">log</span><span class="p">}</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">obs</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;log&quot;</span><span class="p">:</span> <span class="n">log</span><span class="p">}</span></div>
-
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">obs</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;log&quot;</span><span class="p">:</span> <span class="n">log</span><span class="p">}</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_map_observations</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>

@@ -569,12 +569,7 @@ publishing whatever receipt the backend returns.</p>
 <dl class="py property">
 <dt class="sig sig-object py" id="unilab.base.torch_env.TorchEnv.state">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">state</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="_autosummary/unilab.base.torch_env.TorchEnvState.html#unilab.base.torch_env.TorchEnvState" title="unilab.base.torch_env.TorchEnvState"><span class="pre">TorchEnvState</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></em><a class="headerlink" href="#unilab.base.torch_env.TorchEnv.state" title="Link to this definition">¶</a></dt>
-<dd><p>The latest published transition.</p>
-<p>With <code class="docutils literal notranslate"><span class="pre">persistent_step_buffers</span></code> this is a publication slot whose
-tensors — observations, reward, terminated, truncated and the
-registered custom <code class="docutils literal notranslate"><span class="pre">carriers</span></code> — stay unchanged for
-<code class="docutils literal notranslate"><span class="pre">published_buffer_depth</span> <span class="pre">-</span> <span class="pre">1</span></code> further steps (or, at depth 0, the
-working carriers that the next step overwrites in place).</p>
+<dd><p>The latest transition with fresh, caller-owned public step outputs.</p>
 </dd></dl>
 
 <dl class="py property">
@@ -635,53 +630,6 @@ runs <code class="docutils literal notranslate"><span class="pre">transition</sp
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
 <dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="unilab.base.torch_env.TorchEnv.register_step_carrier">
-<span class="sig-name descname"><span class="pre">register_step_carrier</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">carrier</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/unilab/base/torch_env.html#TorchEnv.register_step_carrier"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#unilab.base.torch_env.TorchEnv.register_step_carrier" title="Link to this definition">¶</a></dt>
-<dd><p>Register a task-owned tensor as a persistent step-output carrier.</p>
-<p>The carrier is a device tensor the task updates in place during
-<code class="docutils literal notranslate"><span class="pre">update_state</span></code> — for example a transition snapshot or a custom
-per-step metric tensor. With <code class="docutils literal notranslate"><span class="pre">persistent_step_buffers</span></code> (implied by
-<code class="docutils literal notranslate"><span class="pre">autoreset_cuda_graph</span></code>) the env copies it, with <code class="docutils literal notranslate"><span class="pre">copy_</span></code>, into the
-current publication-ring slot at every step boundary, so consumers of
-the published state can hold the slot’s tensor for
-<code class="docutils literal notranslate"><span class="pre">published_buffer_depth</span></code> further steps without a defensive clone.
-Ring slots are pre-allocated with <code class="docutils literal notranslate"><span class="pre">torch.empty_like</span></code>, so every
-address is fixed after the first publish — the address-stability
-precondition for capturing the step-output publication in a CUDA
-graph (issue #2628). Consumers read the published values through
-<code class="docutils literal notranslate"><span class="pre">TorchEnvState.carriers</span></code>.</p>
-<p>Registration is a cold-path call. It must happen before the first
-<code class="docutils literal notranslate"><span class="pre">reset</span></code>/<code class="docutils literal notranslate"><span class="pre">step</span></code> (which allocates the publication ring), and it
-requires the fixed-shape chain. Fails closed on a duplicate or empty
-name, a non-tensor carrier, a carrier that is not on the env device,
-a carrier registered after the first publish, or when persistent
-step buffers are disabled.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>name</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a></span>) – Unique non-empty name under which the carrier is published
-in <code class="docutils literal notranslate"><span class="pre">TorchEnvState.carriers</span></code>.</p></li>
-<li><p><strong>carrier</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.pytorch.org/docs/stable/tensors.html#torch.Tensor" title="(in PyTorch v2.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></a></span>) – Tensor on the env device. The task keeps ownership and
-updates it in place; dtype and shape are captured by the
-ring slots with <code class="docutils literal notranslate"><span class="pre">torch.empty_like</span></code>.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><ul class="simple">
-<li><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#RuntimeError" title="(in Python v3.15)"><strong>RuntimeError</strong></a> – If the publication ring is already allocated (the
-    first <code class="docutils literal notranslate"><span class="pre">reset</span></code>/<code class="docutils literal notranslate"><span class="pre">step</span></code> has run).</p></li>
-<li><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – On an empty or duplicate name, a carrier on the wrong
-    device, or when persistent step buffers are disabled.</p></li>
-<li><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#TypeError" title="(in Python v3.15)"><strong>TypeError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">carrier</span></code> is not a <code class="docutils literal notranslate"><span class="pre">torch.Tensor</span></code>.</p></li>
-</ul>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
 </dd>
 </dl>
 </dd></dl>
@@ -755,7 +703,9 @@ autoreset. Per-phase timings are published under <code class="docutils literal n
 <dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><a class="reference internal" href="_autosummary/unilab.base.torch_env.TorchEnvState.html#unilab.base.torch_env.TorchEnvState" title="unilab.base.torch_env.TorchEnvState"><code class="xref py py-class docutils literal notranslate"><span class="pre">TorchEnvState</span></code></a></span></p>
 </dd>
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The updated <code class="docutils literal notranslate"><span class="pre">TorchEnvState</span></code>.</p>
+<dd class="field-odd"><p>The updated <code class="docutils literal notranslate"><span class="pre">TorchEnvState</span></code>. Its <code class="docutils literal notranslate"><span class="pre">obs</span></code>, <code class="docutils literal notranslate"><span class="pre">reward</span></code>,
+<code class="docutils literal notranslate"><span class="pre">terminated</span></code> and <code class="docutils literal notranslate"><span class="pre">truncated</span></code> tensors are fresh and caller-owned;
+later steps do not mutate them.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -2847,7 +2797,6 @@ a NumPy named-sensor getter.</p>
 <li><a class="reference internal" href="#unilab.base.torch_env.TorchEnv.autoreset_graph"><code class="docutils literal notranslate"><span class="pre">TorchEnv.autoreset_graph</span></code></a></li>
 <li><a class="reference internal" href="#unilab.base.torch_env.TorchEnv.require"><code class="docutils literal notranslate"><span class="pre">TorchEnv.require()</span></code></a></li>
 <li><a class="reference internal" href="#unilab.base.torch_env.TorchEnv.record_host_transition"><code class="docutils literal notranslate"><span class="pre">TorchEnv.record_host_transition()</span></code></a></li>
-<li><a class="reference internal" href="#unilab.base.torch_env.TorchEnv.register_step_carrier"><code class="docutils literal notranslate"><span class="pre">TorchEnv.register_step_carrier()</span></code></a></li>
 <li><a class="reference internal" href="#unilab.base.torch_env.TorchEnv.reset_selection_blockers"><code class="docutils literal notranslate"><span class="pre">TorchEnv.reset_selection_blockers()</span></code></a></li>
 <li><a class="reference internal" href="#unilab.base.torch_env.TorchEnv.obs_groups_spec"><code class="docutils literal notranslate"><span class="pre">TorchEnv.obs_groups_spec</span></code></a></li>
 <li><a class="reference internal" href="#unilab.base.torch_env.TorchEnv.observation_space"><code class="docutils literal notranslate"><span class="pre">TorchEnv.observation_space</span></code></a></li>
