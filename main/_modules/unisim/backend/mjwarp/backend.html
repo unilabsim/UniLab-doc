@@ -674,6 +674,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.utils.math</span><span class="w"> </span><span class="kn">import</span> <span class="n">np_quat_apply_inverse</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">..body_state</span><span class="w"> </span><span class="kn">import</span> <span class="n">copy_selected_body_state</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..mujoco.sensor_metadata</span><span class="w"> </span><span class="kn">import</span> <span class="n">classify_mujoco_sensor</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">..ray_scene</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">ray_collision_from_mujoco_model</span><span class="p">,</span>
     <span class="n">ray_scene_from_mujoco_model</span><span class="p">,</span>
@@ -903,6 +904,7 @@
     <span class="n">_reset_graph</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
     <span class="n">_reset_scratch_reset_graph</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
     <span class="n">_reset_scratch_forward_graph</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">_reset_scratch_model_rows_uniform</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">_cuda_graph_disable_reason</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span>
     <span class="n">_device_xfrc_pending</span><span class="p">:</span> <span class="nb">bool</span>
 
@@ -1278,6 +1280,7 @@
         <span class="c1"># production world when only a small row set terminated.  It is built</span>
         <span class="c1"># only for batches large enough to amortize the extra graph and copies.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_capacity</span> <span class="o">=</span> <span class="n">_reset_scratch_capacity_for_batch</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_model_rows_uniform</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fixed_variant_plan</span> <span class="ow">is</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_data</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_mask_device</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_qpos_staging</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
@@ -1735,6 +1738,8 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_apply_model_updates</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">updates</span><span class="p">:</span> <span class="n">ModelUpdates</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Upload validated per-world model fields and refresh derived constants.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">updates</span><span class="o">.</span><span class="n">fields</span> <span class="ow">or</span> <span class="n">updates</span><span class="o">.</span><span class="n">actuator_fields</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mark_reset_scratch_model_rows_nonuniform</span><span class="p">()</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">updates</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="n">mirror</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;_dr_</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="n">mirror</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">values</span>
@@ -2095,7 +2100,7 @@
         <span class="p">}</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_scan_body_pair_contact_sensors</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">MjwarpBodyPairContactPlan</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve ordered body-pair contact sensors on the materialization path.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve body-pair sensors matching the aggregate contact-view contract.&quot;&quot;&quot;</span>
         <span class="n">plans</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">MjwarpBodyPairContactPlan</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">sensor_type</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_mujoco</span><span class="o">.</span><span class="n">mjtSensor</span><span class="o">.</span><span class="n">mjSENS_CONTACT</span><span class="p">)</span>
         <span class="n">body_obj</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_mujoco</span><span class="o">.</span><span class="n">mjtObj</span><span class="o">.</span><span class="n">mjOBJ_BODY</span><span class="p">)</span>
@@ -2108,21 +2113,13 @@
             <span class="n">reftype</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">sensor_reftype</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span>
             <span class="k">if</span> <span class="n">objtype</span> <span class="o">!=</span> <span class="n">body_obj</span> <span class="ow">or</span> <span class="n">reftype</span> <span class="o">!=</span> <span class="n">body_obj</span><span class="p">:</span>
                 <span class="k">continue</span>
-            <span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">intprm</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">!=</span> <span class="n">_CONTACT_DATASPEC_AGGREGATE</span> <span class="ow">or</span> <span class="n">dimension</span> <span class="o">!=</span> <span class="mi">7</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;mjwarp body-pair contact sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> requires &quot;</span>
-                    <span class="s1">&#39;data=&quot;found force pos&quot; with compiled dimension 7&#39;</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">intprm</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;mjwarp body-pair contact sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> requires reduce=&#39;none&#39; &quot;</span>
-                    <span class="s2">&quot;for all-point aggregation&quot;</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">intprm</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;mjwarp body-pair contact sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> requires num=1; &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;compiled num is </span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">intprm</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span><span class="si">}</span><span class="s2">&quot;</span>
-                <span class="p">)</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="nb">int</span><span class="p">(</span><span class="n">intprm</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">!=</span> <span class="n">_CONTACT_DATASPEC_AGGREGATE</span>
+                <span class="ow">or</span> <span class="n">dimension</span> <span class="o">!=</span> <span class="mi">7</span>
+                <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span><span class="n">intprm</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="o">!=</span> <span class="mi">0</span>
+                <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span><span class="n">intprm</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span> <span class="o">!=</span> <span class="mi">1</span>
+            <span class="p">):</span>
+                <span class="k">continue</span>
             <span class="n">first</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">sensor_objid</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span>
             <span class="n">second</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">sensor_refid</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">])</span>
             <span class="k">if</span> <span class="n">first</span> <span class="o">==</span> <span class="n">second</span><span class="p">:</span>
@@ -2990,9 +2987,14 @@
             <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco_warp</span><span class="o">.</span><span class="n">forward</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_mark_reset_scratch_model_rows_nonuniform</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Disable scratch forwards after any per-world Model mutation.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_model_rows_uniform</span> <span class="o">=</span> <span class="kc">False</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_can_use_reset_scratch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_rows</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
         <span class="k">return</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_replay_backend_graphs</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_model_rows_uniform</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_replay_backend_graphs</span>
             <span class="ow">and</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">num_rows</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_capacity</span>
             <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_reset_graph</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -3357,16 +3359,25 @@
 <div class="viewcode-block" id="MjwarpBackend.get_sensor_names">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_sensor_names">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_sensor_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return every public named sensor in lexicographic order, matching MuJoCo.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_sensor_slots</span><span class="p">))</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_sensor_inventory">
 <a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.get_sensor_inventory">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_sensor_inventory</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SensorDescriptor</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
-        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span>
-            <span class="n">SensorDescriptor</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="n">width</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">width</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_sensor_slots</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>
-        <span class="p">)</span></div>
+        <span class="n">descriptors</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">SensorDescriptor</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">width</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_sensor_slots</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+            <span class="n">sensor_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sensor_id_by_name</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+            <span class="n">sensor_type</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mujoco</span><span class="o">.</span><span class="n">mjtSensor</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cpu_model</span><span class="o">.</span><span class="n">sensor_type</span><span class="p">[</span><span class="n">sensor_id</span><span class="p">]))</span>
+            <span class="n">descriptors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">SensorDescriptor</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+                    <span class="n">width</span><span class="o">=</span><span class="n">width</span><span class="p">,</span>
+                    <span class="n">category</span><span class="o">=</span><span class="n">classify_mujoco_sensor</span><span class="p">(</span><span class="n">sensor_type</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">descriptors</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_tensor_runtime_diagnostics">
@@ -3390,6 +3401,88 @@
                 <span class="n">disable_reason</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
             <span class="p">),</span>
         <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="MjwarpBackend.refresh_sensors">
+<a class="viewcode-back" href="../../../../api_reference/backend/_autosummary/unisim.backend.mjwarp.backend.MjwarpBackend.html#unisim.backend.mjwarp.backend.MjwarpBackend.refresh_sensors">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">refresh_sensors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rows</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run a complete forward and publish only the selected public sensor rows.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_external_capture</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GraphCaptureError</span><span class="p">(</span>
+                <span class="s2">&quot;mjwarp refresh_sensors is a synchronous host boundary and cannot be captured&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pre_step_control_active</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;mjwarp refresh_sensors cannot run inside a pre-step callback&quot;</span><span class="p">)</span>
+        <span class="n">selected</span> <span class="o">=</span> <span class="n">selected_state_rows</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">selected</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">complement</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">setdiff1d</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_num_envs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">),</span> <span class="n">selected</span><span class="p">,</span> <span class="n">assume_unique</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Bind every declared aggregate so the complete forward is visible even</span>
+        <span class="c1"># when its first public read happens after this boundary.</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_sensor_plans</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_bind_body_pair_contact_view</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">sensor_before</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="s2">&quot;sensordata&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+        <span class="n">warm_before</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="s2">&quot;qacc_warmstart&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+        <span class="n">contact_before</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">name</span><span class="p">:</span> <span class="p">{</span>
+                <span class="n">field</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+                <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;active&quot;</span><span class="p">,</span> <span class="s2">&quot;count&quot;</span><span class="p">,</span> <span class="s2">&quot;position_w&quot;</span><span class="p">,</span> <span class="s2">&quot;force_w&quot;</span><span class="p">)</span>
+            <span class="p">}</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">view</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contact_views</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">}</span>
+        <span class="n">tracked_dirty</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span>
+        <span class="n">authored_dirty</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_authored_sensor_state_dirty</span>
+        <span class="n">pending_device_xfrc</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_stable_device_xfrc_view</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># Device interval staging lives in the native channel. Exclude that</span>
+            <span class="c1"># next-step wrench from this solve, then restore its exact staging.</span>
+            <span class="k">if</span> <span class="n">pending_device_xfrc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_upload_persistent_body_force</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_execute_device_forward</span><span class="p">()</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contact_views</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contacts_allow_decode</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_refresh_body_pair_contacts_device_only</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="n">complement</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+                <span class="n">rows_device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span>
+                    <span class="n">complement</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">sensor_before</span><span class="o">.</span><span class="n">device</span>
+                <span class="p">)</span>
+                <span class="n">saved_fields</span> <span class="o">=</span> <span class="p">((</span><span class="s2">&quot;sensordata&quot;</span><span class="p">,</span> <span class="n">sensor_before</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;qacc_warmstart&quot;</span><span class="p">,</span> <span class="n">warm_before</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">before</span> <span class="ow">in</span> <span class="n">saved_fields</span><span class="p">:</span>
+                    <span class="n">current</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stable_tensor_field_view</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+                    <span class="n">current</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows_device</span><span class="p">,</span> <span class="n">before</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows_device</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">fields</span> <span class="ow">in</span> <span class="n">contact_before</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="n">view</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contact_views</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+                    <span class="k">for</span> <span class="n">field</span><span class="p">,</span> <span class="n">before</span> <span class="ow">in</span> <span class="n">fields</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                        <span class="nb">getattr</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span>
+                            <span class="mi">0</span><span class="p">,</span> <span class="n">rows_device</span><span class="p">,</span> <span class="n">before</span><span class="o">.</span><span class="n">index_select</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows_device</span><span class="p">)</span>
+                        <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_publish_body_pair_contact_batches</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">pending_device_xfrc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_stable_device_xfrc_view</span><span class="p">()</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">pending_device_xfrc</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_tensor_pending</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_refresh_mocap_mirrors</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_mocap_tensor_pending</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_refresh_host_cache</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_ctrl_staging</span><span class="p">[:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_data</span><span class="o">.</span><span class="n">ctrl</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_host_cache_stale</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_host_dirty</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="n">tracked_dirty</span> <span class="ow">and</span> <span class="nb">bool</span><span class="p">(</span><span class="n">complement</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_authored_sensor_state_dirty</span> <span class="o">=</span> <span class="n">authored_dirty</span> <span class="ow">and</span> <span class="nb">bool</span><span class="p">(</span><span class="n">complement</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_entity_faulted</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">raise</span></div>
 
 
 <div class="viewcode-block" id="MjwarpBackend.get_state_views">
@@ -3823,8 +3916,8 @@
                         <span class="sa">f</span><span class="s2">&quot;mjwarp body-pair contact sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> is not supported: not found&quot;</span>
                     <span class="p">)</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;mjwarp body-pair contact sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> is not an ordered &quot;</span>
-                    <span class="s2">&quot;body-pair contact sensor&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;mjwarp body-pair contact sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> does not match the &quot;</span>
+                    <span class="s2">&quot;ordered body-pair aggregate contract&quot;</span>
                 <span class="p">)</span>
 
         <span class="n">cached</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contact_batches</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">requested</span><span class="p">)</span>
@@ -3893,7 +3986,8 @@
         <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">requested</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_sensor_plans</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;mjwarp sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> is not an ordered body-pair contact sensor&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;mjwarp sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> does not match the ordered body-pair &quot;</span>
+                    <span class="s2">&quot;aggregate contract&quot;</span>
                 <span class="p">)</span>
             <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_body_pair_contact_views</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_bind_body_pair_contact_view</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
@@ -4534,6 +4628,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_dr_actuator_biasprm</span><span class="p">[</span><span class="n">rows</span><span class="p">,</span> <span class="n">public_row</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="n">defaults</span><span class="p">[</span><span class="s2">&quot;actuator_biasprm&quot;</span><span class="p">][</span><span class="n">assigned_rows</span><span class="p">,</span> <span class="n">public_row</span><span class="p">]</span> <span class="o">*</span> <span class="n">scale32</span>
             <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_mark_reset_scratch_model_rows_nonuniform</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="o">.</span><span class="n">actuator_gainprm</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dr_actuator_gainprm</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_upload</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_device_model</span><span class="o">.</span><span class="n">actuator_biasprm</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dr_actuator_biasprm</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_synchronize</span><span class="p">()</span></div>
@@ -4984,7 +5079,6 @@
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_require_entity_healthy</span><span class="p">()</span>
         <span class="n">device_randomization</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="n">model_randomized</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="k">if</span> <span class="n">randomization</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">randomization</span><span class="p">,</span> <span class="n">TensorResetRandomizationPayload</span><span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
@@ -4997,12 +5091,10 @@
                         <span class="n">env_indices</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">randomization</span>
                     <span class="p">)</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">_apply_model_updates</span><span class="p">(</span><span class="n">updates</span><span class="p">)</span>
-                    <span class="n">model_randomized</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">updates</span><span class="o">.</span><span class="n">fields</span> <span class="ow">or</span> <span class="n">updates</span><span class="o">.</span><span class="n">actuator_fields</span><span class="p">)</span>
                 <span class="k">elif</span> <span class="n">randomization</span><span class="o">.</span><span class="n">geom_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">_apply_device_reset_host_fallback</span><span class="p">(</span>
                         <span class="n">env_indices</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">randomization</span>
                     <span class="p">)</span>
-                    <span class="n">model_randomized</span> <span class="o">=</span> <span class="kc">True</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">device_randomization</span> <span class="o">=</span> <span class="n">randomization</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xfrc_pending</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device_xfrc_pending</span><span class="p">:</span>
@@ -5049,7 +5141,6 @@
             <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_apply_tensor_reset_randomization</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">device_randomization</span><span class="p">,</span> <span class="n">validation</span><span class="p">)</span>
             <span class="n">model_update_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1000.0</span>
-            <span class="n">model_randomized</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">device_randomization</span><span class="o">.</span><span class="n">is_empty</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_validate_torch_fused</span><span class="p">(</span><span class="n">validation</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
@@ -5104,10 +5195,12 @@
             <span class="c1"># always reads sensors immediately after selected reset, so an</span>
             <span class="c1"># eager forward here would duplicate that work on the hot path.</span>
             <span class="c1"># The bounded scratch replay reads model rows 0..n-1 for scratch</span>
-            <span class="c1"># worlds, so it is only valid while model rows stay uniform; any</span>
-            <span class="c1"># applied model randomization falls back to the lazy full-model</span>
-            <span class="c1"># refresh, as documented on _publish_selected_tensor_reset_sensors.</span>
-            <span class="k">if</span> <span class="n">model_randomized</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_publish_selected_tensor_reset_sensors</span><span class="p">(</span><span class="n">rows</span><span class="p">):</span>
+            <span class="c1"># worlds, so it is only valid while model rows stay uniform. Once</span>
+            <span class="c1"># any model field is committed, later pure-state resets must also</span>
+            <span class="c1"># use the lazy full-model refresh.</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset_scratch_model_rows_uniform</span> <span class="ow">or</span> <span class="ow">not</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_publish_selected_tensor_reset_sensors</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+            <span class="p">):</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_state_dirty</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tracked_body_names</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_authored_sensor_state_dirty</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_clear_dynamic_sensor_rows</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
@@ -5676,6 +5769,10 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">biasprm</span><span class="o">.</span><span class="n">index_copy_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">bias</span><span class="p">)</span>
             <span class="n">stale_mirrors</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;actuator_biasprm&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_host_transition</span><span class="p">(</span>
+            <span class="s2">&quot;reset_randomization.model_rows&quot;</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mark_reset_scratch_model_rows_nonuniform</span><span class="p">,</span>
+        <span class="p">)</span>
         <span class="c1"># Torch writes run on the caller&#39;s stream; order them ahead of the</span>
         <span class="c1"># Warp derived-constant refresh and the reset-graph replay.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_host_transition</span><span class="p">(</span>
