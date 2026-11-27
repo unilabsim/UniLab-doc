@@ -649,6 +649,14 @@
     <span class="c1"># device profile never relies on an implicit backend-wide allocation size.</span>
     <span class="n">mjwarp_nconmax</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">mjwarp_njmax</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># ``mtxwarp`` uses the rank-local CUDA device and owns its per-world</span>
+    <span class="c1"># contact and constraint-row storage.</span>
+    <span class="n">mtxwarp_device</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># MotrixSim&#39;s conservative estimate is small for a contact-rich humanoid, so</span>
+    <span class="c1"># the owner profile declares the capacities explicitly like ``mjwarp``.</span>
+    <span class="n">mtxwarp_max_contacts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">mtxwarp_max_contact_constraints</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">mtxwarp_max_convexhull_pairs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="c1"># ``newton`` owns MuJoCo-Warp 3.11 capacity and requires explicit CUDA</span>
     <span class="c1"># placement; the process binder supplies the rank-local device when unset.</span>
     <span class="n">newton_device</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
@@ -744,6 +752,11 @@
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="p">(</span>
             <span class="p">(</span><span class="s2">&quot;mjwarp_nconmax&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">mjwarp_nconmax</span><span class="p">),</span>
             <span class="p">(</span><span class="s2">&quot;mjwarp_njmax&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">mjwarp_njmax</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;mtxwarp_max_contacts&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">mtxwarp_max_contacts</span><span class="p">),</span>
+            <span class="p">(</span>
+                <span class="s2">&quot;mtxwarp_max_contact_constraints&quot;</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">mtxwarp_max_contact_constraints</span><span class="p">,</span>
+            <span class="p">),</span>
             <span class="p">(</span><span class="s2">&quot;newton_nconmax&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">newton_nconmax</span><span class="p">),</span>
             <span class="p">(</span><span class="s2">&quot;newton_njmax&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">newton_njmax</span><span class="p">),</span>
         <span class="p">):</span>
@@ -751,13 +764,24 @@
                 <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">value</span> <span class="o">&lt;=</span> <span class="mi">0</span>
             <span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be a positive integer or None, got </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">newton_device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
-            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">newton_device</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">newton_device</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="n">max_convexhull_pairs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mtxwarp_max_convexhull_pairs</span>
+        <span class="k">if</span> <span class="n">max_convexhull_pairs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
+            <span class="nb">isinstance</span><span class="p">(</span><span class="n">max_convexhull_pairs</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">max_convexhull_pairs</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">max_convexhull_pairs</span> <span class="o">&lt;</span> <span class="mi">0</span>
         <span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;newton_device must be a non-empty CUDA device string or None, &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">newton_device</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="s2">&quot;mtxwarp_max_convexhull_pairs must be a non-negative integer &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;or None, got </span><span class="si">{</span><span class="n">max_convexhull_pairs</span><span class="si">!r}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="p">(</span><span class="s2">&quot;mtxwarp_device&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">mtxwarp_device</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;newton_device&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">newton_device</span><span class="p">),</span>
+        <span class="p">):</span>
+            <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span><span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">()):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> must be a non-empty CUDA device string or None, got </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
         <span class="k">if</span> <span class="p">(</span>
             <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">newton_capacity_check_steps</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span>
             <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">newton_capacity_check_steps</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>

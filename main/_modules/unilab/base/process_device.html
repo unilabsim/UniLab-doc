@@ -601,16 +601,38 @@
 <span class="p">}</span>
 
 
-<span class="c1"># Newton consumes an explicit ``cuda:N`` device string (``newton_device``)</span>
-<span class="c1"># instead of an integer id.  The RL runtime&#39;s collector-side process binding</span>
-<span class="c1"># is injection-based: the spawned collector applies the caller-supplied</span>
-<span class="c1"># backend-device configurer and skips binding when none is injected.  UniLab</span>
-<span class="c1"># injects ``configure_backend_process_device``; the env override additionally</span>
-<span class="c1"># forwards the rank-local device string so spawn collectors can pass it to</span>
-<span class="c1"># the Newton adapter.</span>
+<span class="c1"># In-process adapters taking explicit ``cuda:N`` device strings receive the</span>
+<span class="c1"># rank-local device through the environment override, including when the</span>
+<span class="c1"># collector is spawned in a separate process.</span>
 <span class="n">BACKEND_ENV_DEVICE_STR_FIELDS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;mtxwarp&quot;</span><span class="p">:</span> <span class="s2">&quot;mtxwarp_device&quot;</span><span class="p">,</span>
     <span class="s2">&quot;newton&quot;</span><span class="p">:</span> <span class="s2">&quot;newton_device&quot;</span><span class="p">,</span>
 <span class="p">}</span>
+
+<span class="c1"># UniLab backend names that differ from the UniSim adapter name they consume.</span>
+<span class="c1"># The upstream adapter keeps the ``motrix_gpu`` name until</span>
+<span class="c1"># unilabsim/unisim#578 renames it; UniLab exposes the backend as ``mtxwarp``.</span>
+<span class="n">_UNILAB_ADAPTER_NAME_MAP</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;mtxwarp&quot;</span><span class="p">:</span> <span class="s2">&quot;motrix_gpu&quot;</span><span class="p">}</span>
+
+
+<div class="viewcode-block" id="unisim_adapter_name">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.unisim_adapter_name.html#unilab.base.process_device.unisim_adapter_name">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">unisim_adapter_name</span><span class="p">(</span><span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Map a UniLab backend name to the consuming UniSim adapter name.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_UNILAB_ADAPTER_NAME_MAP</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">backend_type</span><span class="p">,</span> <span class="n">backend_type</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="unilab_backend_name">
+<a class="viewcode-back" href="../../../api_reference/base/_autosummary/unilab.base.process_device.unilab_backend_name.html#unilab.base.process_device.unilab_backend_name">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">unilab_backend_name</span><span class="p">(</span><span class="n">adapter_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Map a UniSim adapter name to the UniLab backend name exposing it.&quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">unilab_name</span><span class="p">,</span> <span class="n">unisim_name</span> <span class="ow">in</span> <span class="n">_UNILAB_ADAPTER_NAME_MAP</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">unisim_name</span> <span class="o">==</span> <span class="n">adapter_name</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">unilab_name</span>
+    <span class="k">return</span> <span class="n">adapter_name</span></div>
+
+
 
 <span class="n">_EXTERNAL_CUDA_IPC_BACKENDS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;isaacgym&quot;</span><span class="p">,</span> <span class="s2">&quot;isaacsim&quot;</span><span class="p">}</span>
 
@@ -634,7 +656,7 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the public HOST_BRIDGE capability profile for a backend.&quot;&quot;&quot;</span>
 
     <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
-    <span class="n">profile</span> <span class="o">=</span> <span class="n">get_tensor_platform_profiles</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
+    <span class="n">profile</span> <span class="o">=</span> <span class="n">get_tensor_platform_profiles</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">unisim_adapter_name</span><span class="p">(</span><span class="n">backend</span><span class="p">))</span>
     <span class="k">if</span> <span class="n">profile</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">profile</span><span class="o">.</span><span class="n">execution</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">TensorExecution</span><span class="o">.</span><span class="n">HOST_BRIDGE</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">None</span>
     <span class="k">return</span> <span class="n">profile</span>
@@ -940,7 +962,7 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">resolve_backend_process_device</span><span class="p">(</span><span class="n">backend_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">learner_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">backend</span> <span class="o">=</span> <span class="n">_normalize_backend</span><span class="p">(</span><span class="n">backend_type</span><span class="p">)</span>
     <span class="k">if</span> <span class="p">(</span>
-        <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;mjwarp&quot;</span><span class="p">,</span> <span class="s2">&quot;newton&quot;</span><span class="p">,</span> <span class="s2">&quot;genesis&quot;</span><span class="p">}</span>
+        <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;mjwarp&quot;</span><span class="p">,</span> <span class="s2">&quot;mtxwarp&quot;</span><span class="p">,</span> <span class="s2">&quot;newton&quot;</span><span class="p">,</span> <span class="s2">&quot;genesis&quot;</span><span class="p">}</span>
         <span class="ow">and</span> <span class="n">backend</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_EXTERNAL_CUDA_IPC_BACKENDS</span>
     <span class="p">):</span>
         <span class="k">return</span> <span class="kc">None</span>
