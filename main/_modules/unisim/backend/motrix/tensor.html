@@ -570,7 +570,7 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
@@ -599,6 +599,7 @@
     <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
     <span class="kn">from</span><span class="w"> </span><span class="nn">.backend</span><span class="w"> </span><span class="kn">import</span> <span class="n">MotrixBackend</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.scene</span><span class="w"> </span><span class="kn">import</span> <span class="n">_MotrixJointActuatorForceSource</span>
 
 <span class="n">_STREAM_OWNERSHIP</span> <span class="o">=</span> <span class="s2">&quot;caller-stream-per-packed-boundary; stream synchronized at CPU bridge&quot;</span>
 <span class="n">_SUPPORTED_STATE_FIELDS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="s2">&quot;qvel&quot;</span><span class="p">,</span> <span class="s2">&quot;ctrl&quot;</span><span class="p">})</span>
@@ -617,16 +618,7 @@
     <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.packed_reset</span><span class="w"> </span><span class="kn">import</span> <span class="n">PACKED_RESET_MODEL_FIELDS</span>
 
     <span class="n">reset_terms</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_dr_capabilities</span><span class="p">()</span><span class="o">.</span><span class="n">supported_reset_terms</span>
-    <span class="n">supports_packed_layout</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">backend</span><span class="o">.</span><span class="n">_portable_mode</span>
-        <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;_whole_model_variant_mode&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-        <span class="ow">or</span> <span class="n">backend</span><span class="o">.</span><span class="n">_body_floatingbase</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-    <span class="p">)</span>
-    <span class="n">packed_fields</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="nb">frozenset</span><span class="p">(</span><span class="n">reset_terms</span> <span class="o">&amp;</span> <span class="n">PACKED_RESET_MODEL_FIELDS</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">supports_packed_layout</span>
-        <span class="k">else</span> <span class="nb">frozenset</span><span class="p">()</span>
-    <span class="p">)</span>
+    <span class="n">packed_fields</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">reset_terms</span> <span class="o">&amp;</span> <span class="n">PACKED_RESET_MODEL_FIELDS</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">TensorLifecycleCapabilities</span><span class="p">(</span>
         <span class="n">execution</span><span class="o">=</span><span class="n">TensorExecution</span><span class="o">.</span><span class="n">HOST_BRIDGE</span><span class="p">,</span>
         <span class="n">state_views</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -673,9 +665,12 @@
     <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">_portable_mode</span><span class="p">:</span>
         <span class="n">layout</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">get_scene_layout</span><span class="p">()</span>
         <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;qpos&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">layout</span><span class="o">.</span><span class="n">nq</span><span class="p">),</span> <span class="s2">&quot;qvel&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">layout</span><span class="o">.</span><span class="n">nv</span><span class="p">),</span> <span class="s2">&quot;ctrl&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_actuators</span><span class="p">)}</span>
-    <span class="c1"># MotrixSim model metadata can count disabled/fixed coordinates that are</span>
-    <span class="c1"># absent from the public ``data.dof_pos`` / ``data.dof_vel`` blocks. Tensor</span>
-    <span class="c1"># layouts must follow the public state actually returned by ``get_state``.</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;_whole_model_variant_mode&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;qpos&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">num_dof_pos</span><span class="p">),</span>
+            <span class="s2">&quot;qvel&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">num_dof_vel</span><span class="p">),</span>
+            <span class="s2">&quot;ctrl&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_actuators</span><span class="p">),</span>
+        <span class="p">}</span>
     <span class="n">public_state</span> <span class="o">=</span> <span class="n">_canonical_states</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="p">(</span><span class="s2">&quot;qpos&quot;</span><span class="p">,</span> <span class="s2">&quot;qvel&quot;</span><span class="p">))</span>
     <span class="k">return</span> <span class="p">{</span>
         <span class="s2">&quot;qpos&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">public_state</span><span class="p">[</span><span class="s2">&quot;qpos&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
@@ -746,13 +741,21 @@
 
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">_ResolvedSensorNames</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Split native sensors from public body-state sensor aliases.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Split native sensors, aggregate sensors and public body-state sensor aliases.&quot;&quot;&quot;</span>
 
     <span class="n">physical</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
     <span class="n">physical_widths</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span>
     <span class="n">body_names</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
     <span class="n">body_ids</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="n">body_slots</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span>
+    <span class="c1"># ``&lt;jointactuatorfrc&gt;`` aggregates keep their public names and widths in</span>
+    <span class="c1"># ``physical``. Their native source sensors join the one batched read, whose</span>
+    <span class="c1"># order is ``read_order``: public native sensors, then source sensors.</span>
+    <span class="n">aggregate_sources</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_MotrixJointActuatorForceSource</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span>
+        <span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span>
+    <span class="p">)</span>
+    <span class="n">read_order</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="n">internal_widths</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_sensor_names</span><span class="p">(</span>
@@ -765,10 +768,16 @@
 <span class="sd">    fused body-state API rather than native frame sensors, so the packed plan</span>
 <span class="sd">    projects them into the same packet without exposing body-array conventions</span>
 <span class="sd">    to task code.</span>
+
+<span class="sd">    A ``&lt;jointactuatorfrc&gt;`` aggregate is not a native sensor. Its actuator</span>
+<span class="sd">    source sensors are added to the one batched read so the aggregate can be</span>
+<span class="sd">    summed from that batch&#39;s columns.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
+    <span class="n">aggregates</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;_joint_actuator_force_sensors&quot;</span><span class="p">,</span> <span class="p">{})</span>
     <span class="n">physical</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">physical_widths</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">aggregate_sources</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_MotrixJointActuatorForceSource</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">body_names</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">body_name_indices</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">body_slots</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
@@ -785,6 +794,8 @@
             <span class="n">source</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">_host_read_sensor</span><span class="p">(</span><span class="n">name</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
             <span class="n">physical_widths</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">source</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
             <span class="n">physical</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">aggregates</span><span class="p">:</span>
+                <span class="n">aggregate_sources</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">aggregates</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
             <span class="k">continue</span>
         <span class="n">prefix</span><span class="p">,</span> <span class="n">body_name</span> <span class="o">=</span> <span class="n">match</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">body_name</span><span class="p">:</span>
@@ -798,13 +809,86 @@
     <span class="n">body_ids</span> <span class="o">=</span> <span class="p">(</span>
         <span class="n">backend</span><span class="o">.</span><span class="n">get_body_ids</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">body_names</span><span class="p">))</span> <span class="k">if</span> <span class="n">body_names</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
     <span class="p">)</span>
+    <span class="n">public</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">physical</span><span class="p">)</span>
+    <span class="n">internal_names</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+        <span class="n">name</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+            <span class="n">source</span><span class="o">.</span><span class="n">sensor_name</span>
+            <span class="k">for</span> <span class="n">sources</span> <span class="ow">in</span> <span class="n">aggregate_sources</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">source</span> <span class="ow">in</span> <span class="n">sources</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">public</span>
+    <span class="p">)</span>
+    <span class="n">internal_widths</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">_host_read_sensor</span><span class="p">(</span><span class="n">name</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span>
+                <span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">internal_names</span>
+    <span class="p">}</span>
     <span class="k">return</span> <span class="n">_ResolvedSensorNames</span><span class="p">(</span>
         <span class="n">physical</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">physical</span><span class="p">),</span>
         <span class="n">physical_widths</span><span class="o">=</span><span class="n">physical_widths</span><span class="p">,</span>
         <span class="n">body_names</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">body_names</span><span class="p">),</span>
         <span class="n">body_ids</span><span class="o">=</span><span class="n">body_ids</span><span class="p">,</span>
         <span class="n">body_slots</span><span class="o">=</span><span class="n">body_slots</span><span class="p">,</span>
+        <span class="n">aggregate_sources</span><span class="o">=</span><span class="n">aggregate_sources</span><span class="p">,</span>
+        <span class="n">read_order</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">physical</span> <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">aggregate_sources</span><span class="p">)</span>
+        <span class="o">+</span> <span class="n">internal_names</span><span class="p">,</span>
+        <span class="n">internal_widths</span><span class="o">=</span><span class="n">internal_widths</span><span class="p">,</span>
     <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_sensor_width</span><span class="p">(</span><span class="n">resolved</span><span class="p">:</span> <span class="n">_ResolvedSensorNames</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the native column width of one name in the batched read order.&quot;&quot;&quot;</span>
+    <span class="n">width</span> <span class="o">=</span> <span class="n">resolved</span><span class="o">.</span><span class="n">physical_widths</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">width</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">width</span> <span class="o">=</span> <span class="n">resolved</span><span class="o">.</span><span class="n">internal_widths</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">width</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_batched_sensor_views</span><span class="p">(</span>
+    <span class="n">resolved</span><span class="p">:</span> <span class="n">_ResolvedSensorNames</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Split one batched sensor block into column views, adding aggregate views.</span>
+
+<span class="sd">    ``values`` is the backend&#39;s block for ``resolved.read_order``. Native</span>
+<span class="sd">    sensors are plain column views; each aggregate is summed from its source</span>
+<span class="sd">    columns. Aggregates with one unit-width source, the usual</span>
+<span class="sd">    one-actuator-per-joint case, share one vectorized gather-multiply.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">views</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">starts</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">cursor</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">resolved</span><span class="o">.</span><span class="n">read_order</span><span class="p">:</span>
+        <span class="n">width</span> <span class="o">=</span> <span class="n">_sensor_width</span><span class="p">(</span><span class="n">resolved</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+        <span class="n">starts</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">cursor</span>
+        <span class="n">views</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">values</span><span class="p">[:,</span> <span class="n">cursor</span> <span class="p">:</span> <span class="n">cursor</span> <span class="o">+</span> <span class="n">width</span><span class="p">]</span>
+        <span class="n">cursor</span> <span class="o">+=</span> <span class="n">width</span>
+    <span class="n">single</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_MotrixJointActuatorForceSource</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">sources</span> <span class="ow">in</span> <span class="n">resolved</span><span class="o">.</span><span class="n">aggregate_sources</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">sources</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+            <span class="ow">and</span> <span class="n">resolved</span><span class="o">.</span><span class="n">physical_widths</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span>
+            <span class="ow">and</span> <span class="n">_sensor_width</span><span class="p">(</span><span class="n">resolved</span><span class="p">,</span> <span class="n">sources</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">sensor_name</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+        <span class="p">):</span>
+            <span class="n">single</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">name</span><span class="p">,</span> <span class="n">sources</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+            <span class="k">continue</span>
+        <span class="n">first</span><span class="p">,</span> <span class="o">*</span><span class="n">rest</span> <span class="o">=</span> <span class="n">sources</span>
+        <span class="n">total</span> <span class="o">=</span> <span class="n">views</span><span class="p">[</span><span class="n">first</span><span class="o">.</span><span class="n">sensor_name</span><span class="p">]</span> <span class="o">*</span> <span class="n">first</span><span class="o">.</span><span class="n">gear</span>
+        <span class="k">for</span> <span class="n">source</span> <span class="ow">in</span> <span class="n">rest</span><span class="p">:</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">total</span><span class="p">,</span> <span class="n">views</span><span class="p">[</span><span class="n">source</span><span class="o">.</span><span class="n">sensor_name</span><span class="p">]</span> <span class="o">*</span> <span class="n">source</span><span class="o">.</span><span class="n">gear</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">total</span><span class="p">)</span>
+        <span class="n">views</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">total</span>
+    <span class="k">if</span> <span class="n">single</span><span class="p">:</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">([</span><span class="n">starts</span><span class="p">[</span><span class="n">source</span><span class="o">.</span><span class="n">sensor_name</span><span class="p">]</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">source</span> <span class="ow">in</span> <span class="n">single</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">intp</span><span class="p">)</span>
+        <span class="n">gears</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">([</span><span class="n">source</span><span class="o">.</span><span class="n">gear</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">source</span> <span class="ow">in</span> <span class="n">single</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">values</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">block</span> <span class="o">=</span> <span class="n">values</span><span class="p">[:,</span> <span class="n">columns</span><span class="p">]</span>
+        <span class="n">block</span> <span class="o">*=</span> <span class="n">gears</span>
+        <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">single</span><span class="p">):</span>
+            <span class="n">views</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">block</span><span class="p">[:,</span> <span class="n">index</span> <span class="p">:</span> <span class="n">index</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">views</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_read_sensor_sources</span><span class="p">(</span>
@@ -827,15 +911,12 @@
         <span class="p">}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">body_index</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)</span> <span class="ow">in</span> <span class="n">resolved</span><span class="o">.</span><span class="n">body_slots</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="n">sources</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">arrays_by_prefix</span><span class="p">[</span><span class="n">prefix</span><span class="p">][:,</span> <span class="n">body_index</span><span class="p">,</span> <span class="p">:],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">resolved</span><span class="o">.</span><span class="n">physical</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">resolved</span><span class="o">.</span><span class="n">read_order</span><span class="p">:</span>
+        <span class="c1"># One batched backend read; aggregates are column sums of this block.</span>
         <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
-            <span class="n">backend</span><span class="o">.</span><span class="n">_host_read_sensor_batch</span><span class="p">(</span><span class="n">resolved</span><span class="o">.</span><span class="n">physical</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span>
+            <span class="n">backend</span><span class="o">.</span><span class="n">_host_read_sensor_batch</span><span class="p">(</span><span class="n">resolved</span><span class="o">.</span><span class="n">read_order</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span>
         <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">num_envs</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">cursor</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">resolved</span><span class="o">.</span><span class="n">physical</span><span class="p">:</span>
-            <span class="n">width</span> <span class="o">=</span> <span class="n">resolved</span><span class="o">.</span><span class="n">physical_widths</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
-            <span class="n">sources</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">values</span><span class="p">[:,</span> <span class="n">cursor</span> <span class="p">:</span> <span class="n">cursor</span> <span class="o">+</span> <span class="n">width</span><span class="p">]</span>
-            <span class="n">cursor</span> <span class="o">+=</span> <span class="n">width</span>
+        <span class="n">sources</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">_batched_sensor_views</span><span class="p">(</span><span class="n">resolved</span><span class="p">,</span> <span class="n">values</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">sources</span>
 
 
@@ -882,16 +963,13 @@
         <span class="p">}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">body_index</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)</span> <span class="ow">in</span> <span class="n">resolved</span><span class="o">.</span><span class="n">body_slots</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="n">sources</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">arrays_by_prefix</span><span class="p">[</span><span class="n">prefix</span><span class="p">][:,</span> <span class="n">body_index</span><span class="p">,</span> <span class="p">:],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">resolved</span><span class="o">.</span><span class="n">physical</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">resolved</span><span class="o">.</span><span class="n">read_order</span><span class="p">:</span>
+        <span class="c1"># One batched selected-row read; aggregates are column sums of this block.</span>
         <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
-            <span class="n">backend</span><span class="o">.</span><span class="n">_host_read_sensor_rows_batch</span><span class="p">(</span><span class="n">resolved</span><span class="o">.</span><span class="n">physical</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">),</span>
+            <span class="n">backend</span><span class="o">.</span><span class="n">_host_read_sensor_rows_batch</span><span class="p">(</span><span class="n">resolved</span><span class="o">.</span><span class="n">read_order</span><span class="p">,</span> <span class="n">selected_rows</span><span class="p">),</span>
             <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="n">cursor</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">resolved</span><span class="o">.</span><span class="n">physical</span><span class="p">:</span>
-            <span class="n">width</span> <span class="o">=</span> <span class="n">resolved</span><span class="o">.</span><span class="n">physical_widths</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
-            <span class="n">sources</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">values</span><span class="p">[:,</span> <span class="n">cursor</span> <span class="p">:</span> <span class="n">cursor</span> <span class="o">+</span> <span class="n">width</span><span class="p">]</span>
-            <span class="n">cursor</span> <span class="o">+=</span> <span class="n">width</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">selected_rows</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">sources</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">_batched_sensor_views</span><span class="p">(</span><span class="n">resolved</span><span class="p">,</span> <span class="n">values</span><span class="p">))</span>
     <span class="k">del</span> <span class="n">sensor_names</span>
     <span class="k">return</span> <span class="n">sources</span>
 
@@ -908,31 +986,15 @@
         <span class="n">values</span> <span class="o">=</span> <span class="n">_canonical_states</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
         <span class="k">return</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">values</span><span class="p">[</span><span class="n">name</span><span class="p">])[</span><span class="n">selected_rows</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">}</span>
 
-    <span class="n">qpos_indices</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">backend</span><span class="o">.</span><span class="n">_actuator_joint_pos_indices</span>
-        <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">_actuator_joint_pos_indices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="k">else</span> <span class="n">backend</span><span class="o">.</span><span class="n">_joint_dof_pos_indices</span>
-    <span class="p">)</span>
-    <span class="n">qvel_indices</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">backend</span><span class="o">.</span><span class="n">_actuator_joint_vel_indices</span>
-        <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">_actuator_joint_vel_indices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="k">else</span> <span class="n">backend</span><span class="o">.</span><span class="n">_joint_dof_vel_indices</span>
-    <span class="p">)</span>
     <span class="n">output</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">if</span> <span class="s2">&quot;qpos&quot;</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
-        <span class="n">dof_qpos</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_data</span><span class="o">.</span><span class="n">dof_pos</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ix_</span><span class="p">(</span><span class="n">selected_rows</span><span class="p">,</span> <span class="n">qpos_indices</span><span class="p">)]</span>
-        <span class="n">qpos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">selected_rows</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">dof_qpos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">7</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-        <span class="n">qpos</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_host_get_base_pos</span><span class="p">()[</span><span class="n">selected_rows</span><span class="p">]</span>
-        <span class="n">qpos</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">7</span><span class="p">]</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_host_get_base_quat</span><span class="p">()[</span><span class="n">selected_rows</span><span class="p">]</span>
-        <span class="n">qpos</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">:]</span> <span class="o">=</span> <span class="n">dof_qpos</span>
-        <span class="n">output</span><span class="p">[</span><span class="s2">&quot;qpos&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">qpos</span>
+        <span class="n">output</span><span class="p">[</span><span class="s2">&quot;qpos&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_motrix_qpos_to_mujoco</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">_data</span><span class="o">.</span><span class="n">dof_pos</span><span class="p">[</span><span class="n">selected_rows</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">backend</span><span class="o">.</span><span class="n">_np_dtype</span><span class="p">)</span>
+        <span class="p">)</span>
     <span class="k">if</span> <span class="s2">&quot;qvel&quot;</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
-        <span class="n">dof_qvel</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_data</span><span class="o">.</span><span class="n">dof_vel</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ix_</span><span class="p">(</span><span class="n">selected_rows</span><span class="p">,</span> <span class="n">qvel_indices</span><span class="p">)]</span>
-        <span class="n">qvel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">selected_rows</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">dof_qvel</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">6</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-        <span class="n">qvel</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_host_get_base_lin_vel</span><span class="p">()[</span><span class="n">selected_rows</span><span class="p">]</span>
-        <span class="n">qvel</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">6</span><span class="p">]</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">_host_get_base_qvel_ang_vel</span><span class="p">()[</span><span class="n">selected_rows</span><span class="p">]</span>
-        <span class="n">qvel</span><span class="p">[:,</span> <span class="mi">6</span><span class="p">:]</span> <span class="o">=</span> <span class="n">dof_qvel</span>
-        <span class="n">output</span><span class="p">[</span><span class="s2">&quot;qvel&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">qvel</span>
+        <span class="n">output</span><span class="p">[</span><span class="s2">&quot;qvel&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+            <span class="n">backend</span><span class="o">.</span><span class="n">_data</span><span class="o">.</span><span class="n">dof_vel</span><span class="p">[</span><span class="n">selected_rows</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">backend</span><span class="o">.</span><span class="n">_np_dtype</span>
+        <span class="p">)</span>
     <span class="k">return</span> <span class="n">output</span>
 
 

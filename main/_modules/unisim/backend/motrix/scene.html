@@ -567,10 +567,9 @@
 <span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">xml.etree.ElementTree</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ET</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Sequence</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">overload</span>
 
@@ -584,7 +583,6 @@
     <span class="n">MjcfJointLayoutEntry</span><span class="p">,</span>
     <span class="n">extract_mjcf_joint_layout</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unisim.backend.scene_cleanup</span><span class="w"> </span><span class="kn">import</span> <span class="n">remove_temporary_file</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.scene</span><span class="w"> </span><span class="kn">import</span> <span class="n">resolve_scene_fragment_path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unisim.terrain.generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">TerrainGeneratorCfg</span>
 
@@ -608,11 +606,19 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Public Motrix contact-sensor identity fields used by portable audits.&quot;&quot;&quot;</span>
 
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
-    <span class="n">geom1</span><span class="p">:</span> <span class="nb">str</span>
-    <span class="n">geom2</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">match_variant</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># &quot;geom_pair&quot; | &quot;link_pair&quot; | &quot;subtree_pair&quot;</span>
+    <span class="n">value</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span>  <span class="c1"># geom names for geom_pair, link names otherwise</span>
     <span class="n">reduce_mode</span><span class="p">:</span> <span class="n">Any</span>
     <span class="n">reports_force</span><span class="p">:</span> <span class="nb">bool</span>
     <span class="n">reports_found</span><span class="p">:</span> <span class="nb">bool</span>
+
+
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_MotrixJointActuatorForceSource</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;One native actuator-force sensor and its scalar joint gear.&quot;&quot;&quot;</span>
+
+    <span class="n">sensor_name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">gear</span><span class="p">:</span> <span class="nb">float</span>
 
 
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -623,9 +629,23 @@
     <span class="n">frame_identities</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_MotrixFrameSensorIdentity</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
     <span class="n">contact_identities</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_MotrixContactSensorIdentity</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
     <span class="n">signatures</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="n">categories</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">joint_actuator_force_sensors</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span>
+        <span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_MotrixJointActuatorForceSource</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_motrix_sensor_signatures</span><span class="p">(</span><span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="o">...</span><span class="p">]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_motrix_sensor_signatures</span><span class="p">(</span>
+    <span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">,</span>
+    <span class="n">joint_actuator_force_sensors</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span>
+        <span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_MotrixJointActuatorForceSource</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="o">...</span><span class="p">]:</span>
+    <span class="n">internal_names</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">source</span><span class="o">.</span><span class="n">sensor_name</span>
+        <span class="k">for</span> <span class="n">sources</span> <span class="ow">in</span> <span class="n">joint_actuator_force_sensors</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">source</span> <span class="ow">in</span> <span class="n">sources</span>
+    <span class="p">}</span>
     <span class="n">signatures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">contact</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
@@ -658,33 +678,117 @@
     <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">touch</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
             <span class="n">signatures</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">),</span> <span class="s2">&quot;touch&quot;</span><span class="p">,</span> <span class="n">sensor</span><span class="o">.</span><span class="n">site</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">actuator</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span> <span class="ow">and</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">internal_names</span><span class="p">:</span>
+            <span class="n">signatures</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">),</span> <span class="s2">&quot;actuator&quot;</span><span class="p">,</span> <span class="nb">repr</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">actuator</span><span class="p">)))</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">sources</span> <span class="ow">in</span> <span class="n">joint_actuator_force_sensors</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">signatures</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">name</span><span class="p">,</span> <span class="s2">&quot;jointactuatorfrc&quot;</span><span class="p">,</span> <span class="nb">repr</span><span class="p">(</span><span class="n">sources</span><span class="p">)))</span>
     <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">signatures</span><span class="p">)</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_motrix_sensor_names</span><span class="p">(</span><span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Collect the names accepted by Motrix&#39;s native sensor accessor once.&quot;&quot;&quot;</span>
-    <span class="n">groups</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">contact</span><span class="p">,</span>
-        <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">frame</span><span class="p">,</span>
-        <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">joint</span><span class="p">,</span>
-        <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">subtree</span><span class="p">,</span>
-        <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">touch</span><span class="p">,</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_motrix_sensor_groups</span><span class="p">(</span><span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return every native named-sensor group in public-inventory order.&quot;&quot;&quot;</span>
+
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="p">(</span><span class="s2">&quot;actuator&quot;</span><span class="p">,</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">actuator</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;contact&quot;</span><span class="p">,</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">contact</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;frame&quot;</span><span class="p">,</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">frame</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;joint&quot;</span><span class="p">,</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">joint</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;subtree&quot;</span><span class="p">,</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">subtree</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;touch&quot;</span><span class="p">,</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">touch</span><span class="p">),</span>
     <span class="p">)</span>
-    <span class="n">names</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)</span> <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">groups</span> <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">group</span> <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_motrix_sensor_names</span><span class="p">(</span>
+    <span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">,</span>
+    <span class="n">joint_actuator_force_sensors</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span>
+        <span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_MotrixJointActuatorForceSource</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="p">]</span>
+    <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Collect public sensor names, excluding aggregate implementation details.&quot;&quot;&quot;</span>
+
+    <span class="n">joint_actuator_force_sensors</span> <span class="o">=</span> <span class="n">joint_actuator_force_sensors</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">internal_names</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">source</span><span class="o">.</span><span class="n">sensor_name</span>
+        <span class="k">for</span> <span class="n">sources</span> <span class="ow">in</span> <span class="n">joint_actuator_force_sensors</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">source</span> <span class="ow">in</span> <span class="n">sources</span>
+    <span class="p">}</span>
+    <span class="n">names</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+        <span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">_motrix_sensor_groups</span><span class="p">(</span><span class="n">world</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">group</span>
+        <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span> <span class="ow">and</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">internal_names</span>
+    <span class="p">)</span> <span class="o">+</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">joint_actuator_force_sensors</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">names</span><span class="p">))</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">names</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Motrix scene contains duplicate sensor names: </span><span class="si">{</span><span class="n">names</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">names</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_motrix_frame_quat_sensor_names</span><span class="p">(</span><span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Collect Motrix FrameQuat sensors that need public ``wxyz`` conversion.&quot;&quot;&quot;</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">motrixsim.msd</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">msd</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_motrix_sensor_categories</span><span class="p">(</span>
+    <span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">,</span>
+    <span class="n">joint_actuator_force_sensors</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span>
+        <span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_MotrixJointActuatorForceSource</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="p">]</span>
+    <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Classify every named native sensor into the public sensor categories.</span>
 
-    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span>
-        <span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">frame</span>
-        <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span> <span class="ow">and</span> <span class="n">sensor</span><span class="o">.</span><span class="n">sensor_type</span> <span class="o">==</span> <span class="n">msd</span><span class="o">.</span><span class="n">FrameSensorType</span><span class="o">.</span><span class="n">FrameQuat</span>
-    <span class="p">)</span>
+<span class="sd">    Native sensor-type enums are unhashable SDK objects, so the classification</span>
+<span class="sd">    keys on their stable string forms.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">frame_categories</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;FrameSensorType.FramePos&quot;</span><span class="p">:</span> <span class="s2">&quot;position&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;FrameSensorType.FrameQuat&quot;</span><span class="p">:</span> <span class="s2">&quot;position&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;FrameSensorType.XAxis&quot;</span><span class="p">:</span> <span class="s2">&quot;position&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;FrameSensorType.YAxis&quot;</span><span class="p">:</span> <span class="s2">&quot;position&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;FrameSensorType.ZAxis&quot;</span><span class="p">:</span> <span class="s2">&quot;position&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;FrameSensorType.FrameLinVel&quot;</span><span class="p">:</span> <span class="s2">&quot;velocity&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;FrameSensorType.FrameAngVel&quot;</span><span class="p">:</span> <span class="s2">&quot;velocity&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;FrameSensorType.FrameLinAcc&quot;</span><span class="p">:</span> <span class="s2">&quot;acceleration&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">subtree_categories</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;SubtreeSensorType.Com&quot;</span><span class="p">:</span> <span class="s2">&quot;position&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;SubtreeSensorType.LinVel&quot;</span><span class="p">:</span> <span class="s2">&quot;velocity&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;SubtreeSensorType.AngMom&quot;</span><span class="p">:</span> <span class="s2">&quot;other&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">joint_actuator_force_sensors</span> <span class="o">=</span> <span class="n">joint_actuator_force_sensors</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">internal_names</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">source</span><span class="o">.</span><span class="n">sensor_name</span>
+        <span class="k">for</span> <span class="n">sources</span> <span class="ow">in</span> <span class="n">joint_actuator_force_sensors</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">source</span> <span class="ow">in</span> <span class="n">sources</span>
+    <span class="p">}</span>
+    <span class="n">categories</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">frame</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+            <span class="n">categories</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="n">frame_categories</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">sensor_type</span><span class="p">),</span> <span class="s2">&quot;other&quot;</span>
+            <span class="p">)</span>
+    <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">contact</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+            <span class="n">categories</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">&quot;contact&quot;</span>
+    <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">joint</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+            <span class="n">joint_type</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">type_</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">joint_type</span> <span class="o">==</span> <span class="s2">&quot;JointSensorType.JointPos&quot;</span><span class="p">:</span>
+                <span class="n">categories</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">&quot;position&quot;</span>
+            <span class="k">elif</span> <span class="n">joint_type</span> <span class="o">==</span> <span class="s2">&quot;JointSensorType.JointVel&quot;</span><span class="p">:</span>
+                <span class="n">categories</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">&quot;velocity&quot;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">categories</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">&quot;other&quot;</span>
+    <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">subtree</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+            <span class="n">categories</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="n">subtree_categories</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">type_</span><span class="p">),</span> <span class="s2">&quot;other&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">touch</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+            <span class="n">categories</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">&quot;contact&quot;</span>
+    <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">actuator</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span> <span class="ow">and</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">internal_names</span><span class="p">:</span>
+            <span class="n">categories</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">&quot;force&quot;</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">joint_actuator_force_sensors</span><span class="p">:</span>
+        <span class="n">categories</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;force&quot;</span>
+    <span class="k">return</span> <span class="n">categories</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_motrix_frame_sensor_identities</span><span class="p">(</span><span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_MotrixFrameSensorIdentity</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
@@ -703,20 +807,31 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_motrix_contact_sensor_identities</span><span class="p">(</span>
     <span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_MotrixContactSensorIdentity</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Collect the public identity of each native geom-pair contact sensor.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Collect the public identity of each native contact sensor.</span>
+
+<span class="sd">    The MotrixSim importer maps MuJoCo ``body1/body2`` filters to native</span>
+<span class="sd">    ``link_pair`` matches and ``subtree1/subtree2`` to ``subtree_pair``; geom</span>
+<span class="sd">    pairs keep ``geom_pair``.  All three variants are published here so the</span>
+<span class="sd">    single-MJCF profile accepts the same authored contact sensors as the</span>
+<span class="sd">    MuJoCo adapters (site filters never survive the importer and fail closed</span>
+<span class="sd">    in the materializer&#39;s authored-sensor audit).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">identities</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">_MotrixContactSensorIdentity</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">contact</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
             <span class="k">continue</span>
-        <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">match_</span><span class="o">.</span><span class="n">variant</span> <span class="o">!=</span> <span class="s2">&quot;geom_pair&quot;</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Motrix contact sensor </span><span class="si">{</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> is not a geom-pair sensor&quot;</span><span class="p">)</span>
-        <span class="n">geom1</span><span class="p">,</span> <span class="n">geom2</span> <span class="o">=</span> <span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">sensor</span><span class="o">.</span><span class="n">match_</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+        <span class="n">variant</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">match_</span><span class="o">.</span><span class="n">variant</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">variant</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;geom_pair&quot;</span><span class="p">,</span> <span class="s2">&quot;link_pair&quot;</span><span class="p">,</span> <span class="s2">&quot;subtree_pair&quot;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Motrix contact sensor </span><span class="si">{</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> has unsupported match </span><span class="si">{</span><span class="n">variant</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">first</span><span class="p">,</span> <span class="n">second</span> <span class="o">=</span> <span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">sensor</span><span class="o">.</span><span class="n">match_</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
         <span class="n">identities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
             <span class="n">_MotrixContactSensorIdentity</span><span class="p">(</span>
                 <span class="n">name</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
-                <span class="n">geom1</span><span class="o">=</span><span class="n">geom1</span><span class="p">,</span>
-                <span class="n">geom2</span><span class="o">=</span><span class="n">geom2</span><span class="p">,</span>
+                <span class="n">match_variant</span><span class="o">=</span><span class="n">variant</span><span class="p">,</span>
+                <span class="n">value</span><span class="o">=</span><span class="p">(</span><span class="n">first</span><span class="p">,</span> <span class="n">second</span><span class="p">),</span>
                 <span class="n">reduce_mode</span><span class="o">=</span><span class="n">sensor</span><span class="o">.</span><span class="n">reduce</span><span class="p">,</span>
                 <span class="n">reports_force</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">report</span><span class="o">.</span><span class="n">force</span><span class="p">),</span>
                 <span class="n">reports_found</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">report</span><span class="o">.</span><span class="n">found</span><span class="p">),</span>
@@ -744,8 +859,9 @@
 
     <span class="kn">import</span><span class="w"> </span><span class="nn">motrixsim.msd</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">msd</span>
 
-    <span class="n">world</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">model_file</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()))</span>
-    <span class="n">contact_identities</span> <span class="o">=</span> <span class="n">_motrix_contact_sensor_identities</span><span class="p">(</span><span class="n">world</span><span class="p">)</span>
+    <span class="n">model_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">model_file</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
+    <span class="n">world</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">model_path</span><span class="p">))</span>
+    <span class="n">_prepare_imported_world</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">model_path</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">mesh_variant_sets</span> <span class="ow">or</span> <span class="n">geom_variant_sets</span><span class="p">:</span>
         <span class="n">_register_motrix_mesh_variant_sets</span><span class="p">(</span>
             <span class="n">world</span><span class="p">,</span>
@@ -754,30 +870,15 @@
         <span class="p">)</span>
     <span class="k">if</span> <span class="n">add_body_sensors</span><span class="p">:</span>
         <span class="n">add_tracking_frame_sensors</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">)</span>
-    <span class="n">frame_identities</span> <span class="o">=</span> <span class="n">_motrix_frame_sensor_identities</span><span class="p">(</span><span class="n">world</span><span class="p">)</span>
-    <span class="n">names</span> <span class="o">=</span> <span class="n">_motrix_sensor_names</span><span class="p">(</span><span class="n">world</span><span class="p">)</span>
-    <span class="n">sensor_count</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
-        <span class="mi">1</span>
-        <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="p">(</span>
-            <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">contact</span><span class="p">,</span>
-            <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">frame</span><span class="p">,</span>
-            <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">joint</span><span class="p">,</span>
-            <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">subtree</span><span class="p">,</span>
-            <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">touch</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">group</span>
+    <span class="n">inventory</span> <span class="o">=</span> <span class="n">_build_sensor_inventory</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="p">(</span><span class="n">model_path</span><span class="p">,))</span>
+    <span class="n">internal_count</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">sources</span><span class="p">)</span> <span class="k">for</span> <span class="n">sources</span> <span class="ow">in</span> <span class="n">inventory</span><span class="o">.</span><span class="n">joint_actuator_force_sensors</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
     <span class="p">)</span>
-    <span class="k">if</span> <span class="n">sensor_count</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">names</span><span class="p">):</span>
+    <span class="n">sensor_count</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">_motrix_sensor_groups</span><span class="p">(</span><span class="n">world</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">group</span><span class="p">)</span>
+    <span class="n">public_native_names</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">inventory</span><span class="o">.</span><span class="n">names</span><span class="p">)</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">inventory</span><span class="o">.</span><span class="n">joint_actuator_force_sensors</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">sensor_count</span> <span class="o">-</span> <span class="n">internal_count</span> <span class="o">!=</span> <span class="n">public_native_names</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Motrix portable scenes require every native sensor to be named&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="p">(</span>
-        <span class="n">msd</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
-        <span class="n">_MotrixSensorInventory</span><span class="p">(</span>
-            <span class="n">names</span><span class="o">=</span><span class="n">names</span><span class="p">,</span>
-            <span class="n">frame_identities</span><span class="o">=</span><span class="n">frame_identities</span><span class="p">,</span>
-            <span class="n">contact_identities</span><span class="o">=</span><span class="n">contact_identities</span><span class="p">,</span>
-        <span class="p">),</span>
-        <span class="n">world</span><span class="p">,</span>
-    <span class="p">)</span></div>
+    <span class="k">return</span> <span class="n">msd</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">world</span><span class="p">),</span> <span class="n">inventory</span><span class="p">,</span> <span class="n">world</span></div>
 
 
 
@@ -843,73 +944,231 @@
     <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">root</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="s2">&quot;keyframe&quot;</span><span class="p">))</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_materialize_robot_with_fragment_keyframes</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_load_robot_with_fragment_keyframes</span><span class="p">(</span>
     <span class="n">robot_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">fragment_paths</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Path</span><span class="p">]</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Inject fragment ``&lt;keyframe&gt;`` blocks into a temporary copy of ``robot_path``.</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;World&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Import a robot with fragment keyframes through an in-memory XML string.&quot;&quot;&quot;</span>
 
-<span class="sd">    motrix&#39;s ``msd.from_file`` validates ``&lt;keyframe&gt;`` qpos against the loaded</span>
-<span class="sd">    model. fragment XMLs only carry sensors/contacts (no body), so a fragment</span>
-<span class="sd">    with its own keyframe fails to parse on its own. Mujoco backend already</span>
-<span class="sd">    merges fragments into the scene XML before parsing; this helper does the</span>
-<span class="sd">    equivalent for the keyframe block so motrix can load a robot model that</span>
-<span class="sd">    owns the keyframe declared in a sibling fragment.</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">motrixsim.msd</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">msd</span>
 
-<span class="sd">    Returns the original ``robot_path`` when no fragment has a keyframe.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">fragment_keyframes</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">ET</span><span class="o">.</span><span class="n">Element</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">fragment_path</span> <span class="ow">in</span> <span class="n">fragment_paths</span><span class="p">:</span>
         <span class="n">fragment_keyframes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">_extract_keyframes</span><span class="p">(</span><span class="n">fragment_path</span><span class="p">))</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">fragment_keyframes</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">robot_path</span>
+        <span class="k">return</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">robot_path</span><span class="p">))</span>
 
-    <span class="n">tree</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">robot_path</span><span class="p">)</span>
-    <span class="n">root</span> <span class="o">=</span> <span class="n">tree</span><span class="o">.</span><span class="n">getroot</span><span class="p">()</span>
+    <span class="n">root</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">robot_path</span><span class="p">)</span><span class="o">.</span><span class="n">getroot</span><span class="p">()</span>
     <span class="n">existing</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;keyframe&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">existing</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">existing</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">SubElement</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="s2">&quot;keyframe&quot;</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">keyframe</span> <span class="ow">in</span> <span class="n">fragment_keyframes</span><span class="p">:</span>
         <span class="n">existing</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">keyframe</span><span class="p">))</span>
-
-    <span class="n">tmp</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span>
-        <span class="n">suffix</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;_</span><span class="si">{</span><span class="n">robot_path</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-        <span class="nb">dir</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">robot_path</span><span class="o">.</span><span class="n">parent</span><span class="p">),</span>
-        <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;w&quot;</span><span class="p">,</span>
-        <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">tmp</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-    <span class="n">tree</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">tmp</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="n">tmp</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_str</span><span class="p">(</span><span class="n">ET</span><span class="o">.</span><span class="n">tostring</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;unicode&quot;</span><span class="p">),</span> <span class="n">file_path</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">robot_path</span><span class="p">))</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_materialize_fragment_without_keyframes</span><span class="p">(</span><span class="n">fragment_file</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Strip ``&lt;keyframe&gt;`` from a fragment XML; return original if no change.&quot;&quot;&quot;</span>
-    <span class="n">tree</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">fragment_file</span><span class="p">)</span>
-    <span class="n">root</span> <span class="o">=</span> <span class="n">tree</span><span class="o">.</span><span class="n">getroot</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_load_fragment_without_keyframes</span><span class="p">(</span><span class="n">fragment_file</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;World&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Import a fragment without its robot-owned keyframe block.&quot;&quot;&quot;</span>
+
+    <span class="kn">import</span><span class="w"> </span><span class="nn">motrixsim.msd</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">msd</span>
+
+    <span class="n">root</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">fragment_file</span><span class="p">)</span><span class="o">.</span><span class="n">getroot</span><span class="p">()</span>
     <span class="n">keyframes</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="s2">&quot;keyframe&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">keyframes</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">fragment_file</span>
+        <span class="k">return</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">fragment_file</span><span class="p">))</span>
     <span class="k">for</span> <span class="n">keyframe</span> <span class="ow">in</span> <span class="n">keyframes</span><span class="p">:</span>
         <span class="n">root</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">keyframe</span><span class="p">)</span>
-    <span class="n">tmp</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span>
-        <span class="n">suffix</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;_</span><span class="si">{</span><span class="n">fragment_file</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-        <span class="nb">dir</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">fragment_file</span><span class="o">.</span><span class="n">parent</span><span class="p">),</span>
-        <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;w&quot;</span><span class="p">,</span>
-        <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="k">return</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_str</span><span class="p">(</span><span class="n">ET</span><span class="o">.</span><span class="n">tostring</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;unicode&quot;</span><span class="p">),</span> <span class="n">file_path</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">fragment_file</span><span class="p">))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_restore_imported_actuator_forms</span><span class="p">(</span><span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Restore exact position-actuator semantics on the imported MSD objects.&quot;&quot;&quot;</span>
+
+    <span class="kn">import</span><span class="w"> </span><span class="nn">motrixsim.msd</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">msd</span>
+
+    <span class="k">for</span> <span class="n">actuator</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">actuators</span><span class="p">:</span>
+        <span class="n">actuator_type</span> <span class="o">=</span> <span class="n">actuator</span><span class="o">.</span><span class="n">actuator_type</span>
+        <span class="k">if</span> <span class="n">actuator_type</span><span class="o">.</span><span class="n">variant</span> <span class="o">!=</span> <span class="s2">&quot;general&quot;</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">general</span> <span class="o">=</span> <span class="n">actuator_type</span><span class="o">.</span><span class="n">value</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">general</span><span class="o">.</span><span class="n">gain</span> <span class="o">!=</span> <span class="n">msd</span><span class="o">.</span><span class="n">GainType</span><span class="o">.</span><span class="n">Fixed</span>
+            <span class="ow">or</span> <span class="n">general</span><span class="o">.</span><span class="n">bias</span> <span class="o">!=</span> <span class="n">msd</span><span class="o">.</span><span class="n">BiasType</span><span class="o">.</span><span class="n">Affine</span>
+            <span class="ow">or</span> <span class="n">general</span><span class="o">.</span><span class="n">dyntype</span> <span class="o">!=</span> <span class="n">msd</span><span class="o">.</span><span class="n">DynType</span><span class="o">.</span><span class="n">None_</span>
+        <span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">kp</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">general</span><span class="o">.</span><span class="n">gainprm</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">bias</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">general</span><span class="o">.</span><span class="n">biasprm</span><span class="p">[:</span><span class="mi">3</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">bias</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="mf">0.0</span> <span class="ow">or</span> <span class="n">bias</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="o">-</span><span class="n">kp</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">position</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">PositionParam</span><span class="p">()</span>
+        <span class="n">position</span><span class="o">.</span><span class="n">kp</span> <span class="o">=</span> <span class="n">kp</span>
+        <span class="n">position</span><span class="o">.</span><span class="n">damping_type</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">DampingType</span><span class="o">.</span><span class="n">Kv</span>
+        <span class="n">position</span><span class="o">.</span><span class="n">damping_value</span> <span class="o">=</span> <span class="o">-</span><span class="n">bias</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="n">actuator</span><span class="o">.</span><span class="n">actuator_type</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">ActuatorType</span><span class="o">.</span><span class="n">position</span><span class="p">(</span><span class="n">position</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_restore_imported_solver_options</span><span class="p">(</span><span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">,</span> <span class="n">source_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Apply the authored solver iteration, type and tolerance fields.</span>
+
+<span class="sd">    MotrixSim&#39;s MJCF importer maps ``iterations`` itself, but only onto the world</span>
+<span class="sd">    it imports. ``solver`` and ``tolerance`` are ignored. Callers apply this to</span>
+<span class="sd">    the world that is actually built.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="kn">import</span><span class="w"> </span><span class="nn">motrixsim.msd</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">msd</span>
+
+    <span class="n">option</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">source_path</span><span class="p">)</span><span class="o">.</span><span class="n">getroot</span><span class="p">()</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;option&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">option</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="n">solver</span> <span class="o">=</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;solver&quot;</span><span class="p">)</span>
+    <span class="n">solver_types</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;PGS&quot;</span><span class="p">:</span> <span class="n">msd</span><span class="o">.</span><span class="n">SolverType</span><span class="o">.</span><span class="n">PGS</span><span class="p">,</span> <span class="s2">&quot;Newton&quot;</span><span class="p">:</span> <span class="n">msd</span><span class="o">.</span><span class="n">SolverType</span><span class="o">.</span><span class="n">Newton</span><span class="p">}</span>
+    <span class="k">if</span> <span class="n">solver</span> <span class="ow">in</span> <span class="n">solver_types</span><span class="p">:</span>
+        <span class="n">world</span><span class="o">.</span><span class="n">simulate_option</span><span class="o">.</span><span class="n">solver_type</span> <span class="o">=</span> <span class="n">solver_types</span><span class="p">[</span><span class="n">solver</span><span class="p">]</span>
+    <span class="n">iterations</span> <span class="o">=</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;iterations&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">iterations</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">world</span><span class="o">.</span><span class="n">simulate_option</span><span class="o">.</span><span class="n">constraint_solver_iterations</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">iterations</span><span class="p">)</span>
+    <span class="n">tolerance</span> <span class="o">=</span> <span class="n">option</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;tolerance&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">tolerance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">world</span><span class="o">.</span><span class="n">simulate_option</span><span class="o">.</span><span class="n">constraint_solver_tolerance</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">tolerance</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_prepare_imported_world</span><span class="p">(</span><span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">,</span> <span class="n">source_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">_restore_imported_actuator_forms</span><span class="p">(</span><span class="n">world</span><span class="p">)</span>
+    <span class="n">_restore_imported_solver_options</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">source_path</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_authored_sensor_names</span><span class="p">(</span><span class="n">paths</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Path</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">names</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">:</span>
+        <span class="n">root</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">getroot</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">sensor_block</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="s2">&quot;sensor&quot;</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">element</span> <span class="ow">in</span> <span class="n">sensor_block</span><span class="p">:</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="n">element</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">name</span><span class="p">:</span>
+                    <span class="n">names</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">names</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_restore_joint_actuator_force_sensors</span><span class="p">(</span>
+    <span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">,</span> <span class="n">source_paths</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Path</span><span class="p">]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_MotrixJointActuatorForceSource</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Materialize native actuator sensors for MuJoCo&#39;s per-joint force sum.&quot;&quot;&quot;</span>
+
+    <span class="kn">import</span><span class="w"> </span><span class="nn">motrixsim.msd</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">msd</span>
+
+    <span class="n">restored</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_MotrixJointActuatorForceSource</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">used_names</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">_motrix_sensor_groups</span><span class="p">(</span><span class="n">world</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">group</span>
+        <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span>
+    <span class="p">}</span>
+    <span class="n">used_names</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">_authored_sensor_names</span><span class="p">(</span><span class="n">source_paths</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">source_path</span> <span class="ow">in</span> <span class="n">source_paths</span><span class="p">:</span>
+        <span class="n">root</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">source_path</span><span class="p">)</span><span class="o">.</span><span class="n">getroot</span><span class="p">()</span>
+        <span class="n">joint_types</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">element</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">):</span> <span class="n">element</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">,</span> <span class="s2">&quot;hinge&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">element</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="s2">&quot;joint&quot;</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="n">joint_types</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">element</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">):</span> <span class="s2">&quot;free&quot;</span> <span class="k">for</span> <span class="n">element</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="s2">&quot;freejoint&quot;</span><span class="p">)})</span>
+        <span class="k">for</span> <span class="n">sensor_block</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="s2">&quot;sensor&quot;</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">element</span> <span class="ow">in</span> <span class="n">sensor_block</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">element</span><span class="o">.</span><span class="n">tag</span> <span class="o">!=</span> <span class="s2">&quot;jointactuatorfrc&quot;</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">element</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">element</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">))</span>
+                <span class="n">joint</span> <span class="o">=</span> <span class="n">element</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;joint&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">restored</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Motrix scene contains duplicate sensor name </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">joint_types</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">joint</span><span class="p">)</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;ball&quot;</span><span class="p">,</span> <span class="s2">&quot;free&quot;</span><span class="p">}:</span>
+                    <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Motrix jointactuatorfrc sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> requires a single-DoF joint&quot;</span>
+                    <span class="p">)</span>
+                <span class="n">actuators</span> <span class="o">=</span> <span class="p">[</span>
+                    <span class="n">actuator</span>
+                    <span class="k">for</span> <span class="n">actuator</span> <span class="ow">in</span> <span class="n">world</span><span class="o">.</span><span class="n">actuators</span>
+                    <span class="k">if</span> <span class="n">actuator</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">variant</span> <span class="o">==</span> <span class="s2">&quot;joint&quot;</span>
+                    <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">actuator</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">value</span><span class="p">)</span> <span class="o">==</span> <span class="n">joint</span>
+                <span class="p">]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">actuators</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Motrix jointactuatorfrc sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> joint </span><span class="si">{</span><span class="n">joint</span><span class="si">!r}</span><span class="s2"> &quot;</span>
+                        <span class="s2">&quot;has no joint-targeting actuator&quot;</span>
+                    <span class="p">)</span>
+                <span class="n">sources</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">_MotrixJointActuatorForceSource</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">actuator</span> <span class="ow">in</span> <span class="n">actuators</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">actuator</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                            <span class="sa">f</span><span class="s2">&quot;Motrix jointactuatorfrc sensor </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> requires named actuators&quot;</span>
+                        <span class="p">)</span>
+                    <span class="n">internal_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;__unisim_jointactuatorfrc_</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">sources</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="k">while</span> <span class="n">internal_name</span> <span class="ow">in</span> <span class="n">used_names</span><span class="p">:</span>
+                        <span class="n">internal_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;_</span><span class="si">{</span><span class="n">internal_name</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="n">used_names</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">internal_name</span><span class="p">)</span>
+                    <span class="n">sensor</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">ActuatorSensor</span><span class="p">()</span>
+                    <span class="n">sensor</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">internal_name</span>
+                    <span class="n">sensor</span><span class="o">.</span><span class="n">actuator</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">actuator</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+                    <span class="n">world</span><span class="o">.</span><span class="n">sensors</span><span class="o">.</span><span class="n">actuator</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sensor</span><span class="p">)</span>
+                    <span class="n">sources</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="n">_MotrixJointActuatorForceSource</span><span class="p">(</span>
+                            <span class="n">sensor_name</span><span class="o">=</span><span class="n">internal_name</span><span class="p">,</span>
+                            <span class="n">gear</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">actuator</span><span class="o">.</span><span class="n">gear</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+                        <span class="p">)</span>
+                    <span class="p">)</span>
+                <span class="n">restored</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">sources</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">restored</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_audit_authored_sensors_imported</span><span class="p">(</span>
+    <span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">,</span>
+    <span class="n">source_paths</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Path</span><span class="p">],</span>
+    <span class="n">joint_actuator_force_sensors</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span>
+        <span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_MotrixJointActuatorForceSource</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fail closed by name whenever any authored sensor has no public reader.&quot;&quot;&quot;</span>
+
+    <span class="n">authored</span> <span class="o">=</span> <span class="n">_authored_sensor_names</span><span class="p">(</span><span class="n">source_paths</span><span class="p">)</span>
+    <span class="n">imported</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="nb">str</span><span class="p">(</span><span class="n">sensor</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">_motrix_sensor_groups</span><span class="p">(</span><span class="n">world</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">sensor</span> <span class="ow">in</span> <span class="n">group</span>
+        <span class="k">if</span> <span class="n">sensor</span><span class="o">.</span><span class="n">name</span>
+    <span class="p">}</span>
+    <span class="n">missing</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">authored</span> <span class="o">-</span> <span class="n">imported</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">joint_actuator_force_sensors</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Motrix sensor(s) did not survive MJCF import: </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_sensor_inventory</span><span class="p">(</span>
+    <span class="n">world</span><span class="p">:</span> <span class="s2">&quot;World&quot;</span><span class="p">,</span> <span class="n">source_paths</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Path</span><span class="p">],</span> <span class="o">*</span><span class="p">,</span> <span class="n">signatures</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_MotrixSensorInventory</span><span class="p">:</span>
+    <span class="n">joint_sensors</span> <span class="o">=</span> <span class="n">_restore_joint_actuator_force_sensors</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">source_paths</span><span class="p">)</span>
+    <span class="n">_audit_authored_sensors_imported</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">source_paths</span><span class="p">,</span> <span class="n">joint_sensors</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_MotrixSensorInventory</span><span class="p">(</span>
+        <span class="n">names</span><span class="o">=</span><span class="n">_motrix_sensor_names</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">joint_sensors</span><span class="p">),</span>
+        <span class="n">frame_identities</span><span class="o">=</span><span class="n">_motrix_frame_sensor_identities</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
+        <span class="n">contact_identities</span><span class="o">=</span><span class="n">_motrix_contact_sensor_identities</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
+        <span class="n">signatures</span><span class="o">=</span><span class="n">_motrix_sensor_signatures</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">joint_sensors</span><span class="p">)</span> <span class="k">if</span> <span class="n">signatures</span> <span class="k">else</span> <span class="p">(),</span>
+        <span class="n">categories</span><span class="o">=</span><span class="n">_motrix_sensor_categories</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">joint_sensors</span><span class="p">),</span>
+        <span class="n">joint_actuator_force_sensors</span><span class="o">=</span><span class="n">joint_sensors</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="n">tmp</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-    <span class="n">tree</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">tmp</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="n">tmp</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_read_joint_actuator_force_sensor</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">data</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">sources</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">_MotrixJointActuatorForceSource</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="n">values</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">get_sensor_value</span><span class="p">(</span><span class="n">source</span><span class="o">.</span><span class="n">sensor_name</span><span class="p">,</span> <span class="n">data</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="o">*</span> <span class="n">source</span><span class="o">.</span><span class="n">gear</span>
+        <span class="k">for</span> <span class="n">source</span> <span class="ow">in</span> <span class="n">sources</span>
+    <span class="p">]</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_attach_motrix_scene_fragment</span><span class="p">(</span><span class="n">world</span><span class="p">:</span> <span class="n">World</span><span class="p">,</span> <span class="n">fragment_file</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">motrixsim.msd</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">msd</span>
-
-    <span class="n">sanitized</span> <span class="o">=</span> <span class="n">_materialize_fragment_without_keyframes</span><span class="p">(</span><span class="n">fragment_file</span><span class="p">)</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">fragment</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">sanitized</span><span class="p">))</span>
-    <span class="k">finally</span><span class="p">:</span>
-        <span class="n">remove_temporary_file</span><span class="p">(</span><span class="n">sanitized</span><span class="p">,</span> <span class="n">original</span><span class="o">=</span><span class="n">fragment_file</span><span class="p">)</span>
+    <span class="n">fragment</span> <span class="o">=</span> <span class="n">_load_fragment_without_keyframes</span><span class="p">(</span><span class="n">fragment_file</span><span class="p">)</span>
+    <span class="n">_prepare_imported_world</span><span class="p">(</span><span class="n">fragment</span><span class="p">,</span> <span class="n">fragment_file</span><span class="p">)</span>
     <span class="n">world</span><span class="o">.</span><span class="n">attach</span><span class="p">(</span><span class="n">fragment</span><span class="p">)</span>
 
 
@@ -1066,22 +1325,15 @@
     <span class="n">fragment_paths</span> <span class="o">=</span> <span class="p">[</span>
         <span class="n">resolve_scene_fragment_path</span><span class="p">(</span><span class="n">fragment_file</span><span class="p">,</span> <span class="n">model_path</span><span class="p">)</span> <span class="k">for</span> <span class="n">fragment_file</span> <span class="ow">in</span> <span class="n">fragment_files</span>
     <span class="p">]</span>
-    <span class="n">robot_path</span> <span class="o">=</span> <span class="n">_materialize_robot_with_fragment_keyframes</span><span class="p">(</span><span class="n">model_path</span><span class="p">,</span> <span class="n">fragment_paths</span><span class="p">)</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">world</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">robot_path</span><span class="p">))</span>
-        <span class="k">for</span> <span class="n">fragment_path</span> <span class="ow">in</span> <span class="n">fragment_paths</span><span class="p">:</span>
-            <span class="n">_attach_motrix_scene_fragment</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">fragment_path</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">add_body_sensors</span><span class="p">:</span>
-            <span class="n">add_tracking_frame_sensors</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">)</span>
-        <span class="n">model</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">world</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">_MotrixSensorInventory</span><span class="p">(</span>
-            <span class="n">names</span><span class="o">=</span><span class="n">_motrix_sensor_names</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
-            <span class="n">frame_identities</span><span class="o">=</span><span class="n">_motrix_frame_sensor_identities</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
-            <span class="n">contact_identities</span><span class="o">=</span><span class="n">_motrix_contact_sensor_identities</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
-            <span class="n">signatures</span><span class="o">=</span><span class="n">_motrix_sensor_signatures</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
-        <span class="p">),</span> <span class="n">world</span>
-    <span class="k">finally</span><span class="p">:</span>
-        <span class="n">remove_temporary_file</span><span class="p">(</span><span class="n">robot_path</span><span class="p">,</span> <span class="n">original</span><span class="o">=</span><span class="n">model_path</span><span class="p">)</span></div>
+    <span class="n">world</span> <span class="o">=</span> <span class="n">_load_robot_with_fragment_keyframes</span><span class="p">(</span><span class="n">model_path</span><span class="p">,</span> <span class="n">fragment_paths</span><span class="p">)</span>
+    <span class="n">_prepare_imported_world</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">model_path</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">fragment_path</span> <span class="ow">in</span> <span class="n">fragment_paths</span><span class="p">:</span>
+        <span class="n">_attach_motrix_scene_fragment</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">fragment_path</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">add_body_sensors</span><span class="p">:</span>
+        <span class="n">add_tracking_frame_sensors</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">)</span>
+    <span class="n">inventory</span> <span class="o">=</span> <span class="n">_build_sensor_inventory</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="p">(</span><span class="n">model_path</span><span class="p">,</span> <span class="o">*</span><span class="n">fragment_paths</span><span class="p">),</span> <span class="n">signatures</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">world</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">inventory</span><span class="p">,</span> <span class="n">world</span></div>
 
 
 
@@ -1093,9 +1345,8 @@
     <span class="n">fragment_files</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
     <span class="n">add_body_sensors</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;base&quot;</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="s2">&quot;SceneModel&quot;</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="s2">&quot;World&quot;</span><span class="p">]:</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="s2">&quot;SceneModel&quot;</span><span class="p">,</span> <span class="n">_MotrixSensorInventory</span><span class="p">,</span> <span class="s2">&quot;World&quot;</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a Motrix model and return its validated cold-path sensor inventory.&quot;&quot;&quot;</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">motrixsim.msd</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">msd</span>
 
     <span class="n">model</span><span class="p">,</span> <span class="n">inventory</span><span class="p">,</span> <span class="n">world</span> <span class="o">=</span> <span class="n">materialize_scene_with_full_sensor_inventory</span><span class="p">(</span>
         <span class="n">model_file</span><span class="o">=</span><span class="n">model_file</span><span class="p">,</span>
@@ -1103,16 +1354,7 @@
         <span class="n">add_body_sensors</span><span class="o">=</span><span class="n">add_body_sensors</span><span class="p">,</span>
         <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="k">return</span> <span class="p">(</span>
-        <span class="n">model</span><span class="p">,</span>
-        <span class="n">inventory</span><span class="o">.</span><span class="n">names</span><span class="p">,</span>
-        <span class="nb">tuple</span><span class="p">(</span>
-            <span class="n">identity</span><span class="o">.</span><span class="n">name</span>
-            <span class="k">for</span> <span class="n">identity</span> <span class="ow">in</span> <span class="n">inventory</span><span class="o">.</span><span class="n">frame_identities</span>
-            <span class="k">if</span> <span class="n">identity</span><span class="o">.</span><span class="n">sensor_type</span> <span class="o">==</span> <span class="n">msd</span><span class="o">.</span><span class="n">FrameSensorType</span><span class="o">.</span><span class="n">FrameQuat</span>
-        <span class="p">),</span>
-        <span class="n">world</span><span class="p">,</span>
-    <span class="p">)</span></div>
+    <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">inventory</span><span class="p">,</span> <span class="n">world</span></div>
 
 
 
@@ -1147,7 +1389,7 @@
     <span class="n">add_body_sensors</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;base&quot;</span><span class="p">,</span>
     <span class="n">return_surface_sampler</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneModel</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="nb">object</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="s2">&quot;World&quot;</span><span class="p">]:</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneModel</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="nb">object</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">_MotrixSensorInventory</span><span class="p">,</span> <span class="s2">&quot;World&quot;</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a Motrix terrain model and return its cold-path sensor inventory.</span>
 
 <span class="sd">    The built ``World`` is returned alongside the model because MotrixSim 1.0.0</span>
@@ -1190,19 +1432,20 @@
     <span class="n">fragment_paths</span> <span class="o">=</span> <span class="p">[</span>
         <span class="n">resolve_scene_fragment_path</span><span class="p">(</span><span class="n">fragment_file</span><span class="p">,</span> <span class="n">robot_path</span><span class="p">)</span> <span class="k">for</span> <span class="n">fragment_file</span> <span class="ow">in</span> <span class="n">fragment_files</span>
     <span class="p">]</span>
-    <span class="n">merged_robot_path</span> <span class="o">=</span> <span class="n">_materialize_robot_with_fragment_keyframes</span><span class="p">(</span><span class="n">robot_path</span><span class="p">,</span> <span class="n">fragment_paths</span><span class="p">)</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">robot_world</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">merged_robot_path</span><span class="p">))</span>
-        <span class="n">world</span><span class="o">.</span><span class="n">attach</span><span class="p">(</span><span class="n">robot_world</span><span class="p">)</span>
-        <span class="c1"># TODO(motrixsim): remove this once msd.World.attach carries keyframes.</span>
-        <span class="n">world</span><span class="o">.</span><span class="n">keyframes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">robot_world</span><span class="o">.</span><span class="n">keyframes</span><span class="p">)</span>
-    <span class="k">finally</span><span class="p">:</span>
-        <span class="n">remove_temporary_file</span><span class="p">(</span><span class="n">merged_robot_path</span><span class="p">,</span> <span class="n">original</span><span class="o">=</span><span class="n">robot_path</span><span class="p">)</span>
+    <span class="n">robot_world</span> <span class="o">=</span> <span class="n">_load_robot_with_fragment_keyframes</span><span class="p">(</span><span class="n">robot_path</span><span class="p">,</span> <span class="n">fragment_paths</span><span class="p">)</span>
+    <span class="n">_restore_imported_actuator_forms</span><span class="p">(</span><span class="n">robot_world</span><span class="p">)</span>
+    <span class="n">world</span><span class="o">.</span><span class="n">attach</span><span class="p">(</span><span class="n">robot_world</span><span class="p">)</span>
+    <span class="c1"># TODO(motrixsim): remove this once msd.World.attach carries keyframes.</span>
+    <span class="n">world</span><span class="o">.</span><span class="n">keyframes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">robot_world</span><span class="o">.</span><span class="n">keyframes</span><span class="p">)</span>
 
     <span class="k">for</span> <span class="n">fragment_path</span> <span class="ow">in</span> <span class="n">fragment_paths</span><span class="p">:</span>
         <span class="n">_attach_motrix_scene_fragment</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">fragment_path</span><span class="p">)</span>
+    <span class="c1"># The built world is this fresh World, not the imported robot world, and</span>
+    <span class="c1"># ``attach`` carries neither the solver type nor the iteration settings.</span>
+    <span class="n">_restore_imported_solver_options</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">robot_path</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">add_body_sensors</span><span class="p">:</span>
         <span class="n">add_tracking_frame_sensors</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">)</span>
+    <span class="n">inventory</span> <span class="o">=</span> <span class="n">_build_sensor_inventory</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="p">(</span><span class="n">robot_path</span><span class="p">,</span> <span class="o">*</span><span class="n">fragment_paths</span><span class="p">))</span>
 
     <span class="n">model</span> <span class="o">=</span> <span class="n">msd</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">world</span><span class="p">)</span>
     <span class="n">sampler</span> <span class="o">=</span> <span class="n">generated</span><span class="o">.</span><span class="n">surface_sampler</span><span class="p">()</span> <span class="k">if</span> <span class="n">return_surface_sampler</span> <span class="k">else</span> <span class="kc">None</span>
@@ -1210,8 +1453,7 @@
         <span class="n">model</span><span class="p">,</span>
         <span class="n">generated</span><span class="o">.</span><span class="n">terrain_origins</span><span class="p">,</span>
         <span class="n">sampler</span><span class="p">,</span>
-        <span class="n">_motrix_sensor_names</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
-        <span class="n">_motrix_frame_quat_sensor_names</span><span class="p">(</span><span class="n">world</span><span class="p">),</span>
+        <span class="n">inventory</span><span class="p">,</span>
         <span class="n">world</span><span class="p">,</span>
     <span class="p">)</span></div>
 
@@ -1259,7 +1501,7 @@
     <span class="n">return_surface_sampler</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneModel</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SceneModel</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="nb">object</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a MotrixSim model with generated hfield terrain and attached robot.&quot;&quot;&quot;</span>
-    <span class="n">model</span><span class="p">,</span> <span class="n">origins</span><span class="p">,</span> <span class="n">sampler</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">materialize_hfield_attached_scene_with_sensor_inventory</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">,</span> <span class="n">origins</span><span class="p">,</span> <span class="n">sampler</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">materialize_hfield_attached_scene_with_sensor_inventory</span><span class="p">(</span>
         <span class="n">model_file</span><span class="o">=</span><span class="n">model_file</span><span class="p">,</span>
         <span class="n">terrain_cfg</span><span class="o">=</span><span class="n">terrain_cfg</span><span class="p">,</span>
         <span class="n">fragment_files</span><span class="o">=</span><span class="n">fragment_files</span><span class="p">,</span>
